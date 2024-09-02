@@ -1,1 +1,1 @@
-# flashy-cli-rs
+# flashy-cli
