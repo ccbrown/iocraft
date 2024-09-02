@@ -1,17 +1,27 @@
 use crate::Component;
 
-pub struct Text {}
+pub struct TextProps {
+    pub value: String,
+}
+
+pub struct Text {
+    props: TextProps,
+}
 
 impl Component for Text {
-    type Props = ();
+    type Props = TextProps;
     type State = ();
 
     fn new(props: Self::Props) -> Self {
-        Self {}
+        Self { props }
     }
 
-    fn render(&self) {
-        // TODO
+    fn update(&mut self, props: Self::Props) {
+        self.props = props;
+    }
+
+    fn render(&mut self) {
+        println!("{}", self.props.value);
     }
 
     async fn wait(&mut self) {
