@@ -2,7 +2,7 @@ use flashy_cli::prelude::*;
 use std::time::Duration;
 
 struct CounterState {
-    count: Value<i32>,
+    count: i32,
 }
 
 struct Counter {
@@ -10,13 +10,12 @@ struct Counter {
 }
 
 impl Component for Counter {
+    type Props = ();
     type State = CounterState;
 
-    fn new() -> Self {
+    fn new(_props: Self::Props) -> Self {
         Self {
-            state: Self::State {
-                count: Value::new_with_default(Signal),
-            },
+            state: Self::State { count: 0 },
         }
     }
 
@@ -26,10 +25,10 @@ impl Component for Counter {
 
     async fn wait(&mut self) {
         smol::Timer::after(Duration::from_secs(1)).await;
-        self.state.count.set(*self.state.count + 1);
+        self.state.count = self.state.count + 1;
     }
 }
 
 fn main() {
-    smol::block_on(render::<Counter>());
+    smol::block_on(render::<Counter>(()));
 }

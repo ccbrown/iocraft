@@ -1,3 +1,4 @@
+mod components;
 mod render;
 
 pub mod prelude;
