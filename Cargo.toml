@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "packages/element",
-    "packages/cli",
+    "packages/io",
     "packages/macro",
 ]
 
@@ -13,7 +13,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dev-dependencies]
-flashy-cli = { path = "packages/cli" }
+flashy-io = { path = "packages/io" }
 futures = "0.3.30"
 smol = "2.0.1"
 

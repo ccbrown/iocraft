@@ -69,8 +69,8 @@ impl ToTokens for ParsedElement {
 
         tokens.extend(quote! {
             {
-                type Props = <#ty as ::flashy_cli::ElementType>::Props;
-                ::flashy_cli::Element::<#ty>{
+                type Props = <#ty as ::flashy_io::ElementType>::Props;
+                ::flashy_io::Element::<#ty>{
                     key: "foo".to_string(),
                     props: Props{
                         #(#props,)*

@@ -1,4 +1,4 @@
-use flashy_cli::prelude::*;
+use flashy_io::prelude::*;
 
 fn main() {
     flashy! {
