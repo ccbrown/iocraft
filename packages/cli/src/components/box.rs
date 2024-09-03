@@ -1,11 +1,11 @@
 use crate::{
-    Component, ComponentDeclaration, ComponentProps, ComponentRenderer, ComponentUpdater,
-    Components, NodeId,
+    AnyElement, Component, ComponentProps, ComponentRenderer, ComponentUpdater, Components,
+    ElementType,
 };
 
 #[derive(Clone, Default)]
 pub struct BoxProps {
-    pub children: Vec<ComponentDeclaration>,
+    pub children: Vec<AnyElement>,
 }
 
 impl ComponentProps for BoxProps {
@@ -13,18 +13,20 @@ impl ComponentProps for BoxProps {
 }
 
 pub struct Box {
-    node_id: NodeId,
     children: Components,
     props: BoxProps,
+}
+
+impl ElementType for Box {
+    type Props = BoxProps;
 }
 
 impl Component for Box {
     type Props = BoxProps;
     type State = ();
 
-    fn new(node_id: NodeId, props: Self::Props) -> Self {
+    fn new(props: Self::Props) -> Self {
         Self {
-            node_id,
             children: Components::default(),
             props,
         }
@@ -34,14 +36,10 @@ impl Component for Box {
         self.props = props;
     }
 
-    fn node_id(&self) -> NodeId {
-        self.node_id
-    }
-
     fn update(&mut self, updater: ComponentUpdater<'_>) {
         let mut updater = self.children.updater(updater);
-        for decl in self.props.children.iter().cloned() {
-            updater.update(decl);
+        for e in self.props.children.iter().cloned() {
+            updater.update(e);
         }
     }
 

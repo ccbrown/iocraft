@@ -1,4 +1,4 @@
-use crate::{Component, ComponentProps, ComponentRenderer, ComponentUpdater, NodeId};
+use crate::{Component, ComponentProps, ComponentRenderer, ComponentUpdater, ElementType};
 use crossterm::style;
 use taffy::Size;
 
@@ -12,27 +12,25 @@ impl ComponentProps for TextProps {
 }
 
 pub struct Text {
-    node_id: NodeId,
     props: TextProps,
+}
+
+impl ElementType for Text {
+    type Props = TextProps;
 }
 
 impl Component for Text {
     type Props = TextProps;
     type State = ();
 
-    fn new(node_id: NodeId, props: Self::Props) -> Self {
+    fn new(props: Self::Props) -> Self {
         Self {
-            node_id,
             props: props.clone(),
         }
     }
 
     fn set_props(&mut self, props: Self::Props) {
         self.props = props.clone();
-    }
-
-    fn node_id(&self) -> NodeId {
-        self.node_id
     }
 
     fn update(&mut self, mut updater: ComponentUpdater<'_>) {

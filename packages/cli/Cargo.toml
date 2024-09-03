@@ -1,0 +1,11 @@
+[package]
+name = "flashy-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossterm = "0.28.1"
+futures = "0.3.30"
+taffy = "0.5.2"
+flashy-element = { path = "../element" }
+flashy-macro = { path = "../macro" }

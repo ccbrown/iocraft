@@ -1,14 +1,22 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "packages/element",
+    "packages/cli",
+    "packages/macro",
+]
+
 [package]
-name = "flashy-cli"
+name = "flashy-examples"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-crossterm = "0.28.1"
-futures = "0.3.30"
-taffy = "0.5.2"
-
 [dev-dependencies]
+flashy-cli = { path = "packages/cli" }
+futures = "0.3.30"
 smol = "2.0.1"
+
+[[example]]
+name = "borders"
+path = "examples/borders.rs"
