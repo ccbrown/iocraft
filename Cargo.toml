@@ -4,7 +4,7 @@ resolver = "2"
 members = [
     "packages/element",
     "packages/io",
-    "packages/macro",
+    "packages/macros",
 ]
 
 [package]

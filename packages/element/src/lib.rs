@@ -1,10 +1,7 @@
 #![cfg_attr(not(test), no_std)]
-extern crate alloc;
 
-use alloc::string::String;
-
-pub struct Element<T: ElementType> {
-    pub key: String,
+pub struct Element<K, T: ElementType> {
+    pub key: K,
     pub props: T::Props,
 }
 

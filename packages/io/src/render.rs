@@ -1,6 +1,9 @@
-use crate::traits::{AnyComponent, AnyComponentProps, ComponentProps};
+use crate::{
+    traits::{AnyComponent, AnyComponentProps, ComponentProps},
+    Element, ElementKey,
+};
 use crossterm::{cursor, queue, Command, QueueableCommand};
-use flashy_element::{Element, ElementType};
+use flashy_element::ElementType;
 use futures::future::select_all;
 use std::{
     any::Any,
@@ -18,7 +21,7 @@ struct InstantiatedComponent {
 }
 
 pub struct Components {
-    components: HashMap<String, InstantiatedComponent>,
+    components: HashMap<ElementKey, InstantiatedComponent>,
 }
 
 impl Default for Components {
@@ -32,12 +35,12 @@ impl Default for Components {
 pub struct ComponentsUpdater<'a> {
     tree_updater: ComponentUpdater<'a>,
     components: &'a mut Components,
-    used_components: HashMap<String, InstantiatedComponent>,
+    used_components: HashMap<ElementKey, InstantiatedComponent>,
 }
 
 #[derive(Clone)]
 pub struct AnyElement {
-    key: String,
+    key: ElementKey,
     props: Box<dyn AnyComponentProps>,
 }
 
@@ -138,6 +141,12 @@ pub struct ComponentUpdater<'a> {
 }
 
 impl<'a> ComponentUpdater<'a> {
+    pub fn set_layout_style(&mut self, layout_style: taffy::style::Style) {
+        self.layout_engine
+            .set_style(self.node_id, layout_style)
+            .expect("we should be able to set the style");
+    }
+
     pub fn set_measure_func(&mut self, measure_func: MeasureFunc) {
         self.layout_engine
             .get_node_context_mut(self.node_id)

@@ -1,5 +1,5 @@
 [package]
-name = "flashy-macro"
+name = "flashy-macros"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,6 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-flashy-element = { path = "../element" }
 proc-macro2 = "1.0.86"
 quote = "1.0.37"
 syn = "2.0.77"

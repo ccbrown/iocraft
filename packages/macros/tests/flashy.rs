@@ -1,6 +1,6 @@
 use core::any::Any;
-use flashy_element::{Element, ElementType};
-use flashy_macro::flashy;
+use flashy_io::{Element, ElementKey, ElementType};
+use flashy_macros::flashy;
 
 struct MyComponent;
 
@@ -15,7 +15,7 @@ impl ElementType for MyComponent {
 }
 
 pub struct AnyElement {
-    pub key: String,
+    pub key: ElementKey,
     pub props: Box<dyn Any>,
 }
 

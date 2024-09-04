@@ -38,7 +38,7 @@ impl Component for Counter {
     fn update(&mut self, updater: ComponentUpdater<'_>) {
         let mut updater = self.children.updater(updater);
         updater.update(flashy! {
-            Text(value: format!("counter: {}", self.state.count))
+            Text(color: Color::DarkBlue, content: format!("counter: {}", self.state.count))
         });
     }
 
