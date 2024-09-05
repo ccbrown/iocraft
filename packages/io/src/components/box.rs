@@ -120,38 +120,38 @@ pub struct BoxProps {
     pub border_color: Option<Color>,
 }
 
+#[derive(Default)]
 pub struct Box {
-    props: BoxProps,
+    border_style: BorderStyle,
+    border_color: Option<Color>,
 }
 
 impl Component for Box {
     type Props = BoxProps;
 
-    fn new(props: Self::Props) -> Self {
-        Self { props }
+    fn new(_props: &Self::Props) -> Self {
+        Default::default()
     }
 
-    fn set_props(&mut self, props: Self::Props) {
-        self.props = props;
-    }
-
-    fn update(&self, updater: &mut ComponentUpdater<'_>) {
-        let mut style: taffy::style::Style = self.props.layout_style().into();
-        style.border = Rect::length(if self.props.border_style.is_none() {
+    fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
+        self.border_style = props.border_style;
+        self.border_color = props.border_color;
+        let mut style: taffy::style::Style = props.layout_style().into();
+        style.border = Rect::length(if props.border_style.is_none() {
             0.0
         } else {
             1.0
         });
         updater.set_layout_style(style);
-        updater.update_children(self.props.children.iter().cloned());
+        updater.update_children(props.children.iter().cloned());
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
         let layout = renderer.layout();
 
-        if let Some(border) = self.props.border_style.border_characters() {
+        if let Some(border) = self.border_style.border_characters() {
             let style = ContentStyle {
-                foreground_color: self.props.border_color,
+                foreground_color: self.border_color,
                 ..ContentStyle::new()
             };
 

@@ -2,7 +2,7 @@ use flashy_io::prelude::*;
 use std::time::Duration;
 
 #[derive(Clone, Default)]
-struct CounterProps {}
+struct CounterProps;
 
 struct Counter {
     count: i32,
@@ -11,13 +11,11 @@ struct Counter {
 impl Component for Counter {
     type Props = CounterProps;
 
-    fn new(_props: Self::Props) -> Self {
+    fn new(_props: &Self::Props) -> Self {
         Self { count: 0 }
     }
 
-    fn set_props(&mut self, _props: Self::Props) {}
-
-    fn update(&self, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, _props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
         updater.update_children([flashy! {
             Text(color: Color::DarkBlue, content: format!("counter: {}", self.count))
         }]);

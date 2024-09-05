@@ -71,7 +71,7 @@ impl<'a> ComponentUpdater<'a> {
                     self.layout_engine
                         .add_child(self.node_id, new_node_id)
                         .expect("we should be able to add the child");
-                    InstantiatedComponent::new(new_node_id, props.into_new_component())
+                    InstantiatedComponent::new(new_node_id, props)
                 }
             };
             component.update(self.layout_engine);
@@ -170,14 +170,14 @@ pub(crate) struct Tree {
 
 impl Tree {
     pub fn new(e: AnyElement) -> Self {
-        let root_component = e.into_key_and_props().1.into_new_component();
+        let (_, props) = e.into_key_and_props();
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
             .expect("we should be able to add the root");
         Self {
             layout_engine,
-            root_component: InstantiatedComponent::new(root_node_id, root_component),
+            root_component: InstantiatedComponent::new(root_node_id, props),
         }
     }
 

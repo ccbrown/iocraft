@@ -16,21 +16,16 @@ pub struct Text {
 impl Component for Text {
     type Props = TextProps;
 
-    fn new(props: Self::Props) -> Self {
-        let mut ret = Self {
+    fn new(_props: &Self::Props) -> Self {
+        Self {
             style: ContentStyle::new(),
             content: "".to_string(),
-        };
-        ret.set_props(props);
-        ret
+        }
     }
 
-    fn set_props(&mut self, props: Self::Props) {
+    fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
         self.style.foreground_color = props.color;
-        self.content = props.content;
-    }
-
-    fn update(&self, updater: &mut ComponentUpdater<'_>) {
+        self.content = props.content.clone();
         let width = self.content.len() as f32;
         updater.set_measure_func(Box::new(move |_, _, _| Size { width, height: 1.0 }));
     }

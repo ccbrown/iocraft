@@ -13,8 +13,12 @@ pub use taffy::NodeId;
 pub(crate) struct ComponentProps<C: Component>(pub(crate) C::Props);
 
 pub(crate) trait AnyComponentProps: Any + Send {
-    fn into_new_component(self: Box<Self>) -> Box<dyn AnyComponent>;
-    fn update_component(self: Box<Self>, component: &mut Box<dyn AnyComponent>);
+    fn new_component(&self) -> Box<dyn AnyComponent>;
+    fn update_component(
+        &self,
+        component: &mut Box<dyn AnyComponent>,
+        updater: &mut ComponentUpdater<'_>,
+    );
     fn clone_impl(&self) -> Box<dyn AnyComponentProps>;
     fn component_type_id(&self) -> TypeId;
 }
@@ -23,12 +27,16 @@ impl<C: Component> AnyComponentProps for ComponentProps<C>
 where
     C::Props: Clone + Send,
 {
-    fn into_new_component(self: Box<Self>) -> Box<dyn AnyComponent> {
-        Box::new(C::new(self.0))
+    fn new_component(&self) -> Box<dyn AnyComponent> {
+        Box::new(C::new(&self.0))
     }
 
-    fn update_component(self: Box<Self>, component: &mut Box<dyn AnyComponent>) {
-        component.set_props(self);
+    fn update_component(
+        &self,
+        component: &mut Box<dyn AnyComponent>,
+        updater: &mut ComponentUpdater<'_>,
+    ) {
+        component.update(&self.0, updater);
     }
 
     fn clone_impl(&self) -> Box<dyn AnyComponentProps> {
@@ -49,9 +57,8 @@ impl Clone for Box<dyn AnyComponentProps> {
 pub trait Component: Any + Send {
     type Props;
 
-    fn new(props: Self::Props) -> Self;
-    fn set_props(&mut self, props: Self::Props);
-    fn update(&self, updater: &mut ComponentUpdater<'_>);
+    fn new(props: &Self::Props) -> Self;
+    fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>);
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn wait(&mut self) -> impl Future<Output = ()> + Send {
@@ -64,22 +71,18 @@ impl<C: Component> ElementType for C {
 }
 
 pub(crate) trait AnyComponent: Any + Send {
-    fn set_props(&mut self, props: Box<dyn Any>);
-    fn update(&mut self, updater: &mut ComponentUpdater<'_>);
+    fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn wait(&mut self) -> BoxFuture<()>;
 }
 
 impl<C: Any + Component> AnyComponent for C {
-    fn set_props(&mut self, props: Box<dyn Any>) {
-        Component::set_props(
+    fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>) {
+        Component::update(
             self,
-            *props.downcast().expect("we should be able to downcast"),
+            props.downcast_ref().expect("we should be able to downcast"),
+            updater,
         );
-    }
-
-    fn update(&mut self, updater: &mut ComponentUpdater<'_>) {
-        Component::update(self, updater);
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
@@ -94,14 +97,16 @@ impl<C: Any + Component> AnyComponent for C {
 pub(crate) struct InstantiatedComponent {
     node_id: NodeId,
     component: Box<dyn AnyComponent>,
+    props: Box<dyn AnyComponentProps>,
     children: Components,
 }
 
 impl InstantiatedComponent {
-    pub fn new(node_id: NodeId, component: Box<dyn AnyComponent>) -> Self {
+    pub fn new(node_id: NodeId, props: Box<dyn AnyComponentProps>) -> Self {
         Self {
             node_id,
-            component,
+            component: props.new_component(),
+            props,
             children: Components::default(),
         }
     }
@@ -115,12 +120,13 @@ impl InstantiatedComponent {
     }
 
     pub fn set_props(&mut self, props: Box<dyn AnyComponentProps>) {
-        props.update_component(&mut self.component);
+        self.props = props;
     }
 
     pub fn update(&mut self, layout_engine: &mut LayoutEngine) {
         let mut updater = ComponentUpdater::new(self.node_id, &mut self.children, layout_engine);
-        self.component.update(&mut updater);
+        self.props
+            .update_component(&mut self.component, &mut updater);
     }
 
     pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
