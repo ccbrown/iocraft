@@ -35,7 +35,7 @@ impl Component for Text {
         self.content = props.content;
     }
 
-    fn update(&self, mut updater: ComponentUpdater<'_>) {
+    fn update(&self, updater: &mut ComponentUpdater<'_>) {
         let width = self.content.len() as f32;
         updater.set_measure_func(Box::new(move |_, _, _| Size { width, height: 1.0 }));
     }

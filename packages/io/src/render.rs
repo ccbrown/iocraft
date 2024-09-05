@@ -1,6 +1,6 @@
 use crate::{
     component::{Components, InstantiatedComponent},
-    AnyElement, ElementKey,
+    AnyElement,
 };
 use crossterm::{cursor, queue, terminal, Command, QueueableCommand};
 use std::{
@@ -10,62 +10,6 @@ use std::{
 };
 pub use taffy::NodeId;
 use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
-
-struct ComponentsUpdater<'a> {
-    updater: ComponentUpdater<'a>,
-    used_components: HashMap<ElementKey, InstantiatedComponent>,
-}
-
-impl<'a> ComponentsUpdater<'a> {
-    pub fn update<E: Into<AnyElement>>(&mut self, e: E) {
-        let e: AnyElement = e.into();
-        let (key, props) = e.into_key_and_props();
-        let mut component: InstantiatedComponent =
-            match self.updater.children.components.remove(&key) {
-                Some(mut component)
-                    if component.component().type_id() == props.component_type_id() =>
-                {
-                    component.set_props(props);
-                    component
-                }
-                _ => {
-                    let new_node_id = self
-                        .updater
-                        .layout_engine
-                        .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
-                        .expect("we should be able to add the node");
-                    self.updater
-                        .layout_engine
-                        .add_child(self.updater.node_id, new_node_id)
-                        .expect("we should be able to add the child");
-                    InstantiatedComponent::new(new_node_id, props.into_new_component())
-                }
-            };
-        component.update(self.updater.layout_engine);
-        if self
-            .used_components
-            .insert(key.clone(), component)
-            .is_some()
-        {
-            panic!("duplicate key for sibling components: {}", key);
-        }
-    }
-}
-
-impl<'a> Drop for ComponentsUpdater<'a> {
-    fn drop(&mut self) {
-        for (_, component) in self.updater.children.components.drain() {
-            self.updater
-                .layout_engine
-                .remove(component.node_id())
-                .expect("we should be able to remove the node");
-        }
-        mem::swap(
-            &mut self.updater.children.components,
-            &mut self.used_components,
-        );
-    }
-}
 
 pub struct ComponentUpdater<'a> {
     node_id: NodeId,
@@ -102,18 +46,46 @@ impl<'a> ComponentUpdater<'a> {
             .expect("we should be able to mark the node as dirty");
     }
 
-    pub fn update_children<I, T>(self, children: I)
+    pub fn update_children<I, T>(&mut self, children: I)
     where
         I: IntoIterator<Item = T>,
         T: Into<AnyElement>,
     {
-        let mut updater = ComponentsUpdater {
-            used_components: HashMap::with_capacity(self.children.components.len()),
-            updater: self,
-        };
+        let mut used_components = HashMap::with_capacity(self.children.components.len());
+
         for child in children {
-            updater.update(child);
+            let e: AnyElement = child.into();
+            let (key, props) = e.into_key_and_props();
+            let mut component: InstantiatedComponent = match self.children.components.remove(&key) {
+                Some(mut component)
+                    if component.component().type_id() == props.component_type_id() =>
+                {
+                    component.set_props(props);
+                    component
+                }
+                _ => {
+                    let new_node_id = self
+                        .layout_engine
+                        .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
+                        .expect("we should be able to add the node");
+                    self.layout_engine
+                        .add_child(self.node_id, new_node_id)
+                        .expect("we should be able to add the child");
+                    InstantiatedComponent::new(new_node_id, props.into_new_component())
+                }
+            };
+            component.update(self.layout_engine);
+            if used_components.insert(key.clone(), component).is_some() {
+                panic!("duplicate key for sibling components: {}", key);
+            }
         }
+
+        for (_, component) in self.children.components.drain() {
+            self.layout_engine
+                .remove(component.node_id())
+                .expect("we should be able to remove the node");
+        }
+        mem::swap(&mut self.children.components, &mut used_components);
     }
 }
 

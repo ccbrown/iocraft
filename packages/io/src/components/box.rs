@@ -140,7 +140,7 @@ impl Component for Box {
         self.props = props;
     }
 
-    fn update(&self, mut updater: ComponentUpdater<'_>) {
+    fn update(&self, updater: &mut ComponentUpdater<'_>) {
         let mut style: taffy::style::Style = self.props.layout_style().into();
         style.border = Rect::length(if self.props.border_style.is_none() {
             0.0

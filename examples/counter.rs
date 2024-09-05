@@ -29,7 +29,7 @@ impl Component for Counter {
 
     fn set_props(&mut self, _props: Self::Props) {}
 
-    fn update(&self, updater: ComponentUpdater<'_>) {
+    fn update(&self, updater: &mut ComponentUpdater<'_>) {
         updater.update_children([flashy! {
             Text(color: Color::DarkBlue, content: format!("counter: {}", self.state.count))
         }]);

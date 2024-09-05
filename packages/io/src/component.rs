@@ -50,7 +50,7 @@ pub trait Component: Any + Send {
 
     fn new(props: Self::Props) -> Self;
     fn set_props(&mut self, props: Self::Props);
-    fn update(&self, updater: ComponentUpdater<'_>);
+    fn update(&self, updater: &mut ComponentUpdater<'_>);
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn wait(&mut self) -> BoxFuture<()> {
@@ -64,7 +64,7 @@ impl<C: Component> ElementType for C {
 
 pub(crate) trait AnyComponent: Any + Send {
     fn set_props(&mut self, props: Box<dyn Any>);
-    fn update(&mut self, updater: ComponentUpdater<'_>);
+    fn update(&mut self, updater: &mut ComponentUpdater<'_>);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn wait(&mut self) -> BoxFuture<()>;
 }
@@ -77,7 +77,7 @@ impl<C: Any + Component> AnyComponent for C {
         );
     }
 
-    fn update(&mut self, updater: ComponentUpdater<'_>) {
+    fn update(&mut self, updater: &mut ComponentUpdater<'_>) {
         Component::update(self, updater);
     }
 
@@ -118,11 +118,8 @@ impl InstantiatedComponent {
     }
 
     pub fn update(&mut self, layout_engine: &mut LayoutEngine) {
-        self.component.update(ComponentUpdater::new(
-            self.node_id,
-            &mut self.children,
-            layout_engine,
-        ));
+        let mut updater = ComponentUpdater::new(self.node_id, &mut self.children, layout_engine);
+        self.component.update(&mut updater);
     }
 
     pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
