@@ -15,7 +15,6 @@ pub struct Text {
 
 impl Component for Text {
     type Props = TextProps;
-    type State = ();
 
     fn new(props: Self::Props) -> Self {
         let mut ret = Self {

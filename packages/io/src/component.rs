@@ -48,7 +48,6 @@ impl Clone for Box<dyn AnyComponentProps> {
 
 pub trait Component: Any + Send {
     type Props;
-    type State;
 
     fn new(props: Self::Props) -> Self;
     fn set_props(&mut self, props: Self::Props);

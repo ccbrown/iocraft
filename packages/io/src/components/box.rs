@@ -126,7 +126,6 @@ pub struct Box {
 
 impl Component for Box {
     type Props = BoxProps;
-    type State = ();
 
     fn new(props: Self::Props) -> Self {
         Self { props }
