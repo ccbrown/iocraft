@@ -1,4 +1,4 @@
-use crate::{Component, ComponentProps, ComponentRenderer, ComponentUpdater};
+use crate::{Component, ComponentRenderer, ComponentUpdater};
 use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
 use taffy::Size;
 
@@ -6,10 +6,6 @@ use taffy::Size;
 pub struct TextProps {
     pub color: Option<Color>,
     pub content: String,
-}
-
-impl ComponentProps for TextProps {
-    type Component = Text;
 }
 
 pub struct Text {

@@ -1,5 +1,5 @@
 use crate::{
-    component::{AnyComponentProps, ComponentProps},
+    component::{AnyComponentProps, Component, ComponentProps},
     render::Tree,
 };
 use std::future::Future;
@@ -36,13 +36,13 @@ impl AnyElement {
 
 impl<T> From<Element<T>> for AnyElement
 where
-    T: ElementType + 'static,
-    <T as ElementType>::Props: ComponentProps + Clone,
+    T: Component + 'static,
+    <T as Component>::Props: Clone + Send,
 {
     fn from(e: Element<T>) -> Self {
         Self {
             key: e.key,
-            props: Box::new(e.props),
+            props: Box::new(ComponentProps::<T>(e.props)),
         }
     }
 }

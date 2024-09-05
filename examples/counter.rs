@@ -1,13 +1,8 @@
 use flashy_io::prelude::*;
-use futures::future::{BoxFuture, FutureExt};
 use std::time::Duration;
 
 #[derive(Clone, Default)]
 struct CounterProps {}
-
-impl ComponentProps for CounterProps {
-    type Component = Counter;
-}
 
 struct CounterState {
     count: i32,
@@ -35,12 +30,9 @@ impl Component for Counter {
         }]);
     }
 
-    fn wait(&mut self) -> BoxFuture<()> {
-        async {
-            smol::Timer::after(Duration::from_millis(100)).await;
-            self.state.count = self.state.count + 1;
-        }
-        .boxed()
+    async fn wait(&mut self) {
+        smol::Timer::after(Duration::from_millis(100)).await;
+        self.state.count = self.state.count + 1;
     }
 }
 

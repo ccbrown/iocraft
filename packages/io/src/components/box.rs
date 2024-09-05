@@ -1,4 +1,4 @@
-use crate::{AnyElement, Component, ComponentProps, ComponentRenderer, ComponentUpdater};
+use crate::{AnyElement, Component, ComponentRenderer, ComponentUpdater};
 use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
 use flashy_macros::with_layout_style_props;
 use taffy::Rect;
@@ -118,10 +118,6 @@ pub struct BoxProps {
     pub children: Vec<AnyElement>,
     pub border_style: BorderStyle,
     pub border_color: Option<Color>,
-}
-
-impl ComponentProps for BoxProps {
-    type Component = Box;
 }
 
 pub struct Box {

@@ -6,12 +6,11 @@ use futures::future::{pending, select, select_all, BoxFuture, FutureExt};
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    future::Future,
 };
 pub use taffy::NodeId;
 
-pub trait ComponentProps: Any + Send + Sized {
-    type Component: Component<Props = Self>;
-}
+pub(crate) struct ComponentProps<C: Component>(pub(crate) C::Props);
 
 pub(crate) trait AnyComponentProps: Any + Send {
     fn into_new_component(self: Box<Self>) -> Box<dyn AnyComponent>;
@@ -20,9 +19,12 @@ pub(crate) trait AnyComponentProps: Any + Send {
     fn component_type_id(&self) -> TypeId;
 }
 
-impl<P: ComponentProps + Clone> AnyComponentProps for P {
+impl<C: Component> AnyComponentProps for ComponentProps<C>
+where
+    C::Props: Clone + Send,
+{
     fn into_new_component(self: Box<Self>) -> Box<dyn AnyComponent> {
-        Box::new(P::Component::new(*self))
+        Box::new(C::new(self.0))
     }
 
     fn update_component(self: Box<Self>, component: &mut Box<dyn AnyComponent>) {
@@ -30,11 +32,11 @@ impl<P: ComponentProps + Clone> AnyComponentProps for P {
     }
 
     fn clone_impl(&self) -> Box<dyn AnyComponentProps> {
-        Box::new(self.clone())
+        Box::new(Self(self.0.clone()))
     }
 
     fn component_type_id(&self) -> TypeId {
-        TypeId::of::<P::Component>()
+        TypeId::of::<C>()
     }
 }
 
@@ -45,7 +47,7 @@ impl Clone for Box<dyn AnyComponentProps> {
 }
 
 pub trait Component: Any + Send {
-    type Props: ComponentProps<Component = Self>;
+    type Props;
     type State;
 
     fn new(props: Self::Props) -> Self;
@@ -53,8 +55,8 @@ pub trait Component: Any + Send {
     fn update(&self, updater: &mut ComponentUpdater<'_>);
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
-    fn wait(&mut self) -> BoxFuture<()> {
-        pending().boxed()
+    fn wait(&mut self) -> impl Future<Output = ()> + Send {
+        pending()
     }
 }
 
@@ -86,7 +88,7 @@ impl<C: Any + Component> AnyComponent for C {
     }
 
     fn wait(&mut self) -> BoxFuture<()> {
-        Component::wait(self)
+        Component::wait(self).boxed()
     }
 }
 
