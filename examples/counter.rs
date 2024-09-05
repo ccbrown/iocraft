@@ -17,10 +17,6 @@ struct Counter {
     state: CounterState,
 }
 
-impl ElementType for Counter {
-    type Props = CounterProps;
-}
-
 impl Component for Counter {
     type Props = CounterProps;
     type State = CounterState;
@@ -33,8 +29,8 @@ impl Component for Counter {
 
     fn set_props(&mut self, _props: Self::Props) {}
 
-    fn update(&mut self, updater: ComponentUpdater<'_>) {
-        updater.update_children(vec![flashy! {
+    fn update(&self, updater: ComponentUpdater<'_>) {
+        updater.update_children([flashy! {
             Text(color: Color::DarkBlue, content: format!("counter: {}", self.state.count))
         }]);
     }

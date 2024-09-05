@@ -1,6 +1,4 @@
-use crate::{
-    AnyElement, Component, ComponentProps, ComponentRenderer, ComponentUpdater, ElementType,
-};
+use crate::{AnyElement, Component, ComponentProps, ComponentRenderer, ComponentUpdater};
 use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
 use flashy_macros::with_layout_style_props;
 use taffy::Rect;
@@ -130,10 +128,6 @@ pub struct Box {
     props: BoxProps,
 }
 
-impl ElementType for Box {
-    type Props = BoxProps;
-}
-
 impl Component for Box {
     type Props = BoxProps;
     type State = ();
@@ -146,7 +140,7 @@ impl Component for Box {
         self.props = props;
     }
 
-    fn update(&mut self, mut updater: ComponentUpdater<'_>) {
+    fn update(&self, mut updater: ComponentUpdater<'_>) {
         let mut style: taffy::style::Style = self.props.layout_style().into();
         style.border = Rect::length(if self.props.border_style.is_none() {
             0.0

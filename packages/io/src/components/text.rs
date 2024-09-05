@@ -1,4 +1,4 @@
-use crate::{Component, ComponentProps, ComponentRenderer, ComponentUpdater, ElementType};
+use crate::{Component, ComponentProps, ComponentRenderer, ComponentUpdater};
 use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
 use taffy::Size;
 
@@ -15,10 +15,6 @@ impl ComponentProps for TextProps {
 pub struct Text {
     style: ContentStyle,
     content: String,
-}
-
-impl ElementType for Text {
-    type Props = TextProps;
 }
 
 impl Component for Text {
@@ -39,7 +35,7 @@ impl Component for Text {
         self.content = props.content;
     }
 
-    fn update(&mut self, mut updater: ComponentUpdater<'_>) {
+    fn update(&self, mut updater: ComponentUpdater<'_>) {
         let width = self.content.len() as f32;
         updater.set_measure_func(Box::new(move |_, _, _| Size { width, height: 1.0 }));
     }

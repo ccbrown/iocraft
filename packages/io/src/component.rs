@@ -1,6 +1,6 @@
 use crate::{
+    element::{ElementKey, ElementType},
     render::{ComponentRenderer, ComponentUpdater, LayoutEngine},
-    ElementKey,
 };
 use futures::future::{pending, select, select_all, BoxFuture, FutureExt};
 use std::{
@@ -50,12 +50,16 @@ pub trait Component: Any + Send {
 
     fn new(props: Self::Props) -> Self;
     fn set_props(&mut self, props: Self::Props);
-    fn update(&mut self, updater: ComponentUpdater<'_>);
+    fn update(&self, updater: ComponentUpdater<'_>);
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn wait(&mut self) -> BoxFuture<()> {
         pending().boxed()
     }
+}
+
+impl<C: Component> ElementType for C {
+    type Props = C::Props;
 }
 
 pub(crate) trait AnyComponent: Any + Send {

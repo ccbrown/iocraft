@@ -1,14 +1,25 @@
 use crate::{
     component::{AnyComponentProps, ComponentProps},
     render::Tree,
-    Element, ElementKey,
 };
-use flashy_element::ElementType;
 use std::future::Future;
 
-pub trait ElementExt {
-    fn print(self);
-    fn render(self) -> impl Future<Output = ()>;
+#[derive(Clone, Hash, PartialEq, Eq, Debug, derive_more::Display)]
+pub struct ElementKey(uuid::Uuid);
+
+impl ElementKey {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+}
+
+pub struct Element<T: ElementType> {
+    pub key: ElementKey,
+    pub props: T::Props,
+}
+
+pub trait ElementType {
+    type Props;
 }
 
 #[derive(Clone)]
@@ -34,6 +45,11 @@ where
             props: Box::new(e.props),
         }
     }
+}
+
+pub trait ElementExt {
+    fn print(self);
+    fn render(self) -> impl Future<Output = ()>;
 }
 
 impl<T: Into<AnyElement>> ElementExt for T {
