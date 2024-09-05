@@ -1,6 +1,13 @@
-use crate::render::{ComponentRenderer, ComponentUpdater};
-use futures::future::{pending, BoxFuture, FutureExt};
-use std::any::{Any, TypeId};
+use crate::{
+    render::{ComponentRenderer, ComponentUpdater, LayoutEngine},
+    ElementKey,
+};
+use futures::future::{pending, select, select_all, BoxFuture, FutureExt};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
+pub use taffy::NodeId;
 
 pub trait ComponentProps: Any + Send + Sized {
     type Component: Component<Props = Self>;
@@ -76,5 +83,81 @@ impl<C: Any + Component> AnyComponent for C {
 
     fn wait(&mut self) -> BoxFuture<()> {
         Component::wait(self)
+    }
+}
+
+pub(crate) struct InstantiatedComponent {
+    node_id: NodeId,
+    component: Box<dyn AnyComponent>,
+    children: Components,
+}
+
+impl InstantiatedComponent {
+    pub fn new(node_id: NodeId, component: Box<dyn AnyComponent>) -> Self {
+        Self {
+            node_id,
+            component,
+            children: Components::default(),
+        }
+    }
+
+    pub fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+
+    pub fn component(&self) -> &dyn AnyComponent {
+        &*self.component
+    }
+
+    pub fn set_props(&mut self, props: Box<dyn AnyComponentProps>) {
+        props.update_component(&mut self.component);
+    }
+
+    pub fn update(&mut self, layout_engine: &mut LayoutEngine) {
+        self.component.update(ComponentUpdater::new(
+            self.node_id,
+            &mut self.children,
+            layout_engine,
+        ));
+    }
+
+    pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+        self.component.render(renderer);
+        self.children.render(renderer);
+    }
+
+    pub async fn wait(&mut self) {
+        select(self.component.wait(), self.children.wait().boxed()).await;
+    }
+}
+
+pub(crate) struct Components {
+    pub components: HashMap<ElementKey, InstantiatedComponent>,
+}
+
+impl Components {
+    pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+        for (_, component) in self.components.iter() {
+            renderer.for_child_node(component.node_id, |renderer| {
+                component.render(renderer);
+            });
+        }
+    }
+
+    pub async fn wait(&mut self) {
+        select_all(
+            self.components
+                .iter_mut()
+                .map(|(_, component)| component.component.wait()),
+        )
+        .await;
+    }
+}
+
+impl Default for Components {
+    fn default() -> Self {
+        Self {
+            components: HashMap::new(),
+        }
     }
 }

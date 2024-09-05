@@ -1,83 +1,31 @@
 use crate::{
-    traits::{AnyComponent, AnyComponentProps, ComponentProps},
-    Element, ElementKey,
+    component::{Components, InstantiatedComponent},
+    AnyElement, ElementKey,
 };
-use crossterm::{
-    cursor::{self},
-    queue, terminal, Command, QueueableCommand,
-};
-use flashy_element::ElementType;
-use futures::future::{select, select_all, FutureExt};
+use crossterm::{cursor, queue, terminal, Command, QueueableCommand};
 use std::{
-    any::Any,
     collections::HashMap,
-    future::Future,
     io::{stdout, Write},
     mem,
 };
 pub use taffy::NodeId;
 use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
 
-struct InstantiatedComponent {
-    node_id: NodeId,
-    component: Box<dyn AnyComponent>,
-    children: Components,
-}
-
-impl InstantiatedComponent {
-    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
-        self.component.render(renderer);
-        self.children.render(renderer);
-    }
-
-    async fn wait(&mut self) {
-        select(self.component.wait(), self.children.wait().boxed()).await;
-    }
-}
-
-struct Components {
-    components: HashMap<ElementKey, InstantiatedComponent>,
-}
-
-impl Default for Components {
-    fn default() -> Self {
-        Self {
-            components: HashMap::new(),
-        }
-    }
-}
-
-pub struct ComponentsUpdater<'a> {
+struct ComponentsUpdater<'a> {
     updater: ComponentUpdater<'a>,
     used_components: HashMap<ElementKey, InstantiatedComponent>,
-}
-
-#[derive(Clone)]
-pub struct AnyElement {
-    key: ElementKey,
-    props: Box<dyn AnyComponentProps>,
-}
-
-impl<T> From<Element<T>> for AnyElement
-where
-    T: ElementType + 'static,
-    <T as ElementType>::Props: ComponentProps + Clone,
-{
-    fn from(e: Element<T>) -> Self {
-        Self {
-            key: e.key,
-            props: Box::new(e.props),
-        }
-    }
 }
 
 impl<'a> ComponentsUpdater<'a> {
     pub fn update<E: Into<AnyElement>>(&mut self, e: E) {
         let e: AnyElement = e.into();
+        let (key, props) = e.into_key_and_props();
         let mut component: InstantiatedComponent =
-            match self.updater.children.components.remove(&e.key) {
-                Some(mut component) if component.type_id() == e.props.component_type_id() => {
-                    e.props.update_component(&mut component.component);
+            match self.updater.children.components.remove(&key) {
+                Some(mut component)
+                    if component.component().type_id() == props.component_type_id() =>
+                {
+                    component.set_props(props);
                     component
                 }
                 _ => {
@@ -90,24 +38,16 @@ impl<'a> ComponentsUpdater<'a> {
                         .layout_engine
                         .add_child(self.updater.node_id, new_node_id)
                         .expect("we should be able to add the child");
-                    InstantiatedComponent {
-                        node_id: new_node_id,
-                        component: e.props.into_new_component(),
-                        children: Components::default(),
-                    }
+                    InstantiatedComponent::new(new_node_id, props.into_new_component())
                 }
             };
-        component.component.update(ComponentUpdater {
-            node_id: component.node_id,
-            children: &mut component.children,
-            layout_engine: self.updater.layout_engine,
-        });
+        component.update(self.updater.layout_engine);
         if self
             .used_components
-            .insert(e.key.clone(), component)
+            .insert(key.clone(), component)
             .is_some()
         {
-            panic!("duplicate key for sibling components: {}", e.key);
+            panic!("duplicate key for sibling components: {}", key);
         }
     }
 }
@@ -117,7 +57,7 @@ impl<'a> Drop for ComponentsUpdater<'a> {
         for (_, component) in self.updater.children.components.drain() {
             self.updater
                 .layout_engine
-                .remove(component.node_id)
+                .remove(component.node_id())
                 .expect("we should be able to remove the node");
         }
         mem::swap(
@@ -127,32 +67,25 @@ impl<'a> Drop for ComponentsUpdater<'a> {
     }
 }
 
-impl Components {
-    pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
-        for (_, component) in self.components.iter() {
-            renderer.for_child_node(component.node_id, |renderer| {
-                component.render(renderer);
-            });
-        }
-    }
-
-    pub async fn wait(&mut self) {
-        select_all(
-            self.components
-                .iter_mut()
-                .map(|(_, component)| component.component.wait()),
-        )
-        .await;
-    }
-}
-
 pub struct ComponentUpdater<'a> {
     node_id: NodeId,
     children: &'a mut Components,
-    layout_engine: &'a mut TaffyTree<LayoutEngineNodeContext>,
+    layout_engine: &'a mut LayoutEngine,
 }
 
 impl<'a> ComponentUpdater<'a> {
+    pub(crate) fn new(
+        node_id: NodeId,
+        children: &'a mut Components,
+        layout_engine: &'a mut LayoutEngine,
+    ) -> Self {
+        Self {
+            node_id,
+            children,
+            layout_engine,
+        }
+    }
+
     pub fn set_layout_style(&mut self, layout_style: taffy::style::Style) {
         self.layout_engine
             .set_style(self.node_id, layout_style)
@@ -186,7 +119,7 @@ impl<'a> ComponentUpdater<'a> {
 
 struct RenderContext<'a> {
     position: Point<u16>,
-    layout_engine: &'a TaffyTree<LayoutEngineNodeContext>,
+    layout_engine: &'a LayoutEngine,
 }
 
 pub struct ComponentRenderer<'a> {
@@ -226,7 +159,7 @@ impl<'a> ComponentRenderer<'a> {
 
     /// Prepares to begin rendering a node by moving to the node's position and invoking the given
     /// closure.
-    fn for_child_node<F>(&mut self, node_id: NodeId, f: F)
+    pub(crate) fn for_child_node<F>(&mut self, node_id: NodeId, f: F)
     where
         F: FnOnce(&mut Self),
     {
@@ -252,45 +185,39 @@ impl<'a> ComponentRenderer<'a> {
 type MeasureFunc = Box<dyn Fn(Size<Option<f32>>, Size<AvailableSpace>, &Style) -> Size<f32>>;
 
 #[derive(Default)]
-struct LayoutEngineNodeContext {
+pub(crate) struct LayoutEngineNodeContext {
     measure_func: Option<MeasureFunc>,
 }
 
-pub struct Tree {
-    layout_engine: TaffyTree<LayoutEngineNodeContext>,
+pub(crate) type LayoutEngine = TaffyTree<LayoutEngineNodeContext>;
+
+pub(crate) struct Tree {
+    layout_engine: LayoutEngine,
     root_component: InstantiatedComponent,
 }
 
 impl Tree {
-    fn new(e: AnyElement) -> Self {
-        let root_component = e.props.into_new_component();
+    pub fn new(e: AnyElement) -> Self {
+        let root_component = e.into_key_and_props().1.into_new_component();
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
             .expect("we should be able to add the root");
         Self {
             layout_engine,
-            root_component: InstantiatedComponent {
-                node_id: root_node_id,
-                component: root_component,
-                children: Components::default(),
-            },
+            root_component: InstantiatedComponent::new(root_node_id, root_component),
         }
     }
 
-    fn render(&mut self) {
-        self.root_component.component.update(ComponentUpdater {
-            node_id: self.root_component.node_id,
-            children: &mut self.root_component.children,
-            layout_engine: &mut self.layout_engine,
-        });
+    pub fn render(&mut self) {
+        self.root_component.update(&mut self.layout_engine);
 
         let (width, _) = terminal::size().expect("we should be able to get the terminal size");
         let (x, y) = cursor::position().expect("we should be able to get the cursor position");
 
         self.layout_engine
             .compute_layout_with_measure(
-                self.root_component.node_id,
+                self.root_component.node_id(),
                 Size {
                     width: AvailableSpace::Definite(width as _),
                     height: AvailableSpace::MaxContent,
@@ -305,7 +232,7 @@ impl Tree {
             .expect("we should be able to compute the layout");
 
         let mut renderer = ComponentRenderer {
-            node_id: self.root_component.node_id,
+            node_id: self.root_component.node_id(),
             node_position: Point { x, y },
             context: RenderContext {
                 position: Point { x, y },
@@ -320,7 +247,7 @@ impl Tree {
         );
     }
 
-    async fn render_loop(&mut self) -> ! {
+    pub async fn render_loop(&mut self) -> ! {
         let mut dest = stdout();
         queue!(dest, cursor::SavePosition).expect("we should be able to queue commands");
         loop {
@@ -330,23 +257,5 @@ impl Tree {
             dest.flush().expect("we should be able to flush the output");
             self.root_component.wait().await;
         }
-    }
-}
-
-pub trait ElementExt {
-    fn print(self);
-    fn render(self) -> impl Future<Output = ()>;
-}
-
-impl<T: Into<AnyElement>> ElementExt for T {
-    fn print(self) {
-        let mut tree = Tree::new(self.into());
-        tree.render();
-        println!("");
-    }
-
-    async fn render(self) {
-        let mut tree = Tree::new(self.into());
-        tree.render_loop().await;
     }
 }

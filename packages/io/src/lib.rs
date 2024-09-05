@@ -1,7 +1,8 @@
+mod component;
 mod components;
+mod element;
 mod render;
 mod style;
-mod traits;
 
 extern crate self as flashy_io;
 
