@@ -5,28 +5,28 @@ fn main() {
         Box(flex_direction: FlexDirection::Column, padding: 2) {
             Box {
                 Box(border_style: BorderStyle::Single, margin_right: 2) {
-                    Text(content: "single")
+                    Text(content: "Single")
                 }
                 Box(border_style: BorderStyle::Double, margin_right: 2) {
-                    Text(content: "double")
+                    Text(content: "Double")
                 }
                 Box(border_style: BorderStyle::Round, margin_right: 2) {
-                    Text(content: "round")
+                    Text(content: "Round")
                 }
                 Box(border_style: BorderStyle::Bold) {
-                    Text(content: "bold")
+                    Text(content: "Bold")
                 }
             }
 
             Box(margin_top: 1) {
-                Box(border_style: BorderStyle::SingleDouble, margin_right: 2) {
-                    Text(content: "single-double")
+                Box(border_style: BorderStyle::DoubleLeftRight, margin_right: 2) {
+                    Text(content: "DoubleLeftRight")
                 }
-                Box(border_style: BorderStyle::DoubleSingle, margin_right: 2) {
-                    Text(content: "double-single")
+                Box(border_style: BorderStyle::DoubleTopBottom, margin_right: 2) {
+                    Text(content: "DoubleTopBottom")
                 }
                 Box(border_style: BorderStyle::Classic) {
-                    Text(content: "classic")
+                    Text(content: "Classic")
                 }
             }
         }

@@ -2,7 +2,10 @@ use crate::{
     traits::{AnyComponent, AnyComponentProps, ComponentProps},
     Element, ElementKey,
 };
-use crossterm::{cursor, queue, Command, QueueableCommand};
+use crossterm::{
+    cursor::{self},
+    queue, terminal, Command, QueueableCommand,
+};
 use flashy_element::ElementType;
 use futures::future::select_all;
 use std::{
@@ -13,7 +16,7 @@ use std::{
     mem,
 };
 pub use taffy::NodeId;
-use taffy::{AvailableSpace, Layout, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
 
 struct InstantiatedComponent {
     node_id: NodeId,
@@ -33,7 +36,7 @@ impl Default for Components {
 }
 
 pub struct ComponentsUpdater<'a> {
-    tree_updater: ComponentUpdater<'a>,
+    updater: ComponentUpdater<'a>,
     components: &'a mut Components,
     used_components: HashMap<ElementKey, InstantiatedComponent>,
 }
@@ -67,13 +70,13 @@ impl<'a> ComponentsUpdater<'a> {
             }
             _ => {
                 let new_node_id = self
-                    .tree_updater
+                    .updater
                     .layout_engine
                     .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
                     .expect("we should be able to add the node");
-                self.tree_updater
+                self.updater
                     .layout_engine
-                    .add_child(self.tree_updater.node_id, new_node_id)
+                    .add_child(self.updater.node_id, new_node_id)
                     .expect("we should be able to add the child");
                 InstantiatedComponent {
                     node_id: new_node_id,
@@ -83,7 +86,7 @@ impl<'a> ComponentsUpdater<'a> {
         };
         component.component.update(ComponentUpdater {
             node_id: component.node_id,
-            layout_engine: self.tree_updater.layout_engine,
+            layout_engine: self.updater.layout_engine,
         });
         if self
             .used_components
@@ -98,7 +101,7 @@ impl<'a> ComponentsUpdater<'a> {
 impl<'a> Drop for ComponentsUpdater<'a> {
     fn drop(&mut self) {
         for (_, component) in self.components.components.drain() {
-            self.tree_updater
+            self.updater
                 .layout_engine
                 .remove(component.node_id)
                 .expect("we should be able to remove the node");
@@ -108,19 +111,18 @@ impl<'a> Drop for ComponentsUpdater<'a> {
 }
 
 impl Components {
-    pub fn updater<'a>(&'a mut self, tree_updater: ComponentUpdater<'a>) -> ComponentsUpdater<'a> {
+    pub fn updater<'a>(&'a mut self, updater: ComponentUpdater<'a>) -> ComponentsUpdater<'a> {
         ComponentsUpdater {
-            tree_updater,
+            updater,
             used_components: HashMap::with_capacity(self.components.len()),
             components: self,
         }
     }
 
-    pub fn render(&self, tree_renderer: ComponentRenderer<'_>) {
+    pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
         for (_, component) in self.components.iter() {
-            component.component.render(ComponentRenderer {
-                node_id: component.node_id,
-                layout_engine: tree_renderer.layout_engine,
+            renderer.for_child_node(component.node_id, |renderer| {
+                component.component.render(renderer);
             });
         }
     }
@@ -158,22 +160,68 @@ impl<'a> ComponentUpdater<'a> {
     }
 }
 
-pub struct ComponentRenderer<'a> {
-    node_id: NodeId,
+struct RenderContext<'a> {
+    position: Point<u16>,
     layout_engine: &'a TaffyTree<LayoutEngineNodeContext>,
 }
 
+pub struct ComponentRenderer<'a> {
+    node_id: NodeId,
+    node_position: Point<u16>,
+    context: RenderContext<'a>,
+}
+
 impl<'a> ComponentRenderer<'a> {
-    pub fn layout(&self) -> &Layout {
-        self.layout_engine
+    /// Gets the calculated layout of the current node.
+    pub fn layout(&self) -> Layout {
+        self.context
+            .layout_engine
             .layout(self.node_id)
             .expect("we should be able to get the layout")
+            .clone()
     }
 
+    /// Moves the cursor to the given position relative to the current node's position.
+    pub fn move_cursor(&mut self, x: u16, y: u16) {
+        self.context.position = Point {
+            x: self.node_position.x + x,
+            y: self.node_position.y + y,
+        };
+        self.queue(cursor::MoveTo(
+            self.context.position.x,
+            self.context.position.y,
+        ));
+    }
+
+    /// Queues a command to be executed.
     pub fn queue(&self, command: impl Command) {
         stdout()
             .queue(command)
             .expect("we should be able to queue the command");
+    }
+
+    /// Prepares to begin rendering a node by moving to the node's position and invoking the given
+    /// closure.
+    fn for_child_node<F>(&mut self, node_id: NodeId, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let old_node_id = self.node_id;
+        let old_node_position = self.node_position;
+        self.node_id = node_id;
+        let layout = self.layout();
+        self.node_position = Point {
+            x: self.node_position.x + layout.location.x as u16,
+            y: self.node_position.y + layout.location.y as u16,
+        };
+        self.context.position = self.node_position;
+        self.queue(cursor::MoveTo(
+            self.context.position.x,
+            self.context.position.y,
+        ));
+        f(self);
+        self.node_id = old_node_id;
+        self.node_position = old_node_position;
     }
 }
 
@@ -210,10 +258,16 @@ impl Tree {
             layout_engine: &mut self.layout_engine,
         });
 
+        let (width, _) = terminal::size().expect("we should be able to get the terminal size");
+        let (x, y) = cursor::position().expect("we should be able to get the cursor position");
+
         self.layout_engine
             .compute_layout_with_measure(
                 self.root_node_id,
-                Size::max_content(),
+                Size {
+                    width: AvailableSpace::Definite(width as _),
+                    height: AvailableSpace::MaxContent,
+                },
                 |known_dimensions, available_space, _node_id, node_context, style| {
                     match node_context.and_then(|cx| cx.measure_func.as_ref()) {
                         Some(f) => f(known_dimensions, available_space, style),
@@ -223,16 +277,25 @@ impl Tree {
             )
             .expect("we should be able to compute the layout");
 
-        self.root_component.render(ComponentRenderer {
+        let mut renderer = ComponentRenderer {
             node_id: self.root_node_id,
-            layout_engine: &self.layout_engine,
-        });
+            node_position: Point { x, y },
+            context: RenderContext {
+                position: Point { x, y },
+                layout_engine: &self.layout_engine,
+            },
+        };
+        self.root_component.render(&mut renderer);
+        let root_layout = renderer.layout();
+        renderer.move_cursor(
+            root_layout.size.width as _,
+            root_layout.size.height as u16 - 1,
+        );
     }
 
     async fn render_loop(&mut self) -> ! {
         let mut dest = stdout();
-        queue!(dest, cursor::SavePosition, cursor::Hide)
-            .expect("we should be able to queue commands");
+        queue!(dest, cursor::SavePosition).expect("we should be able to queue commands");
         loop {
             dest.queue(cursor::RestorePosition)
                 .expect("we should be able to queue commands");

@@ -44,7 +44,7 @@ pub trait Component: Any + Send {
     fn new(props: Self::Props) -> Self;
     fn set_props(&mut self, props: Self::Props);
     fn update(&mut self, updater: ComponentUpdater<'_>);
-    fn render(&self, renderer: ComponentRenderer<'_>);
+    fn render(&self, renderer: &mut ComponentRenderer<'_>);
 
     fn wait(&mut self) -> BoxFuture<()> {
         pending().boxed()
@@ -54,7 +54,7 @@ pub trait Component: Any + Send {
 pub(crate) trait AnyComponent: Any + Send {
     fn set_props(&mut self, props: Box<dyn Any>);
     fn update(&mut self, updater: ComponentUpdater<'_>);
-    fn render(&self, renderer: ComponentRenderer<'_>);
+    fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn wait(&mut self) -> BoxFuture<()>;
 }
 
@@ -70,7 +70,7 @@ impl<C: Any + Component> AnyComponent for C {
         Component::update(self, updater);
     }
 
-    fn render(&self, renderer: ComponentRenderer<'_>) {
+    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
         Component::render(self, renderer);
     }
 

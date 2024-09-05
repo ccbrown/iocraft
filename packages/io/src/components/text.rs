@@ -44,7 +44,7 @@ impl Component for Text {
         updater.set_measure_func(Box::new(move |_, _, _| Size { width, height: 1.0 }));
     }
 
-    fn render(&self, renderer: ComponentRenderer<'_>) {
+    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
         renderer.queue(PrintStyledContent(StyledContent::new(
             self.style,
             &self.content,
