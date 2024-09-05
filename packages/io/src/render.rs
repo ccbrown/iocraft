@@ -7,7 +7,7 @@ use crossterm::{
     queue, terminal, Command, QueueableCommand,
 };
 use flashy_element::ElementType;
-use futures::future::select_all;
+use futures::future::{select, select_all, FutureExt};
 use std::{
     any::Any,
     collections::HashMap,
@@ -29,9 +29,13 @@ impl InstantiatedComponent {
         self.component.render(renderer);
         self.children.render(renderer);
     }
+
+    async fn wait(&mut self) {
+        select(self.component.wait(), self.children.wait().boxed()).await;
+    }
 }
 
-pub struct Components {
+struct Components {
     components: HashMap<ElementKey, InstantiatedComponent>,
 }
 
@@ -324,7 +328,7 @@ impl Tree {
                 .expect("we should be able to queue commands");
             self.render();
             dest.flush().expect("we should be able to flush the output");
-            self.root_component.component.wait().await;
+            self.root_component.wait().await;
         }
     }
 }
