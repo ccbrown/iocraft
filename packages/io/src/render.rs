@@ -90,7 +90,6 @@ impl<'a> ComponentUpdater<'a> {
 }
 
 struct RenderContext<'a> {
-    position: Point<u16>,
     layout_engine: &'a LayoutEngine,
 }
 
@@ -112,13 +111,9 @@ impl<'a> ComponentRenderer<'a> {
 
     /// Moves the cursor to the given position relative to the current node's position.
     pub fn move_cursor(&mut self, x: u16, y: u16) {
-        self.context.position = Point {
-            x: self.node_position.x + x,
-            y: self.node_position.y + y,
-        };
         self.queue(cursor::MoveTo(
-            self.context.position.x,
-            self.context.position.y,
+            self.node_position.x + x,
+            self.node_position.y + y,
         ));
     }
 
@@ -143,11 +138,7 @@ impl<'a> ComponentRenderer<'a> {
             x: self.node_position.x + layout.location.x as u16,
             y: self.node_position.y + layout.location.y as u16,
         };
-        self.context.position = self.node_position;
-        self.queue(cursor::MoveTo(
-            self.context.position.x,
-            self.context.position.y,
-        ));
+        self.queue(cursor::MoveTo(self.node_position.x, self.node_position.y));
         f(self);
         self.node_id = old_node_id;
         self.node_position = old_node_position;
@@ -207,7 +198,6 @@ impl Tree {
             node_id: self.root_component.node_id(),
             node_position: Point { x, y },
             context: RenderContext {
-                position: Point { x, y },
                 layout_engine: &self.layout_engine,
             },
         };
