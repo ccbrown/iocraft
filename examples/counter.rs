@@ -1,5 +1,5 @@
 use flashy_io::prelude::*;
-use futures::future::{select, BoxFuture, FutureExt};
+use futures::future::{BoxFuture, FutureExt};
 use std::time::Duration;
 
 #[derive(Clone, Default)]
@@ -14,7 +14,6 @@ struct CounterState {
 }
 
 struct Counter {
-    children: Components,
     state: CounterState,
 }
 
@@ -28,7 +27,6 @@ impl Component for Counter {
 
     fn new(_props: Self::Props) -> Self {
         Self {
-            children: Components::default(),
             state: Self::State { count: 0 },
         }
     }
@@ -36,23 +34,14 @@ impl Component for Counter {
     fn set_props(&mut self, _props: Self::Props) {}
 
     fn update(&mut self, updater: ComponentUpdater<'_>) {
-        let mut updater = self.children.updater(updater);
-        updater.update(flashy! {
+        updater.update_children(vec![flashy! {
             Text(color: Color::DarkBlue, content: format!("counter: {}", self.state.count))
-        });
-    }
-
-    fn render(&self, renderer: ComponentRenderer<'_>) {
-        self.children.render(renderer)
+        }]);
     }
 
     fn wait(&mut self) -> BoxFuture<()> {
         async {
-            select(
-                smol::Timer::after(Duration::from_millis(100)),
-                self.children.wait().boxed(),
-            )
-            .await;
+            smol::Timer::after(Duration::from_millis(100)).await;
             self.state.count = self.state.count + 1;
         }
         .boxed()

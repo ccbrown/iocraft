@@ -44,7 +44,7 @@ pub trait Component: Any + Send {
     fn new(props: Self::Props) -> Self;
     fn set_props(&mut self, props: Self::Props);
     fn update(&mut self, updater: ComponentUpdater<'_>);
-    fn render(&self, renderer: &mut ComponentRenderer<'_>);
+    fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn wait(&mut self) -> BoxFuture<()> {
         pending().boxed()

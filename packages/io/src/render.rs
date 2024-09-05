@@ -21,6 +21,14 @@ use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
 struct InstantiatedComponent {
     node_id: NodeId,
     component: Box<dyn AnyComponent>,
+    children: Components,
+}
+
+impl InstantiatedComponent {
+    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+        self.component.render(renderer);
+        self.children.render(renderer);
+    }
 }
 
 pub struct Components {
@@ -37,7 +45,6 @@ impl Default for Components {
 
 pub struct ComponentsUpdater<'a> {
     updater: ComponentUpdater<'a>,
-    components: &'a mut Components,
     used_components: HashMap<ElementKey, InstantiatedComponent>,
 }
 
@@ -63,29 +70,32 @@ where
 impl<'a> ComponentsUpdater<'a> {
     pub fn update<E: Into<AnyElement>>(&mut self, e: E) {
         let e: AnyElement = e.into();
-        let mut component: InstantiatedComponent = match self.components.components.remove(&e.key) {
-            Some(mut component) if component.type_id() == e.props.component_type_id() => {
-                e.props.update_component(&mut component.component);
-                component
-            }
-            _ => {
-                let new_node_id = self
-                    .updater
-                    .layout_engine
-                    .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
-                    .expect("we should be able to add the node");
-                self.updater
-                    .layout_engine
-                    .add_child(self.updater.node_id, new_node_id)
-                    .expect("we should be able to add the child");
-                InstantiatedComponent {
-                    node_id: new_node_id,
-                    component: e.props.into_new_component(),
+        let mut component: InstantiatedComponent =
+            match self.updater.children.components.remove(&e.key) {
+                Some(mut component) if component.type_id() == e.props.component_type_id() => {
+                    e.props.update_component(&mut component.component);
+                    component
                 }
-            }
-        };
+                _ => {
+                    let new_node_id = self
+                        .updater
+                        .layout_engine
+                        .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
+                        .expect("we should be able to add the node");
+                    self.updater
+                        .layout_engine
+                        .add_child(self.updater.node_id, new_node_id)
+                        .expect("we should be able to add the child");
+                    InstantiatedComponent {
+                        node_id: new_node_id,
+                        component: e.props.into_new_component(),
+                        children: Components::default(),
+                    }
+                }
+            };
         component.component.update(ComponentUpdater {
             node_id: component.node_id,
+            children: &mut component.children,
             layout_engine: self.updater.layout_engine,
         });
         if self
@@ -100,29 +110,24 @@ impl<'a> ComponentsUpdater<'a> {
 
 impl<'a> Drop for ComponentsUpdater<'a> {
     fn drop(&mut self) {
-        for (_, component) in self.components.components.drain() {
+        for (_, component) in self.updater.children.components.drain() {
             self.updater
                 .layout_engine
                 .remove(component.node_id)
                 .expect("we should be able to remove the node");
         }
-        mem::swap(&mut self.components.components, &mut self.used_components);
+        mem::swap(
+            &mut self.updater.children.components,
+            &mut self.used_components,
+        );
     }
 }
 
 impl Components {
-    pub fn updater<'a>(&'a mut self, updater: ComponentUpdater<'a>) -> ComponentsUpdater<'a> {
-        ComponentsUpdater {
-            updater,
-            used_components: HashMap::with_capacity(self.components.len()),
-            components: self,
-        }
-    }
-
     pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
         for (_, component) in self.components.iter() {
             renderer.for_child_node(component.node_id, |renderer| {
-                component.component.render(renderer);
+                component.render(renderer);
             });
         }
     }
@@ -139,6 +144,7 @@ impl Components {
 
 pub struct ComponentUpdater<'a> {
     node_id: NodeId,
+    children: &'a mut Components,
     layout_engine: &'a mut TaffyTree<LayoutEngineNodeContext>,
 }
 
@@ -157,6 +163,20 @@ impl<'a> ComponentUpdater<'a> {
         self.layout_engine
             .mark_dirty(self.node_id)
             .expect("we should be able to mark the node as dirty");
+    }
+
+    pub fn update_children<I, T>(self, children: I)
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<AnyElement>,
+    {
+        let mut updater = ComponentsUpdater {
+            used_components: HashMap::with_capacity(self.children.components.len()),
+            updater: self,
+        };
+        for child in children {
+            updater.update(child);
+        }
     }
 }
 
@@ -234,8 +254,7 @@ struct LayoutEngineNodeContext {
 
 pub struct Tree {
     layout_engine: TaffyTree<LayoutEngineNodeContext>,
-    root_component: Box<dyn AnyComponent>,
-    root_node_id: NodeId,
+    root_component: InstantiatedComponent,
 }
 
 impl Tree {
@@ -247,14 +266,18 @@ impl Tree {
             .expect("we should be able to add the root");
         Self {
             layout_engine,
-            root_component,
-            root_node_id,
+            root_component: InstantiatedComponent {
+                node_id: root_node_id,
+                component: root_component,
+                children: Components::default(),
+            },
         }
     }
 
     fn render(&mut self) {
-        self.root_component.update(ComponentUpdater {
-            node_id: self.root_node_id,
+        self.root_component.component.update(ComponentUpdater {
+            node_id: self.root_component.node_id,
+            children: &mut self.root_component.children,
             layout_engine: &mut self.layout_engine,
         });
 
@@ -263,7 +286,7 @@ impl Tree {
 
         self.layout_engine
             .compute_layout_with_measure(
-                self.root_node_id,
+                self.root_component.node_id,
                 Size {
                     width: AvailableSpace::Definite(width as _),
                     height: AvailableSpace::MaxContent,
@@ -278,7 +301,7 @@ impl Tree {
             .expect("we should be able to compute the layout");
 
         let mut renderer = ComponentRenderer {
-            node_id: self.root_node_id,
+            node_id: self.root_component.node_id,
             node_position: Point { x, y },
             context: RenderContext {
                 position: Point { x, y },
@@ -301,7 +324,7 @@ impl Tree {
                 .expect("we should be able to queue commands");
             self.render();
             dest.flush().expect("we should be able to flush the output");
-            self.root_component.wait().await;
+            self.root_component.component.wait().await;
         }
     }
 }

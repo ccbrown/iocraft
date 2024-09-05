@@ -1,6 +1,5 @@
 use crate::{
-    AnyElement, Component, ComponentProps, ComponentRenderer, ComponentUpdater, Components,
-    ElementType,
+    AnyElement, Component, ComponentProps, ComponentRenderer, ComponentUpdater, ElementType,
 };
 use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
 use flashy_macros::with_layout_style_props;
@@ -128,7 +127,6 @@ impl ComponentProps for BoxProps {
 }
 
 pub struct Box {
-    children: Components,
     props: BoxProps,
 }
 
@@ -141,10 +139,7 @@ impl Component for Box {
     type State = ();
 
     fn new(props: Self::Props) -> Self {
-        Self {
-            children: Components::default(),
-            props,
-        }
+        Self { props }
     }
 
     fn set_props(&mut self, props: Self::Props) {
@@ -159,10 +154,7 @@ impl Component for Box {
             1.0
         });
         updater.set_layout_style(style);
-        let mut updater = self.children.updater(updater);
-        for e in self.props.children.iter().cloned() {
-            updater.update(e);
-        }
+        updater.update_children(self.props.children.iter().cloned());
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
@@ -218,7 +210,5 @@ impl Component for Box {
                 &border.bottom_right,
             )));
         }
-
-        self.children.render(renderer);
     }
 }
