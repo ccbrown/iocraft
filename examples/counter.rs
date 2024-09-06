@@ -1,29 +1,30 @@
 use flashy_io::prelude::*;
 use std::time::Duration;
 
-#[derive(Clone, Default)]
-struct CounterProps;
-
-struct Counter {
-    count: i32,
+#[state]
+struct CounterState {
+    count: Signal<i32>,
 }
 
-impl Component for Counter {
-    type Props = CounterProps;
+#[hooks]
+struct CounterHooks {
+    run_loop: UseFuture,
+}
 
-    fn new(_props: &Self::Props) -> Self {
-        Self { count: 0 }
-    }
+#[component]
+fn Counter(state: &CounterState, hooks: &mut CounterHooks) -> impl Into<AnyElement> {
+    hooks.run_loop.use_future({
+        let mut count = state.count.clone();
+        || async move {
+            loop {
+                smol::Timer::after(Duration::from_millis(100)).await;
+                count += 1;
+            }
+        }
+    });
 
-    fn update(&mut self, _props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
-        updater.update_children([flashy! {
-            Text(color: Color::DarkBlue, content: format!("counter: {}", self.count))
-        }]);
-    }
-
-    async fn wait(&mut self) {
-        smol::Timer::after(Duration::from_millis(100)).await;
-        self.count = self.count + 1;
+    flashy! {
+        Text(color: Color::DarkBlue, content: format!("counter: {}", state.count))
     }
 }
 

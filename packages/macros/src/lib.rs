@@ -5,8 +5,9 @@ use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream, Parser},
     parse_macro_input,
+    spanned::Spanned,
     token::{Brace, Paren},
-    DeriveInput, Expr, Ident, Result, Token, Type,
+    DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, Result, Token, Type,
 };
 
 struct ParsedElement {
@@ -92,6 +93,252 @@ impl ToTokens for ParsedElement {
 pub fn flashy(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
     quote!(#element).into()
+}
+
+struct ParsedState {
+    state: ItemStruct,
+}
+
+impl Parse for ParsedState {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let state: ItemStruct = input.parse()?;
+        Ok(Self { state })
+    }
+}
+
+impl ToTokens for ParsedState {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let state = &self.state;
+        let name = &state.ident;
+        let field_assignments = state.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! { #field_name: owner.new_signal_with_default() }
+        });
+
+        tokens.extend(quote! {
+            #state
+
+            impl #name {
+                fn new(owner: &mut ::flashy_io::SignalOwner) -> Self {
+                    Self {
+                        #(#field_assignments,)*
+                    }
+                }
+            }
+        });
+    }
+}
+
+#[proc_macro_attribute]
+pub fn state(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let state = parse_macro_input!(item as ParsedState);
+    quote!(#state).into()
+}
+
+struct ParsedHooks {
+    hooks: ItemStruct,
+}
+
+impl Parse for ParsedHooks {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let hooks: ItemStruct = input.parse()?;
+        Ok(Self { hooks })
+    }
+}
+
+impl ToTokens for ParsedHooks {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let hooks = &self.hooks;
+        let name = &hooks.ident;
+
+        let status_vars = hooks.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! { let #field_name = std::pin::Pin::new(&mut self.#field_name).poll_change(cx); }
+        });
+        let returns = hooks.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! {
+                if #field_name.is_ready() {
+                    return std::task::Poll::Ready(());
+                }
+            }
+        });
+
+        tokens.extend(quote! {
+            #[derive(Default)]
+            #hooks
+
+            impl #name {
+                fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+                    #(#status_vars)*
+                    #(#returns)*
+                    std::task::Poll::Pending
+                }
+            }
+        });
+    }
+}
+
+#[proc_macro_attribute]
+pub fn hooks(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let hooks = parse_macro_input!(item as ParsedHooks);
+    quote!(#hooks).into()
+}
+
+enum ComponentImplementationArg {
+    State,
+    Hooks,
+}
+
+struct ParsedComponent {
+    f: ItemFn,
+    state_type: Option<Box<Type>>,
+    hooks_type: Option<Box<Type>>,
+    args: Vec<ComponentImplementationArg>,
+}
+
+impl Parse for ParsedComponent {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let f: ItemFn = input.parse()?;
+
+        let mut state_type = None;
+        let mut hooks_type = None;
+        let mut args = Vec::new();
+
+        for arg in &f.sig.inputs {
+            match arg {
+                FnArg::Typed(arg) => {
+                    let name = arg.pat.to_token_stream().to_string();
+                    match name.as_str() {
+                        "state" => {
+                            if state_type.is_some() {
+                                return Err(Error::new(arg.span(), "duplicate `state` argument"));
+                            }
+                            match &*arg.ty {
+                                Type::Reference(r) => {
+                                    state_type = Some(r.elem.clone());
+                                    args.push(ComponentImplementationArg::State);
+                                }
+                                _ => return Err(Error::new(arg.ty.span(), "invalid `state` type")),
+                            }
+                        }
+                        "hooks" => {
+                            if hooks_type.is_some() {
+                                return Err(Error::new(arg.span(), "duplicate `hooks` argument"));
+                            }
+                            match &*arg.ty {
+                                Type::Reference(r) => {
+                                    hooks_type = Some(r.elem.clone());
+                                    args.push(ComponentImplementationArg::Hooks);
+                                }
+                                _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
+                            }
+                        }
+                        _ => return Err(Error::new(arg.span(), "invalid argument")),
+                    }
+                }
+                _ => return Err(Error::new(arg.span(), "invalid argument")),
+            }
+        }
+
+        Ok(Self {
+            f,
+            state_type,
+            hooks_type,
+            args,
+        })
+    }
+}
+
+impl ToTokens for ParsedComponent {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let vis = &self.f.vis;
+        let name = &self.f.sig.ident;
+        let args = &self.f.sig.inputs;
+        let block = &self.f.block;
+        let output = &self.f.sig.output;
+
+        let state_decl = self.state_type.as_ref().map(|ty| quote!(state: #ty,));
+        let state_init = self
+            .state_type
+            .as_ref()
+            .map(|ty| quote!(state: #ty::new(&mut signal_owner),));
+
+        let hooks_decl = self.hooks_type.as_ref().map(|ty| quote!(hooks: #ty,));
+        let hooks_init = self
+            .hooks_type
+            .as_ref()
+            .map(|ty| quote!(hooks: #ty::default(),));
+        let hooks_status_check = self.hooks_type.as_ref().map(|_| {
+            quote! {
+                let hooks_status = std::pin::Pin::new(&mut self.hooks).poll_change(cx);
+            }
+        });
+        let hooks_status_return = self.hooks_type.as_ref().map(|_| {
+            quote! {
+                if hooks_status.is_ready() {
+                    return std::task::Poll::Ready(());
+                }
+            }
+        });
+
+        let impl_args = self
+            .args
+            .iter()
+            .map(|arg| match arg {
+                ComponentImplementationArg::State => quote!(&self.state),
+                ComponentImplementationArg::Hooks => quote!(&mut self.hooks),
+            })
+            .collect::<Vec<_>>();
+
+        tokens.extend(quote! {
+            #vis struct #name {
+                signal_owner: ::flashy_io::SignalOwner,
+                #state_decl
+                #hooks_decl
+            }
+
+            impl #name {
+                fn implementation(#args) #output #block
+            }
+
+            impl ::flashy_io::Component for #name {
+                type Props = ::flashy_io::NoProps;
+
+                fn new(_props: &Self::Props) -> Self {
+                    let mut signal_owner = ::flashy_io::SignalOwner::new();
+                    Self {
+                        #state_init
+                        #hooks_init
+                        signal_owner,
+                    }
+                }
+
+                fn update(&mut self, _props: &Self::Props, updater: &mut ::flashy_io::ComponentUpdater<'_>) {
+                    let e = Self::implementation(#(#impl_args),*);
+                    updater.update_children([e]);
+                }
+
+                fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+                    let signals_status = std::pin::Pin::new(&mut self.signal_owner).poll_change(cx);
+                    #hooks_status_check
+
+                    if signals_status.is_ready() {
+                        return std::task::Poll::Ready(());
+                    }
+                    #hooks_status_return
+
+                    std::task::Poll::Pending
+                }
+            }
+        });
+    }
+}
+
+#[proc_macro_attribute]
+pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let component = parse_macro_input!(item as ParsedComponent);
+    quote!(#component).into()
 }
 
 const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[

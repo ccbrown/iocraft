@@ -2,13 +2,17 @@ use crate::{
     element::{ElementKey, ElementType},
     render::{ComponentRenderer, ComponentUpdater, LayoutEngine},
 };
-use futures::future::{pending, select, select_all, BoxFuture, FutureExt};
+use futures::future::poll_fn;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
 };
 pub use taffy::NodeId;
+
+#[derive(Clone, Default)]
+pub struct NoProps;
 
 pub(crate) struct ComponentProps<C: Component>(pub(crate) C::Props);
 
@@ -54,15 +58,15 @@ impl Clone for Box<dyn AnyComponentProps> {
     }
 }
 
-pub trait Component: Any + Send {
+pub trait Component: Any + Unpin + Send {
     type Props;
 
     fn new(props: &Self::Props) -> Self;
     fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>);
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
-    fn wait(&mut self) -> impl Future<Output = ()> + Send {
-        pending()
+    fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+        Poll::Pending
     }
 }
 
@@ -70,10 +74,10 @@ impl<C: Component> ElementType for C {
     type Props = C::Props;
 }
 
-pub(crate) trait AnyComponent: Any + Send {
+pub(crate) trait AnyComponent: Any + Unpin + Send {
     fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
-    fn wait(&mut self) -> BoxFuture<()>;
+    fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
 impl<C: Any + Component> AnyComponent for C {
@@ -89,8 +93,8 @@ impl<C: Any + Component> AnyComponent for C {
         Component::render(self, renderer);
     }
 
-    fn wait(&mut self) -> BoxFuture<()> {
-        Component::wait(self).boxed()
+    fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        Component::poll_change(self, cx)
     }
 }
 
@@ -135,7 +139,18 @@ impl InstantiatedComponent {
     }
 
     pub async fn wait(&mut self) {
-        select(self.component.wait(), self.children.wait().boxed()).await;
+        let mut self_mut = Pin::new(self);
+        poll_fn(|cx| self_mut.as_mut().poll_change(cx)).await;
+    }
+
+    fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let component_status = Pin::new(&mut *self.component).poll_change(cx);
+        let children_status = Pin::new(&mut self.children).poll_change(cx);
+        if component_status.is_ready() || children_status.is_ready() {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
     }
 }
 
@@ -152,13 +167,18 @@ impl Components {
         }
     }
 
-    pub async fn wait(&mut self) {
-        select_all(
-            self.components
-                .iter_mut()
-                .map(|(_, component)| component.component.wait()),
-        )
-        .await;
+    pub fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let mut is_ready = false;
+        for component in self.components.values_mut() {
+            if Pin::new(&mut *component).poll_change(cx).is_ready() {
+                is_ready = true;
+            }
+        }
+        if is_ready {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
     }
 }
 
