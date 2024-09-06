@@ -24,7 +24,7 @@ fn Counter(state: &CounterState, hooks: &mut CounterHooks) -> impl Into<AnyEleme
     });
 
     element! {
-        Text(color: Color::DarkBlue, content: format!("counter: {}", state.count))
+        Text(color: Color::Blue, content: format!("counter: {}", state.count))
     }
 }
 

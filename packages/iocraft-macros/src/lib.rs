@@ -7,7 +7,7 @@ use syn::{
     parse_macro_input,
     spanned::Spanned,
     token::{Brace, Paren},
-    DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, Result, Token, Type,
+    DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, Lit, Result, Token, Type,
 };
 
 struct ParsedElement {
@@ -66,7 +66,20 @@ impl ToTokens for ParsedElement {
         let mut props = self
             .props
             .iter()
-            .map(|(ident, expr)| quote!(#ident: (#expr).into()))
+            .map(|(ident, expr)| match expr {
+                Expr::Lit(lit) => match &lit.lit {
+                    Lit::Int(lit) if lit.suffix() == "pct" => {
+                        let value = lit.base10_parse::<f32>().unwrap();
+                        quote!(#ident: ::iocraft::Percent(#value).into())
+                    }
+                    Lit::Float(lit) if lit.suffix() == "pct" => {
+                        let value = lit.base10_parse::<f32>().unwrap();
+                        quote!(#ident: ::iocraft::Percent(#value).into())
+                    }
+                    _ => quote!(#ident: (#expr).into()),
+                },
+                _ => quote!(#ident: (#expr).into()),
+            })
             .collect::<Vec<_>>();
 
         if !self.children.is_empty() {
@@ -343,20 +356,30 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
     ("display", "::iocraft::Display"),
-    ("padding", "Option<u32>"),
-    ("padding_top", "Option<u32>"),
-    ("padding_right", "Option<u32>"),
-    ("padding_bottom", "Option<u32>"),
-    ("padding_left", "Option<u32>"),
-    ("margin", "Option<u32>"),
-    ("margin_top", "Option<u32>"),
-    ("margin_right", "Option<u32>"),
-    ("margin_bottom", "Option<u32>"),
-    ("margin_left", "Option<u32>"),
+    ("width", "::iocraft::Size"),
+    ("height", "::iocraft::Size"),
+    ("min_width", "::iocraft::Size"),
+    ("min_height", "::iocraft::Size"),
+    ("max_width", "::iocraft::Size"),
+    ("max_height", "::iocraft::Size"),
+    ("padding", "::iocraft::Padding"),
+    ("padding_top", "::iocraft::Padding"),
+    ("padding_right", "::iocraft::Padding"),
+    ("padding_bottom", "::iocraft::Padding"),
+    ("padding_left", "::iocraft::Padding"),
+    ("margin", "::iocraft::Margin"),
+    ("margin_top", "::iocraft::Margin"),
+    ("margin_right", "::iocraft::Margin"),
+    ("margin_bottom", "::iocraft::Margin"),
+    ("margin_left", "::iocraft::Margin"),
     ("overflow", "Option<::iocraft::Overflow>"),
     ("overflow_x", "Option<::iocraft::Overflow>"),
     ("overflow_y", "Option<::iocraft::Overflow>"),
     ("flex_direction", "::iocraft::FlexDirection"),
+    ("flex_wrap", "::iocraft::FlexWrap"),
+    ("flex_basis", "::iocraft::FlexBasis"),
+    ("flex_grow", "f32"),
+    ("flex_shrink", "Option<f32>"),
 ];
 
 #[proc_macro_attribute]

@@ -1,9 +1,139 @@
 use iocraft_macros::with_layout_style_props;
-use taffy::{style, Point, Rect, Style};
+use taffy::{
+    geometry,
+    style::{Dimension, LengthPercentage, LengthPercentageAuto},
+    Point, Rect, Style,
+};
 
 // Re-export basic enum types.
 pub use crossterm::style::Color;
-pub use taffy::style::{Display, FlexDirection, Overflow};
+pub use taffy::style::{Display, FlexDirection, FlexWrap, Overflow};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Percent(pub f32);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Padding {
+    #[default]
+    Unset,
+    Length(u32),
+    Percent(f32),
+}
+
+impl Padding {
+    pub fn or(self, other: Self) -> Self {
+        match self {
+            Padding::Unset => other,
+            _ => self,
+        }
+    }
+}
+
+impl From<Padding> for LengthPercentage {
+    fn from(p: Padding) -> Self {
+        match p {
+            Padding::Unset => LengthPercentage::Length(0.0),
+            Padding::Length(l) => LengthPercentage::Length(l as _),
+            Padding::Percent(p) => LengthPercentage::Percent(p / 100.0),
+        }
+    }
+}
+
+macro_rules! impl_from_length {
+    ($name:ident) => {
+        impl From<u32> for $name {
+            fn from(l: u32) -> Self {
+                $name::Length(l)
+            }
+        }
+    };
+}
+
+macro_rules! impl_from_percent {
+    ($name:ident) => {
+        impl From<Percent> for $name {
+            fn from(p: Percent) -> Self {
+                $name::Percent(p.0)
+            }
+        }
+    };
+}
+
+impl_from_length!(Padding);
+impl_from_percent!(Padding);
+
+macro_rules! new_size_type {
+    ($name:ident, $def:expr) => {
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub enum $name {
+            Unset,
+            Auto,
+            Length(u32),
+            Percent(f32),
+        }
+
+        impl $name {
+            pub fn or(self, other: Self) -> Self {
+                match self {
+                    $name::Unset => other,
+                    _ => self,
+                }
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                $def
+            }
+        }
+
+        impl From<$name> for LengthPercentageAuto {
+            fn from(p: $name) -> Self {
+                match p {
+                    $name::Unset => LengthPercentageAuto::Auto,
+                    $name::Auto => LengthPercentageAuto::Auto,
+                    $name::Length(l) => LengthPercentageAuto::Length(l as _),
+                    $name::Percent(p) => LengthPercentageAuto::Percent(p / 100.0),
+                }
+            }
+        }
+
+        impl From<$name> for Dimension {
+            fn from(p: $name) -> Self {
+                match p {
+                    $name::Unset => Dimension::Auto,
+                    $name::Auto => Dimension::Auto,
+                    $name::Length(l) => Dimension::Length(l as _),
+                    $name::Percent(p) => Dimension::Percent(p / 100.0),
+                }
+            }
+        }
+
+        impl_from_length!($name);
+        impl_from_percent!($name);
+    };
+}
+
+new_size_type!(Margin, Self::Length(0));
+new_size_type!(Size, Self::Auto);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum FlexBasis {
+    #[default]
+    Auto,
+    Length(u32),
+    Percent(f32),
+}
+
+impl From<FlexBasis> for Dimension {
+    fn from(b: FlexBasis) -> Self {
+        match b {
+            FlexBasis::Auto => Dimension::Auto,
+            FlexBasis::Length(l) => Dimension::Length(l as _),
+            FlexBasis::Percent(p) => Dimension::Percent(p / 100.0),
+        }
+    }
+}
 
 #[with_layout_style_props]
 pub struct LayoutStyle {
@@ -14,37 +144,39 @@ impl From<LayoutStyle> for Style {
     fn from(s: LayoutStyle) -> Self {
         Self {
             display: s.display,
+            size: geometry::Size {
+                width: s.width.into(),
+                height: s.height.into(),
+            },
+            min_size: geometry::Size {
+                width: s.min_width.into(),
+                height: s.min_height.into(),
+            },
+            max_size: geometry::Size {
+                width: s.max_width.into(),
+                height: s.max_height.into(),
+            },
             padding: Rect {
-                left: style::LengthPercentage::Length(
-                    s.padding_left.or(s.padding).unwrap_or(0) as _
-                ),
-                right: style::LengthPercentage::Length(
-                    s.padding_right.or(s.padding).unwrap_or(0) as _
-                ),
-                top: style::LengthPercentage::Length(s.padding_top.or(s.padding).unwrap_or(0) as _),
-                bottom: style::LengthPercentage::Length(
-                    s.padding_bottom.or(s.padding).unwrap_or(0) as _,
-                ),
+                left: s.padding_left.or(s.padding).into(),
+                right: s.padding_right.or(s.padding).into(),
+                top: s.padding_top.or(s.padding).into(),
+                bottom: s.padding_bottom.or(s.padding).into(),
             },
             margin: Rect {
-                left: style::LengthPercentageAuto::Length(
-                    s.margin_left.or(s.margin).unwrap_or(0) as _
-                ),
-                right: style::LengthPercentageAuto::Length(
-                    s.margin_right.or(s.margin).unwrap_or(0) as _,
-                ),
-                top: style::LengthPercentageAuto::Length(
-                    s.margin_top.or(s.margin).unwrap_or(0) as _
-                ),
-                bottom: style::LengthPercentageAuto::Length(
-                    s.margin_bottom.or(s.margin).unwrap_or(0) as _,
-                ),
+                left: s.margin_left.or(s.margin).into(),
+                right: s.margin_right.or(s.margin).into(),
+                top: s.margin_top.or(s.margin).into(),
+                bottom: s.margin_bottom.or(s.margin).into(),
             },
             overflow: Point {
                 x: s.overflow_x.or(s.overflow).unwrap_or_default(),
                 y: s.overflow_y.or(s.overflow).unwrap_or_default(),
             },
             flex_direction: s.flex_direction,
+            flex_wrap: s.flex_wrap,
+            flex_basis: s.flex_basis.into(),
+            flex_grow: s.flex_grow,
+            flex_shrink: s.flex_shrink.unwrap_or(1.0),
             ..Default::default()
         }
     }

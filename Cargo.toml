@@ -15,7 +15,3 @@ edition = "2021"
 iocraft = { path = "packages/iocraft" }
 futures = "0.3.30"
 smol = "2.0.1"
-
-[[example]]
-name = "borders"
-path = "examples/borders.rs"
