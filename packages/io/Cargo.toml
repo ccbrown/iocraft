@@ -10,5 +10,4 @@ taffy = "0.5.2"
 flashy-macros = { path = "../macros" }
 uuid = { version = "1.10.0", features = ["v4"] }
 derive_more = { version = "1.0.0", features = ["debug", "display"] }
-generational-box = "0.5.6"
 futures-signals = "0.3.34"
