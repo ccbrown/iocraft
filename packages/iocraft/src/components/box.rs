@@ -1,6 +1,6 @@
 use crate::{AnyElement, Component, ComponentRenderer, ComponentUpdater};
 use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
-use flashy_macros::with_layout_style_props;
+use iocraft_macros::with_layout_style_props;
 use taffy::Rect;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

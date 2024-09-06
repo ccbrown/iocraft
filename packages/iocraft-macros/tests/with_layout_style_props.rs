@@ -1,5 +1,5 @@
-use flashy_io::Display;
-use flashy_macros::with_layout_style_props;
+use iocraft::Display;
+use iocraft_macros::with_layout_style_props;
 
 #[with_layout_style_props]
 #[derive(Default)]

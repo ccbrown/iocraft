@@ -1,7 +1,7 @@
-use flashy_io::prelude::*;
+use iocraft::prelude::*;
 
 fn main() {
-    flashy! {
+    element! {
         Box(flex_direction: FlexDirection::Column, padding: 2) {
             Box {
                 Box(border_style: BorderStyle::Single, margin_right: 2) {

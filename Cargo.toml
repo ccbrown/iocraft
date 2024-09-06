@@ -2,17 +2,17 @@
 resolver = "2"
 
 members = [
-    "packages/io",
-    "packages/macros",
+    "packages/iocraft",
+    "packages/iocraft-macros",
 ]
 
 [package]
-name = "flashy-examples"
+name = "iocraft-examples"
 version = "0.1.0"
 edition = "2021"
 
 [dev-dependencies]
-flashy-io = { path = "packages/io" }
+iocraft = { path = "packages/iocraft" }
 futures = "0.3.30"
 smol = "2.0.1"
 

@@ -6,4 +6,4 @@ pub use crate::hooks::*;
 pub use crate::render::*;
 pub use crate::signal::*;
 pub use crate::style::*;
-pub use flashy_macros::*;
+pub use iocraft_macros::*;

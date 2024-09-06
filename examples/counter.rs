@@ -1,4 +1,4 @@
-use flashy_io::prelude::*;
+use iocraft::prelude::*;
 use std::time::Duration;
 
 #[state]
@@ -23,11 +23,11 @@ fn Counter(state: &CounterState, hooks: &mut CounterHooks) -> impl Into<AnyEleme
         }
     });
 
-    flashy! {
+    element! {
         Text(color: Color::DarkBlue, content: format!("counter: {}", state.count))
     }
 }
 
 fn main() {
-    smol::block_on(flashy!(Counter).render());
+    smol::block_on(element!(Counter).render());
 }

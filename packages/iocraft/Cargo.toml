@@ -1,5 +1,5 @@
 [package]
-name = "flashy-io"
+name = "iocraft"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crossterm = "0.28.1"
 futures = "0.3.30"
 taffy = "0.5.2"
-flashy-macros = { path = "../macros" }
+iocraft-macros = { path = "../iocraft-macros" }
 uuid = { version = "1.10.0", features = ["v4"] }
 derive_more = { version = "1.0.0", features = ["debug", "display"] }
 futures-signals = "0.3.34"

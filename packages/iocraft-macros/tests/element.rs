@@ -1,6 +1,5 @@
 use core::any::Any;
-use flashy_io::{Element, ElementKey, ElementType};
-use flashy_macros::flashy;
+use iocraft::{element, Element, ElementKey, ElementType};
 
 struct MyComponent;
 
@@ -44,12 +43,12 @@ impl ElementType for MyContainer {
 
 #[test]
 fn minimal() {
-    let _: Element<MyComponent> = flashy!(MyComponent);
+    let _: Element<MyComponent> = element!(MyComponent);
 }
 
 #[test]
 fn props() {
-    let e = flashy! {
+    let e = element! {
         MyComponent(foo: "bar")
     };
     assert_eq!(e.props.foo, "bar");
@@ -57,7 +56,7 @@ fn props() {
 
 #[test]
 fn children() {
-    let e = flashy! {
+    let e = element! {
         MyComponent {
             MyComponent(foo: "bar")
         }
@@ -68,7 +67,7 @@ fn children() {
 
 #[test]
 fn any_children() {
-    let mut e = flashy! {
+    let mut e = element! {
         MyContainer {
             MyContainer
             MyComponent(foo: "bar")

@@ -1,5 +1,5 @@
 [package]
-name = "flashy-macros"
+name = "iocraft-macros"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,4 +12,4 @@ quote = "1.0.37"
 syn = "2.0.77"
 
 [dev-dependencies]
-flashy-io = { path = "../io" }
+iocraft = { path = "../iocraft" }

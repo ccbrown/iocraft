@@ -7,7 +7,7 @@ mod render;
 mod signal;
 mod style;
 
-extern crate self as flashy_io;
+extern crate self as iocraft;
 
 pub mod prelude;
 pub use prelude::*;

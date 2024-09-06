@@ -76,9 +76,9 @@ impl ToTokens for ParsedElement {
 
         tokens.extend(quote! {
             {
-                type Props = <#ty as ::flashy_io::ElementType>::Props;
-                ::flashy_io::Element::<#ty>{
-                    key: ::flashy_io::ElementKey::new(),
+                type Props = <#ty as ::iocraft::ElementType>::Props;
+                ::iocraft::Element::<#ty>{
+                    key: ::iocraft::ElementKey::new(),
                     props: Props{
                         #(#props,)*
                         ..core::default::Default::default()
@@ -90,7 +90,7 @@ impl ToTokens for ParsedElement {
 }
 
 #[proc_macro]
-pub fn flashy(input: TokenStream) -> TokenStream {
+pub fn element(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
     quote!(#element).into()
 }
@@ -119,7 +119,7 @@ impl ToTokens for ParsedState {
             #state
 
             impl #name {
-                fn new(owner: &mut ::flashy_io::SignalOwner) -> Self {
+                fn new(owner: &mut ::iocraft::SignalOwner) -> Self {
                     Self {
                         #(#field_assignments,)*
                     }
@@ -293,7 +293,7 @@ impl ToTokens for ParsedComponent {
 
         tokens.extend(quote! {
             #vis struct #name {
-                signal_owner: ::flashy_io::SignalOwner,
+                signal_owner: ::iocraft::SignalOwner,
                 #state_decl
                 #hooks_decl
             }
@@ -302,11 +302,11 @@ impl ToTokens for ParsedComponent {
                 fn implementation(#args) #output #block
             }
 
-            impl ::flashy_io::Component for #name {
-                type Props = ::flashy_io::NoProps;
+            impl ::iocraft::Component for #name {
+                type Props = ::iocraft::NoProps;
 
                 fn new(_props: &Self::Props) -> Self {
-                    let mut signal_owner = ::flashy_io::SignalOwner::new();
+                    let mut signal_owner = ::iocraft::SignalOwner::new();
                     Self {
                         #state_init
                         #hooks_init
@@ -314,7 +314,7 @@ impl ToTokens for ParsedComponent {
                     }
                 }
 
-                fn update(&mut self, _props: &Self::Props, updater: &mut ::flashy_io::ComponentUpdater<'_>) {
+                fn update(&mut self, _props: &Self::Props, updater: &mut ::iocraft::ComponentUpdater<'_>) {
                     let e = Self::implementation(#(#impl_args),*);
                     updater.update_children([e]);
                 }
@@ -342,7 +342,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
-    ("display", "::flashy_io::Display"),
+    ("display", "::iocraft::Display"),
     ("padding", "Option<u32>"),
     ("padding_top", "Option<u32>"),
     ("padding_right", "Option<u32>"),
@@ -353,10 +353,10 @@ const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
     ("margin_right", "Option<u32>"),
     ("margin_bottom", "Option<u32>"),
     ("margin_left", "Option<u32>"),
-    ("overflow", "Option<::flashy_io::Overflow>"),
-    ("overflow_x", "Option<::flashy_io::Overflow>"),
-    ("overflow_y", "Option<::flashy_io::Overflow>"),
-    ("flex_direction", "::flashy_io::FlexDirection"),
+    ("overflow", "Option<::iocraft::Overflow>"),
+    ("overflow_x", "Option<::iocraft::Overflow>"),
+    ("overflow_y", "Option<::iocraft::Overflow>"),
+    ("flex_direction", "::iocraft::FlexDirection"),
 ];
 
 #[proc_macro_attribute]
@@ -389,8 +389,8 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                 #ast
 
                 impl #struct_name {
-                    pub fn layout_style(&self) -> ::flashy_io::LayoutStyle {
-                        ::flashy_io::LayoutStyle{
+                    pub fn layout_style(&self) -> ::iocraft::LayoutStyle {
+                        ::iocraft::LayoutStyle{
                             #(#field_assignments,)*
                         }
                     }

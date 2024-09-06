@@ -1,4 +1,4 @@
-use flashy_macros::with_layout_style_props;
+use iocraft_macros::with_layout_style_props;
 use taffy::{style, Point, Rect, Style};
 
 // Re-export basic enum types.
