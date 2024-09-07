@@ -1,8 +1,9 @@
 use crate::{
+    canvas::{Canvas, CanvasSubviewMut},
     component::{Components, InstantiatedComponent},
     AnyElement,
 };
-use crossterm::{cursor, queue, terminal, Command, QueueableCommand};
+use crossterm::{cursor, queue, terminal, QueueableCommand};
 use std::{
     collections::HashMap,
     io::{stdout, Write},
@@ -91,11 +92,13 @@ impl<'a> ComponentUpdater<'a> {
 
 struct RenderContext<'a> {
     layout_engine: &'a LayoutEngine,
+    canvas: &'a mut Canvas,
 }
 
 pub struct ComponentRenderer<'a> {
     node_id: NodeId,
     node_position: Point<u16>,
+    node_size: Size<u16>,
     context: RenderContext<'a>,
 }
 
@@ -109,19 +112,14 @@ impl<'a> ComponentRenderer<'a> {
             .clone()
     }
 
-    /// Moves the cursor to the given position relative to the current node's position.
-    pub fn move_cursor(&mut self, x: u16, y: u16) {
-        self.queue(cursor::MoveTo(
-            self.node_position.x + x,
-            self.node_position.y + y,
-        ));
-    }
-
-    /// Queues a command to be executed.
-    pub fn queue(&self, command: impl Command) {
-        stdout()
-            .queue(command)
-            .expect("we should be able to queue the command");
+    pub fn canvas(&mut self) -> CanvasSubviewMut {
+        self.context.canvas.subview_mut(
+            self.node_position.x as usize,
+            self.node_position.y as usize,
+            self.node_size.width as usize,
+            self.node_size.height as usize,
+            true,
+        )
     }
 
     /// Prepares to begin rendering a node by moving to the node's position and invoking the given
@@ -132,16 +130,21 @@ impl<'a> ComponentRenderer<'a> {
     {
         let old_node_id = self.node_id;
         let old_node_position = self.node_position;
+        let old_node_size = self.node_size;
         self.node_id = node_id;
         let layout = self.layout();
         self.node_position = Point {
             x: self.node_position.x + layout.location.x as u16,
             y: self.node_position.y + layout.location.y as u16,
         };
-        self.queue(cursor::MoveTo(self.node_position.x, self.node_position.y));
+        self.node_size = Size {
+            width: layout.size.width as u16,
+            height: layout.size.height as u16,
+        };
         f(self);
         self.node_id = old_node_id;
         self.node_position = old_node_position;
+        self.node_size = old_node_size;
     }
 }
 
@@ -154,13 +157,13 @@ pub(crate) struct LayoutEngineNodeContext {
 
 pub(crate) type LayoutEngine = TaffyTree<LayoutEngineNodeContext>;
 
-pub(crate) struct Tree {
+struct Tree {
     layout_engine: LayoutEngine,
     root_component: InstantiatedComponent,
 }
 
 impl Tree {
-    pub fn new(e: AnyElement) -> Self {
+    fn new(e: AnyElement) -> Self {
         let (_, props) = e.into_key_and_props();
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
@@ -172,11 +175,8 @@ impl Tree {
         }
     }
 
-    pub fn render(&mut self) {
+    fn render(&mut self, width: usize) -> Canvas {
         self.root_component.update(&mut self.layout_engine);
-
-        let (width, _) = terminal::size().expect("we should be able to get the terminal size");
-        let (x, y) = cursor::position().expect("we should be able to get the cursor position");
 
         self.layout_engine
             .compute_layout_with_measure(
@@ -194,30 +194,50 @@ impl Tree {
             )
             .expect("we should be able to compute the layout");
 
+        let mut canvas = Canvas::new(width as _);
+        let root_layout = self
+            .layout_engine
+            .layout(self.root_component.node_id())
+            .expect("we should be able to get the root layout");
         let mut renderer = ComponentRenderer {
             node_id: self.root_component.node_id(),
-            node_position: Point { x, y },
+            node_position: Point { x: 0, y: 0 },
+            node_size: Size {
+                width: root_layout.size.width as _,
+                height: root_layout.size.height as _,
+            },
             context: RenderContext {
                 layout_engine: &self.layout_engine,
+                canvas: &mut canvas,
             },
         };
         self.root_component.render(&mut renderer);
-        let root_layout = renderer.layout();
-        renderer.move_cursor(
-            root_layout.size.width as _,
-            root_layout.size.height as u16 - 1,
-        );
+        canvas
     }
 
-    pub async fn render_loop(&mut self) -> ! {
+    async fn terminal_render_loop(&mut self) -> ! {
         let mut dest = stdout();
         queue!(dest, cursor::SavePosition).expect("we should be able to queue commands");
         loop {
             dest.queue(cursor::RestorePosition)
                 .expect("we should be able to queue commands");
-            self.render();
             dest.flush().expect("we should be able to flush the output");
+            let (width, _) = terminal::size().expect("we should be able to get the terminal size");
+            let canvas = self.render(width as _);
+            canvas
+                .write_ansi(stdout())
+                .expect("we should be able to write to stdout");
             self.root_component.wait().await;
         }
     }
+}
+
+pub fn render<E: Into<AnyElement>>(e: E, width: usize) -> Canvas {
+    let mut tree = Tree::new(e.into());
+    tree.render(width)
+}
+
+pub(crate) async fn terminal_render_loop<E: Into<AnyElement>>(e: E) -> ! {
+    let mut tree = Tree::new(e.into());
+    tree.terminal_render_loop().await
 }

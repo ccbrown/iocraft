@@ -1,8 +1,9 @@
 use crate::{
     component::{AnyComponentProps, Component, ComponentProps},
-    render::Tree,
+    render, terminal_render_loop,
 };
-use std::future::Future;
+use crossterm::terminal;
+use std::{future::Future, io::stdout};
 
 /// Used by the `element!` macro to extend a collection with elements.
 #[doc(hidden)]
@@ -86,18 +87,19 @@ where
 
 pub trait ElementExt {
     fn print(self);
-    fn render(self) -> impl Future<Output = ()>;
+    fn render_loop(self) -> impl Future<Output = ()>;
 }
 
 impl<T: Into<AnyElement>> ElementExt for T {
     fn print(self) {
-        let mut tree = Tree::new(self.into());
-        tree.render();
-        println!("");
+        let (width, _) = terminal::size().expect("we should be able to get the terminal size");
+        let canvas = render(self, width as _);
+        canvas
+            .write_ansi(stdout())
+            .expect("we should be able to write to stdout");
     }
 
-    async fn render(self) {
-        let mut tree = Tree::new(self.into());
-        tree.render_loop().await;
+    async fn render_loop(self) {
+        terminal_render_loop(self).await;
     }
 }

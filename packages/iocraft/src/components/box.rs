@@ -1,5 +1,5 @@
 use crate::{AnyElement, Component, ComponentRenderer, ComponentUpdater};
-use crossterm::style::{Color, ContentStyle, PrintStyledContent, StyledContent};
+use crossterm::style::Color;
 use iocraft_macros::with_layout_style_props;
 use taffy::Rect;
 
@@ -150,54 +150,57 @@ impl Component for Box {
         let layout = renderer.layout();
 
         if let Some(border) = self.border_style.border_characters() {
-            let style = ContentStyle {
-                foreground_color: self.border_color,
-                ..ContentStyle::new()
-            };
+            let mut canvas = renderer.canvas();
 
-            renderer.queue(PrintStyledContent(StyledContent::new(
-                style,
-                &border.top_left,
-            )));
+            canvas.set_text(0, 0, &border.top_left.to_string(), self.border_color);
 
             let top = border
                 .top
                 .to_string()
                 .repeat(layout.size.width as usize - 2);
-            renderer.queue(PrintStyledContent(StyledContent::new(style, &top)));
+            canvas.set_text(1, 0, &top, self.border_color);
 
-            renderer.queue(PrintStyledContent(StyledContent::new(
-                style,
-                &border.top_right,
-            )));
+            canvas.set_text(
+                layout.size.width as isize - 1,
+                0,
+                &border.top_right.to_string(),
+                self.border_color,
+            );
 
-            renderer.move_cursor(0, 1);
-            let left = PrintStyledContent(StyledContent::new(style, border.left));
-            let right = PrintStyledContent(StyledContent::new(style, border.right));
-            for y in 1..(layout.size.height as u16 - 1) {
-                renderer.move_cursor(0, y);
-                renderer.queue(left);
-                renderer.move_cursor(layout.size.width as u16 - 1, y);
-                renderer.queue(right);
+            for y in 1..(layout.size.height as isize - 1) {
+                canvas.set_text(0, y, &border.left.to_string(), self.border_color);
+                canvas.set_text(
+                    layout.size.width as isize - 1,
+                    y,
+                    &border.right.to_string(),
+                    self.border_color,
+                );
             }
 
-            renderer.move_cursor(0, layout.size.height as u16 - 1);
-
-            renderer.queue(PrintStyledContent(StyledContent::new(
-                style,
-                &border.bottom_left,
-            )));
+            canvas.set_text(
+                0,
+                layout.size.height as isize - 1,
+                &border.bottom_left.to_string(),
+                self.border_color,
+            );
 
             let bottom = border
                 .bottom
                 .to_string()
                 .repeat(layout.size.width as usize - 2);
-            renderer.queue(PrintStyledContent(StyledContent::new(style, &bottom)));
+            canvas.set_text(
+                1,
+                layout.size.height as isize - 1,
+                &bottom,
+                self.border_color,
+            );
 
-            renderer.queue(PrintStyledContent(StyledContent::new(
-                style,
-                &border.bottom_right,
-            )));
+            canvas.set_text(
+                layout.size.width as isize - 1,
+                layout.size.height as isize - 1,
+                &border.bottom_right.to_string(),
+                self.border_color,
+            );
         }
     }
 }

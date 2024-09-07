@@ -1,3 +1,4 @@
+mod canvas;
 mod component;
 mod components;
 mod element;

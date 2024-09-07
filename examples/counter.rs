@@ -29,5 +29,5 @@ fn Counter(state: &CounterState, hooks: &mut CounterHooks) -> impl Into<AnyEleme
 }
 
 fn main() {
-    smol::block_on(element!(Counter).render());
+    smol::block_on(element!(Counter).render_loop());
 }
