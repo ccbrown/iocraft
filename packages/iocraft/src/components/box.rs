@@ -284,6 +284,7 @@ impl Component for Box {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use indoc::indoc;
 
     #[test]
     fn test_box() {
@@ -298,6 +299,40 @@ mod tests {
             }
             .to_string(),
             "foobar\n"
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 20) {
+                    Box(width: 60pct) {
+                        Text(content: "foo")
+                    }
+                    Box(width: 40pct) {
+                        Text(content: "bar")
+                    }
+                }
+            }
+            .to_string(),
+            "foo         bar\n"
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 20, border_style: BorderStyle::Single) {
+                    Box(width: 60pct) {
+                        Text(content: "foo")
+                    }
+                    Box(width: 40pct) {
+                        Text(content: "bar")
+                    }
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────────────────┐
+                │foo        bar    │
+                └──────────────────┘
+            "},
         );
     }
 }

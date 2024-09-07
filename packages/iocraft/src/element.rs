@@ -2,11 +2,12 @@ use crate::{
     component::{AnyComponentProps, Component, ComponentProps},
     render, terminal_render_loop, Canvas,
 };
-use crossterm::terminal;
+use crossterm::{terminal, tty::IsTty};
 use std::{
     fmt::{self, Display, Formatter},
     future::Future,
-    io::{self, stdout},
+    io::{self, stderr, stdout, Write},
+    os::fd::AsRawFd,
 };
 
 /// Used by the `element!` macro to extend a collection with elements.
@@ -124,20 +125,35 @@ impl From<&AnyElement> for AnyElement {
     }
 }
 
-pub trait ElementExt: Sized {
+mod private {
+    pub trait Sealed {}
+    impl<T> Sealed for T where super::AnyElement: for<'a> From<&'a T> {}
+}
+
+pub trait ElementExt: private::Sealed + Sized {
     fn render(&self, max_width: Option<usize>) -> Canvas;
 
     fn print(&self) {
-        let (width, _) = terminal::size().expect("we should be able to get the terminal size");
-        let canvas = self.render(Some(width as _));
-        canvas
-            .write_ansi(stdout())
-            .expect("we should be able to write to stdout");
+        self.write_to_raw_fd(stdout()).unwrap();
     }
 
-    fn write<W: io::Write>(&self, w: W) -> io::Result<()> {
+    fn eprint(&self) {
+        self.write_to_raw_fd(stderr()).unwrap();
+    }
+
+    fn write<W: Write>(&self, w: W) -> io::Result<()> {
         let canvas = self.render(None);
         canvas.write(w)
+    }
+
+    fn write_to_raw_fd<F: Write + AsRawFd>(&self, fd: F) -> io::Result<()> {
+        if fd.is_tty() {
+            let (width, _) = terminal::size().expect("we should be able to get the terminal size");
+            let canvas = self.render(Some(width as _));
+            canvas.write_ansi(fd)
+        } else {
+            self.write(fd)
+        }
     }
 
     fn render_loop(&self) -> impl Future<Output = ()>;
