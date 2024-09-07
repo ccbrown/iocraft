@@ -35,3 +35,15 @@ impl Component for Text {
         renderer.canvas().set_text(0, 0, &self.content, self.style);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_text() {
+        assert_eq!(element!(Text).to_string(), "\n");
+
+        assert_eq!(element!(Text(content: "foo")).to_string(), "foo\n");
+    }
+}

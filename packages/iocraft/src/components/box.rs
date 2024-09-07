@@ -280,3 +280,24 @@ impl Component for Box {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_box() {
+        assert_eq!(element!(Box).to_string(), "");
+
+        assert_eq!(
+            element! {
+                Box {
+                    Text(content: "foo")
+                    Text(content: "bar")
+                }
+            }
+            .to_string(),
+            "foobar\n"
+        );
+    }
+}

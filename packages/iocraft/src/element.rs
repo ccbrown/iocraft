@@ -1,9 +1,13 @@
 use crate::{
     component::{AnyComponentProps, Component, ComponentProps},
-    render, terminal_render_loop,
+    render, terminal_render_loop, Canvas,
 };
 use crossterm::terminal;
-use std::{future::Future, io::stdout};
+use std::{
+    fmt::{self, Display, Formatter},
+    future::Future,
+    io::{self, stdout},
+};
 
 /// Used by the `element!` macro to extend a collection with elements.
 #[doc(hidden)]
@@ -56,6 +60,16 @@ pub struct Element<T: ElementType> {
     pub props: T::Props,
 }
 
+impl<T> Display for Element<T>
+where
+    T: Component + 'static,
+    <T as Component>::Props: Clone + Send,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.render(None).fmt(f)
+    }
+}
+
 pub trait ElementType {
     type Props;
 }
@@ -72,6 +86,12 @@ impl AnyElement {
     }
 }
 
+impl Display for AnyElement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.render(None).fmt(f)
+    }
+}
+
 impl<T> From<Element<T>> for AnyElement
 where
     T: Component + 'static,
@@ -85,21 +105,53 @@ where
     }
 }
 
-pub trait ElementExt {
-    fn print(self);
-    fn render_loop(self) -> impl Future<Output = ()>;
+impl<T> From<&Element<T>> for AnyElement
+where
+    T: Component + 'static,
+    <T as Component>::Props: Clone + Send,
+{
+    fn from(e: &Element<T>) -> Self {
+        Self {
+            key: e.key.clone(),
+            props: Box::new(ComponentProps::<T>(e.props.clone())),
+        }
+    }
 }
 
-impl<T: Into<AnyElement>> ElementExt for T {
-    fn print(self) {
+impl From<&AnyElement> for AnyElement {
+    fn from(e: &AnyElement) -> Self {
+        e.clone()
+    }
+}
+
+pub trait ElementExt: Sized {
+    fn render(&self, max_width: Option<usize>) -> Canvas;
+
+    fn print(&self) {
         let (width, _) = terminal::size().expect("we should be able to get the terminal size");
-        let canvas = render(self, width as _);
+        let canvas = self.render(Some(width as _));
         canvas
             .write_ansi(stdout())
             .expect("we should be able to write to stdout");
     }
 
-    async fn render_loop(self) {
+    fn write<W: io::Write>(&self, w: W) -> io::Result<()> {
+        let canvas = self.render(None);
+        canvas.write(w)
+    }
+
+    fn render_loop(&self) -> impl Future<Output = ()>;
+}
+
+impl<T> ElementExt for T
+where
+    AnyElement: for<'a> From<&'a T>,
+{
+    fn render(&self, max_width: Option<usize>) -> Canvas {
+        render(self, max_width)
+    }
+
+    async fn render_loop(&self) {
         terminal_render_loop(self).await;
     }
 }

@@ -1,9 +1,12 @@
 use crate::{Color, Weight};
 use crossterm::{
     csi,
-    style::{Attribute, Attributes, Colored},
+    style::{Attribute, Colored},
 };
-use std::io::{self, Write};
+use std::{
+    fmt::{self, Display},
+    io::{self, Write},
+};
 
 #[derive(Clone)]
 struct Character {
@@ -90,45 +93,54 @@ impl Canvas {
         }
     }
 
-    pub fn write_ansi<W: Write>(&self, mut w: W) -> io::Result<()> {
+    fn write_impl<W: Write>(&self, mut w: W, ansi: bool) -> io::Result<()> {
         let mut background_color = None;
         let mut text_style = TextStyle::default();
         for row in &self.cells {
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
             for cell in row.iter().take(last_non_empty.map_or(row.len(), |i| i + 1)) {
-                if cell.background_color != background_color {
-                    write!(
-                        w,
-                        csi!("{}m"),
-                        Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
-                    )?;
-                    background_color = cell.background_color;
-                }
+                if ansi {
+                    // For certain changes, we need to reset all attributes.
+                    let mut needs_reset = false;
+                    if let Some(c) = &cell.character {
+                        if c.style.weight != text_style.weight && c.style.weight == Weight::Normal {
+                            needs_reset = true;
+                        }
+                    }
+                    if needs_reset {
+                        write!(w, csi!("0m"))?;
+                        background_color = None;
+                        text_style = TextStyle::default();
+                    }
 
-                if let Some(c) = &cell.character {
-                    if c.style.color != text_style.color {
+                    if cell.background_color != background_color {
                         write!(
                             w,
                             csi!("{}m"),
-                            Colored::ForegroundColor(c.style.color.unwrap_or(Color::Reset))
+                            Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
                         )?;
+                        background_color = cell.background_color;
                     }
 
-                    if c.style.weight != text_style.weight {
-                        let mut attrs = Attributes::default();
-                        match c.style.weight {
-                            Weight::Bold => attrs.set(Attribute::Bold),
-                            Weight::Normal => attrs.set(Attribute::Reset),
-                            Weight::Light => attrs.set(Attribute::Dim),
+                    if let Some(c) = &cell.character {
+                        if c.style.color != text_style.color {
+                            write!(
+                                w,
+                                csi!("{}m"),
+                                Colored::ForegroundColor(c.style.color.unwrap_or(Color::Reset))
+                            )?;
                         }
-                        for attr in Attribute::iterator() {
-                            if attrs.has(attr) {
-                                write!(w, csi!("{}m"), attr.sgr())?;
+
+                        if c.style.weight != text_style.weight {
+                            match c.style.weight {
+                                Weight::Bold => write!(w, csi!("{}m"), Attribute::Bold.sgr())?,
+                                Weight::Normal => {}
+                                Weight::Light => write!(w, csi!("{}m"), Attribute::Dim.sgr())?,
                             }
                         }
-                    }
 
-                    text_style = c.style;
+                        text_style = c.style;
+                    }
                 }
 
                 if let Some(c) = &cell.character {
@@ -139,7 +151,27 @@ impl Canvas {
             }
             w.write(b"\n")?;
         }
+        if ansi {
+            write!(w, csi!("0m"))?;
+        }
         w.flush()?;
+        Ok(())
+    }
+
+    pub fn write_ansi<W: Write>(&self, w: W) -> io::Result<()> {
+        self.write_impl(w, true)
+    }
+
+    pub fn write<W: Write>(&self, w: W) -> io::Result<()> {
+        self.write_impl(w, false)
+    }
+}
+
+impl Display for Canvas {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buf = Vec::with_capacity(self.width * self.cells.len());
+        self.write(&mut buf).unwrap();
+        f.write_str(&String::from_utf8_lossy(&buf))?;
         Ok(())
     }
 }
@@ -190,7 +222,7 @@ impl<'a> CanvasSubviewMut<'a> {
             x = min_x;
         }
         let max_x = if self.clip {
-            (self.x + self.width - 1) as isize
+            (self.x + self.width) as isize - 1
         } else {
             self.canvas.width as isize - 1
         };

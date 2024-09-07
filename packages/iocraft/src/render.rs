@@ -175,14 +175,16 @@ impl Tree {
         }
     }
 
-    fn render(&mut self, width: usize) -> Canvas {
+    fn render(&mut self, max_width: Option<usize>) -> Canvas {
         self.root_component.update(&mut self.layout_engine);
 
         self.layout_engine
             .compute_layout_with_measure(
                 self.root_component.node_id(),
                 Size {
-                    width: AvailableSpace::Definite(width as _),
+                    width: max_width
+                        .map(|w| AvailableSpace::Definite(w as _))
+                        .unwrap_or(AvailableSpace::MaxContent),
                     height: AvailableSpace::MaxContent,
                 },
                 |known_dimensions, available_space, _node_id, node_context, style| {
@@ -194,11 +196,11 @@ impl Tree {
             )
             .expect("we should be able to compute the layout");
 
-        let mut canvas = Canvas::new(width as _);
         let root_layout = self
             .layout_engine
             .layout(self.root_component.node_id())
             .expect("we should be able to get the root layout");
+        let mut canvas = Canvas::new(root_layout.size.width as _);
         let mut renderer = ComponentRenderer {
             node_id: self.root_component.node_id(),
             node_position: Point { x: 0, y: 0 },
@@ -223,7 +225,7 @@ impl Tree {
                 .expect("we should be able to queue commands");
             dest.flush().expect("we should be able to flush the output");
             let (width, _) = terminal::size().expect("we should be able to get the terminal size");
-            let canvas = self.render(width as _);
+            let canvas = self.render(Some(width as _));
             canvas
                 .write_ansi(stdout())
                 .expect("we should be able to write to stdout");
@@ -232,9 +234,9 @@ impl Tree {
     }
 }
 
-pub fn render<E: Into<AnyElement>>(e: E, width: usize) -> Canvas {
+pub fn render<E: Into<AnyElement>>(e: E, max_width: Option<usize>) -> Canvas {
     let mut tree = Tree::new(e.into());
-    tree.render(width)
+    tree.render(max_width)
 }
 
 pub(crate) async fn terminal_render_loop<E: Into<AnyElement>>(e: E) -> ! {
