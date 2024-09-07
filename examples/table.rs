@@ -26,7 +26,7 @@ struct UsersTableProps {
 fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
     element! {
         Box(flex_direction: FlexDirection::Column, width: 60, border_style: BorderStyle::Round) {
-            Box {
+            Box(border_style: BorderStyle::Single, border_edges: Edges::Bottom) {
                 Box(width: 10pct) {
                     Text(content: "Id", weight: Weight::Bold)
                 }
@@ -40,8 +40,8 @@ fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
                 }
             }
 
-            #(props.users.iter().map(|user| element! {
-                Box {
+            #(props.users.iter().enumerate().map(|(i, user)| element! {
+                Box(background_color: if i % 2 == 0 { None } else { Some(Color::DarkGrey) }) {
                     Box(width: 10pct) {
                         Text(content: user.id.to_string())
                     }

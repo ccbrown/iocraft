@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use iocraft_macros::with_layout_style_props;
 use taffy::{
     geometry,
@@ -141,6 +142,16 @@ pub enum Weight {
     Normal,
     Bold,
     Light,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct Edges: u8 {
+        const Top = 0b00000001;
+        const Right = 0b00000010;
+        const Bottom = 0b00000100;
+        const Left = 0b00001000;
+    }
 }
 
 #[with_layout_style_props]

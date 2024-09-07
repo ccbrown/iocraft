@@ -23,6 +23,12 @@ struct Cell {
     character: Option<Character>,
 }
 
+impl Cell {
+    fn is_empty(&self) -> bool {
+        self.background_color.is_none() && self.character.is_none()
+    }
+}
+
 pub struct Canvas {
     width: usize,
     cells: Vec<Vec<Cell>>,
@@ -41,6 +47,17 @@ impl Canvas {
             self.cells.push(vec![Cell::default(); self.width]);
         }
         &mut self.cells[row]
+    }
+
+    fn set_background_color(&mut self, x: usize, y: usize, w: usize, h: usize, color: Color) {
+        for y in y..y + h {
+            let row = self.row_mut(y);
+            for x in x..x + w {
+                if x < row.len() {
+                    row[x].background_color = Some(color);
+                }
+            }
+        }
     }
 
     fn set_text_chars<I>(&mut self, x: usize, y: usize, chars: I, style: TextStyle)
@@ -77,9 +94,7 @@ impl Canvas {
         let mut background_color = None;
         let mut text_style = TextStyle::default();
         for row in &self.cells {
-            let last_non_empty = row
-                .iter()
-                .rposition(|cell| cell.character.is_some() || cell.background_color.is_some());
+            let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
             for cell in row.iter().take(last_non_empty.map_or(row.len(), |i| i + 1)) {
                 if cell.background_color != background_color {
                     write!(
@@ -139,6 +154,26 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl<'a> CanvasSubviewMut<'a> {
+    pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
+        let mut left = self.x as isize + x;
+        let mut top = self.y as isize + y;
+        let mut right = left + w as isize;
+        let mut bottom = top + h as isize;
+        if self.clip {
+            left = left.max(self.x as isize);
+            top = top.max(self.y as isize);
+            right = right.min((self.x + self.width) as isize);
+            bottom = bottom.min((self.y + self.height) as isize);
+        }
+        self.canvas.set_background_color(
+            left as _,
+            top as _,
+            (right - left) as _,
+            (bottom - top) as _,
+            color,
+        );
+    }
+
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: TextStyle) {
         if self.clip && y < 0 || y >= self.height as isize {
             return;
