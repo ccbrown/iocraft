@@ -10,10 +10,15 @@ use syn::{
     DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, Lit, Result, Token, Type,
 };
 
+enum ParsedElementChild {
+    Element(ParsedElement),
+    Expr(Expr),
+}
+
 struct ParsedElement {
     ty: Type,
     props: Vec<(Ident, Expr)>,
-    children: Vec<ParsedElement>,
+    children: Vec<ParsedElementChild>,
 }
 
 impl Parse for ParsedElement {
@@ -47,7 +52,13 @@ impl Parse for ParsedElement {
             let children_input;
             braced!(children_input in input);
             while !children_input.is_empty() {
-                children.push(children_input.parse()?);
+                if children_input.peek(Brace) {
+                    let child_input;
+                    braced!(child_input in children_input);
+                    children.push(ParsedElementChild::Expr(child_input.parse()?));
+                } else {
+                    children.push(ParsedElementChild::Element(children_input.parse()?));
+                }
             }
         }
 
@@ -63,7 +74,7 @@ impl ToTokens for ParsedElement {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ty = &self.ty;
 
-        let mut props = self
+        let props = self
             .props
             .iter()
             .map(|(ident, expr)| match expr {
@@ -82,21 +93,30 @@ impl ToTokens for ParsedElement {
             })
             .collect::<Vec<_>>();
 
-        if !self.children.is_empty() {
-            let children = self.children.iter().map(|child| quote!((#child).into()));
-            props.push(quote!(children: vec![#(#children,)*]));
-        }
+        let set_children = if !self.children.is_empty() {
+            let children = self.children.iter().map(|child| match child {
+                ParsedElementChild::Element(child) => quote!(#child),
+                ParsedElementChild::Expr(expr) => quote!(#expr),
+            });
+            Some(quote! {
+                #(::iocraft::extend_with_elements(&mut _iocraft_element.props.children, #children);)*
+            })
+        } else {
+            None
+        };
 
         tokens.extend(quote! {
             {
                 type Props = <#ty as ::iocraft::ElementType>::Props;
-                ::iocraft::Element::<#ty>{
+                let mut _iocraft_element = ::iocraft::Element::<#ty>{
                     key: ::iocraft::ElementKey::new(),
                     props: Props{
                         #(#props,)*
                         ..core::default::Default::default()
                     },
-                }
+                };
+                #set_children
+                _iocraft_element
             }
         });
     }
@@ -201,10 +221,12 @@ pub fn hooks(_attr: TokenStream, item: TokenStream) -> TokenStream {
 enum ComponentImplementationArg {
     State,
     Hooks,
+    Props,
 }
 
 struct ParsedComponent {
     f: ItemFn,
+    props_type: Option<Box<Type>>,
     state_type: Option<Box<Type>>,
     hooks_type: Option<Box<Type>>,
     args: Vec<ComponentImplementationArg>,
@@ -214,6 +236,7 @@ impl Parse for ParsedComponent {
     fn parse(input: ParseStream) -> Result<Self> {
         let f: ItemFn = input.parse()?;
 
+        let mut props_type = None;
         let mut state_type = None;
         let mut hooks_type = None;
         let mut args = Vec::new();
@@ -223,6 +246,18 @@ impl Parse for ParsedComponent {
                 FnArg::Typed(arg) => {
                     let name = arg.pat.to_token_stream().to_string();
                     match name.as_str() {
+                        "props" => {
+                            if props_type.is_some() {
+                                return Err(Error::new(arg.span(), "duplicate `props` argument"));
+                            }
+                            match &*arg.ty {
+                                Type::Reference(r) => {
+                                    props_type = Some(r.elem.clone());
+                                    args.push(ComponentImplementationArg::Props);
+                                }
+                                _ => return Err(Error::new(arg.ty.span(), "invalid `props` type")),
+                            }
+                        }
                         "state" => {
                             if state_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `state` argument"));
@@ -256,6 +291,7 @@ impl Parse for ParsedComponent {
 
         Ok(Self {
             f,
+            props_type,
             state_type,
             hooks_type,
             args,
@@ -295,12 +331,19 @@ impl ToTokens for ParsedComponent {
             }
         });
 
+        let props_type_name = self
+            .props_type
+            .as_ref()
+            .map(|ty| quote!(#ty))
+            .unwrap_or_else(|| quote!(::iocraft::NoProps));
+
         let impl_args = self
             .args
             .iter()
             .map(|arg| match arg {
                 ComponentImplementationArg::State => quote!(&self.state),
                 ComponentImplementationArg::Hooks => quote!(&mut self.hooks),
+                ComponentImplementationArg::Props => quote!(props),
             })
             .collect::<Vec<_>>();
 
@@ -316,7 +359,7 @@ impl ToTokens for ParsedComponent {
             }
 
             impl ::iocraft::Component for #name {
-                type Props = ::iocraft::NoProps;
+                type Props = #props_type_name;
 
                 fn new(_props: &Self::Props) -> Self {
                     let mut signal_owner = ::iocraft::SignalOwner::new();
@@ -327,7 +370,7 @@ impl ToTokens for ParsedComponent {
                     }
                 }
 
-                fn update(&mut self, _props: &Self::Props, updater: &mut ::iocraft::ComponentUpdater<'_>) {
+                fn update(&mut self, props: &Self::Props, updater: &mut ::iocraft::ComponentUpdater<'_>) {
                     let e = Self::implementation(#(#impl_args),*);
                     updater.update_children([e]);
                 }
