@@ -2,7 +2,7 @@ use iocraft_macros::with_layout_style_props;
 use taffy::{
     geometry,
     style::{Dimension, LengthPercentage, LengthPercentageAuto},
-    Point, Rect, Style,
+    Rect, Style,
 };
 
 // Re-export basic enum types.
@@ -135,6 +135,14 @@ impl From<FlexBasis> for Dimension {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Weight {
+    #[default]
+    Normal,
+    Bold,
+    Light,
+}
+
 #[with_layout_style_props]
 pub struct LayoutStyle {
     // fields added by proc macro, defined in ../macros/src/lib.rs
@@ -167,10 +175,6 @@ impl From<LayoutStyle> for Style {
                 right: s.margin_right.or(s.margin).into(),
                 top: s.margin_top.or(s.margin).into(),
                 bottom: s.margin_bottom.or(s.margin).into(),
-            },
-            overflow: Point {
-                x: s.overflow_x.or(s.overflow).unwrap_or_default(),
-                y: s.overflow_y.or(s.overflow).unwrap_or_default(),
             },
             flex_direction: s.flex_direction,
             flex_wrap: s.flex_wrap,

@@ -1,3 +1,4 @@
+pub use crate::canvas::*;
 pub use crate::component::*;
 pub use crate::components::*;
 pub use crate::element::*;

@@ -1,5 +1,4 @@
-use crate::{AnyElement, Component, ComponentRenderer, ComponentUpdater};
-use crossterm::style::Color;
+use crate::{AnyElement, Color, Component, ComponentRenderer, ComponentUpdater, TextStyle};
 use iocraft_macros::with_layout_style_props;
 use taffy::Rect;
 
@@ -123,7 +122,7 @@ pub struct BoxProps {
 #[derive(Default)]
 pub struct Box {
     border_style: BorderStyle,
-    border_color: Option<Color>,
+    border_text_style: TextStyle,
 }
 
 impl Component for Box {
@@ -135,7 +134,10 @@ impl Component for Box {
 
     fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
         self.border_style = props.border_style;
-        self.border_color = props.border_color;
+        self.border_text_style = TextStyle {
+            color: props.border_color,
+            ..Default::default()
+        };
         let mut style: taffy::style::Style = props.layout_style().into();
         style.border = Rect::length(if props.border_style.is_none() {
             0.0
@@ -152,28 +154,28 @@ impl Component for Box {
         if let Some(border) = self.border_style.border_characters() {
             let mut canvas = renderer.canvas();
 
-            canvas.set_text(0, 0, &border.top_left.to_string(), self.border_color);
+            canvas.set_text(0, 0, &border.top_left.to_string(), self.border_text_style);
 
             let top = border
                 .top
                 .to_string()
                 .repeat(layout.size.width as usize - 2);
-            canvas.set_text(1, 0, &top, self.border_color);
+            canvas.set_text(1, 0, &top, self.border_text_style);
 
             canvas.set_text(
                 layout.size.width as isize - 1,
                 0,
                 &border.top_right.to_string(),
-                self.border_color,
+                self.border_text_style,
             );
 
             for y in 1..(layout.size.height as isize - 1) {
-                canvas.set_text(0, y, &border.left.to_string(), self.border_color);
+                canvas.set_text(0, y, &border.left.to_string(), self.border_text_style);
                 canvas.set_text(
                     layout.size.width as isize - 1,
                     y,
                     &border.right.to_string(),
-                    self.border_color,
+                    self.border_text_style,
                 );
             }
 
@@ -181,7 +183,7 @@ impl Component for Box {
                 0,
                 layout.size.height as isize - 1,
                 &border.bottom_left.to_string(),
-                self.border_color,
+                self.border_text_style,
             );
 
             let bottom = border
@@ -192,14 +194,14 @@ impl Component for Box {
                 1,
                 layout.size.height as isize - 1,
                 &bottom,
-                self.border_color,
+                self.border_text_style,
             );
 
             canvas.set_text(
                 layout.size.width as isize - 1,
                 layout.size.height as isize - 1,
                 &border.bottom_right.to_string(),
-                self.border_color,
+                self.border_text_style,
             );
         }
     }

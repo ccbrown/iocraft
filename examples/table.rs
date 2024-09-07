@@ -28,19 +28,19 @@ fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
         Box(flex_direction: FlexDirection::Column, width: 60, border_style: BorderStyle::Round) {
             Box {
                 Box(width: 10pct) {
-                    Text(content: "Id")
+                    Text(content: "Id", weight: Weight::Bold)
                 }
 
                 Box(width: 40pct) {
-                    Text(content: "Name")
+                    Text(content: "Name", weight: Weight::Bold)
                 }
 
                 Box(width: 50pct) {
-                    Text(content: "Email")
+                    Text(content: "Email", weight: Weight::Bold)
                 }
             }
 
-            {props.users.iter().map(|user| element! {
+            #(props.users.iter().map(|user| element! {
                 Box {
                     Box(width: 10pct) {
                         Text(content: user.id.to_string())
@@ -54,7 +54,7 @@ fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
                         Text(content: user.email.clone())
                     }
                 }
-            })}
+            }))
         }
     }
 }

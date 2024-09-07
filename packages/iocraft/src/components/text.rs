@@ -1,15 +1,16 @@
-use crate::{Color, Component, ComponentRenderer, ComponentUpdater};
+use crate::{Color, Component, ComponentRenderer, ComponentUpdater, TextStyle, Weight};
 use taffy::Size;
 
 #[derive(Clone, Default)]
 pub struct TextProps {
     pub color: Option<Color>,
     pub content: String,
+    pub weight: Weight,
 }
 
 #[derive(Default)]
 pub struct Text {
-    color: Option<Color>,
+    style: TextStyle,
     content: String,
 }
 
@@ -21,13 +22,16 @@ impl Component for Text {
     }
 
     fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
-        self.color = props.color;
+        self.style = TextStyle {
+            color: props.color,
+            weight: props.weight,
+        };
         self.content = props.content.clone();
         let width = self.content.len() as f32;
         updater.set_measure_func(Box::new(move |_, _, _| Size { width, height: 1.0 }));
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
-        renderer.canvas().set_text(0, 0, &self.content, self.color);
+        renderer.canvas().set_text(0, 0, &self.content, self.style);
     }
 }

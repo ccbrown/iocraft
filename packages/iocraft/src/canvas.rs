@@ -1,11 +1,20 @@
-use crate::Color;
-use crossterm::{csi, style::Colored};
+use crate::{Color, Weight};
+use crossterm::{
+    csi,
+    style::{Attribute, Attributes, Colored},
+};
 use std::io::{self, Write};
 
 #[derive(Clone)]
 struct Character {
     value: char,
-    color: Option<Color>,
+    style: TextStyle,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextStyle {
+    pub color: Option<Color>,
+    pub weight: Weight,
 }
 
 #[derive(Clone, Default)]
@@ -34,14 +43,14 @@ impl Canvas {
         &mut self.cells[row]
     }
 
-    fn set_text_chars<I>(&mut self, x: usize, y: usize, chars: I, color: Option<Color>)
+    fn set_text_chars<I>(&mut self, x: usize, y: usize, chars: I, style: TextStyle)
     where
         I: IntoIterator<Item = char>,
     {
         let row = self.row_mut(y);
         for (i, c) in chars.into_iter().enumerate() {
             if x + i < row.len() {
-                row[x + i].character = Some(Character { value: c, color });
+                row[x + i].character = Some(Character { value: c, style });
             }
         }
     }
@@ -66,7 +75,7 @@ impl Canvas {
 
     pub fn write_ansi<W: Write>(&self, mut w: W) -> io::Result<()> {
         let mut background_color = None;
-        let mut foreground_color = None;
+        let mut text_style = TextStyle::default();
         for row in &self.cells {
             let last_non_empty = row
                 .iter()
@@ -82,14 +91,29 @@ impl Canvas {
                 }
 
                 if let Some(c) = &cell.character {
-                    if c.color != foreground_color {
+                    if c.style.color != text_style.color {
                         write!(
                             w,
                             csi!("{}m"),
-                            Colored::ForegroundColor(c.color.unwrap_or(Color::Reset))
+                            Colored::ForegroundColor(c.style.color.unwrap_or(Color::Reset))
                         )?;
-                        foreground_color = c.color;
                     }
+
+                    if c.style.weight != text_style.weight {
+                        let mut attrs = Attributes::default();
+                        match c.style.weight {
+                            Weight::Bold => attrs.set(Attribute::Bold),
+                            Weight::Normal => attrs.set(Attribute::Reset),
+                            Weight::Light => attrs.set(Attribute::Dim),
+                        }
+                        for attr in Attribute::iterator() {
+                            if attrs.has(attr) {
+                                write!(w, csi!("{}m"), attr.sgr())?;
+                            }
+                        }
+                    }
+
+                    text_style = c.style;
                 }
 
                 if let Some(c) = &cell.character {
@@ -115,7 +139,7 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl<'a> CanvasSubviewMut<'a> {
-    pub fn set_text(&mut self, x: isize, y: isize, text: &str, color: Option<Color>) {
+    pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: TextStyle) {
         if self.clip && y < 0 || y >= self.height as isize {
             return;
         }
@@ -140,7 +164,7 @@ impl<'a> CanvasSubviewMut<'a> {
             x as usize,
             y as usize,
             text.chars().skip(to_skip as _).take(space as _),
-            color,
+            style,
         );
     }
 }

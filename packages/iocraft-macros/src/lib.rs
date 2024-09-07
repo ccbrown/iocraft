@@ -5,9 +5,11 @@ use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream, Parser},
     parse_macro_input,
+    punctuated::Punctuated,
     spanned::Spanned,
-    token::{Brace, Paren},
-    DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, Lit, Result, Token, Type,
+    token::{Brace, Comma, Paren},
+    DeriveInput, Error, Expr, FieldValue, FnArg, Ident, ItemFn, ItemStruct, Lit, Result, Token,
+    Type, TypePath,
 };
 
 enum ParsedElementChild {
@@ -16,8 +18,8 @@ enum ParsedElementChild {
 }
 
 struct ParsedElement {
-    ty: Type,
-    props: Vec<(Ident, Expr)>,
+    ty: TypePath,
+    props: Punctuated<FieldValue, Comma>,
     children: Vec<ParsedElementChild>,
 }
 
@@ -28,33 +30,25 @@ impl Parse for ParsedElement {
     ///     // children
     /// }
     fn parse(input: ParseStream) -> Result<Self> {
-        let ty: Type = input.parse()?;
+        let ty: TypePath = input.parse()?;
 
-        let mut props = Vec::new();
-        if input.peek(Paren) {
+        let props = if input.peek(Paren) {
             let props_input;
             parenthesized!(props_input in input);
-            let mut is_first = true;
-            while !props_input.is_empty() {
-                if !is_first {
-                    props_input.parse::<Token![,]>()?;
-                }
-                let ident: Ident = props_input.parse()?;
-                props_input.parse::<Token![:]>()?;
-                let expr: Expr = props_input.parse()?;
-                props.push((ident, expr));
-                is_first = false;
-            }
-        }
+            Punctuated::parse_terminated(&props_input)?
+        } else {
+            Punctuated::new()
+        };
 
         let mut children = Vec::new();
         if input.peek(Brace) {
             let children_input;
             braced!(children_input in input);
             while !children_input.is_empty() {
-                if children_input.peek(Brace) {
+                if children_input.peek(Token![#]) {
+                    children_input.parse::<Token![#]>()?;
                     let child_input;
-                    braced!(child_input in children_input);
+                    parenthesized!(child_input in children_input);
                     children.push(ParsedElementChild::Expr(child_input.parse()?));
                 } else {
                     children.push(ParsedElementChild::Element(children_input.parse()?));
@@ -77,19 +71,19 @@ impl ToTokens for ParsedElement {
         let props = self
             .props
             .iter()
-            .map(|(ident, expr)| match expr {
+            .map(|FieldValue { member, expr, .. }| match expr {
                 Expr::Lit(lit) => match &lit.lit {
                     Lit::Int(lit) if lit.suffix() == "pct" => {
                         let value = lit.base10_parse::<f32>().unwrap();
-                        quote!(#ident: ::iocraft::Percent(#value).into())
+                        quote!(#member: ::iocraft::Percent(#value).into())
                     }
                     Lit::Float(lit) if lit.suffix() == "pct" => {
                         let value = lit.base10_parse::<f32>().unwrap();
-                        quote!(#ident: ::iocraft::Percent(#value).into())
+                        quote!(#member: ::iocraft::Percent(#value).into())
                     }
-                    _ => quote!(#ident: (#expr).into()),
+                    _ => quote!(#member: (#expr).into()),
                 },
-                _ => quote!(#ident: (#expr).into()),
+                _ => quote!(#member: (#expr).into()),
             })
             .collect::<Vec<_>>();
 
@@ -415,9 +409,6 @@ const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
     ("margin_right", "::iocraft::Margin"),
     ("margin_bottom", "::iocraft::Margin"),
     ("margin_left", "::iocraft::Margin"),
-    ("overflow", "Option<::iocraft::Overflow>"),
-    ("overflow_x", "Option<::iocraft::Overflow>"),
-    ("overflow_y", "Option<::iocraft::Overflow>"),
     ("flex_direction", "::iocraft::FlexDirection"),
     ("flex_wrap", "::iocraft::FlexWrap"),
     ("flex_basis", "::iocraft::FlexBasis"),
