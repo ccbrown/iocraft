@@ -12,7 +12,7 @@ pub struct ContextProvider<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T: Unpin + Send + 'static> Component for ContextProvider<T> {
+impl<T: Unpin + 'static> Component for ContextProvider<T> {
     type Props = ContextProviderProps<T>;
 
     fn new(_props: &Self::Props) -> Self {
