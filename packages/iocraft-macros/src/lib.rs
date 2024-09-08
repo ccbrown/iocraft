@@ -212,10 +212,52 @@ pub fn hooks(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#hooks).into()
 }
 
+struct ParsedContext {
+    context: ItemStruct,
+}
+
+impl Parse for ParsedContext {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let context: ItemStruct = input.parse()?;
+        Ok(Self { context })
+    }
+}
+
+impl ToTokens for ParsedContext {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let context = &self.context;
+        let name = &context.ident;
+
+        let field_assignments = context.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! { #field_name: updater.get_context().unwrap() }
+        });
+
+        tokens.extend(quote! {
+            #context
+
+            impl<'a> #name<'a> {
+                fn new(updater: &'a ::iocraft::ComponentUpdater<'a>) -> Self {
+                    Self {
+                        #(#field_assignments,)*
+                    }
+                }
+            }
+        });
+    }
+}
+
+#[proc_macro_attribute]
+pub fn context(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let context = parse_macro_input!(item as ParsedContext);
+    quote!(#context).into()
+}
+
 enum ComponentImplementationArg {
     State,
     Hooks,
     Props,
+    Context,
 }
 
 struct ParsedComponent {
@@ -223,6 +265,7 @@ struct ParsedComponent {
     props_type: Option<Box<Type>>,
     state_type: Option<Box<Type>>,
     hooks_type: Option<Box<Type>>,
+    context_type: Option<Box<Type>>,
     args: Vec<ComponentImplementationArg>,
 }
 
@@ -233,6 +276,7 @@ impl Parse for ParsedComponent {
         let mut props_type = None;
         let mut state_type = None;
         let mut hooks_type = None;
+        let mut context_type = None;
         let mut args = Vec::new();
 
         for arg in &f.sig.inputs {
@@ -276,6 +320,20 @@ impl Parse for ParsedComponent {
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
                             }
                         }
+                        "context" => {
+                            if context_type.is_some() {
+                                return Err(Error::new(arg.span(), "duplicate `context` argument"));
+                            }
+                            match &*arg.ty {
+                                Type::Path(_) => {
+                                    context_type = Some(arg.ty.clone());
+                                    args.push(ComponentImplementationArg::Context);
+                                }
+                                _ => {
+                                    return Err(Error::new(arg.ty.span(), "invalid `context` type"))
+                                }
+                            }
+                        }
                         _ => return Err(Error::new(arg.span(), "invalid argument")),
                     }
                 }
@@ -288,6 +346,7 @@ impl Parse for ParsedComponent {
             props_type,
             state_type,
             hooks_type,
+            context_type,
             args,
         })
     }
@@ -338,6 +397,10 @@ impl ToTokens for ParsedComponent {
                 ComponentImplementationArg::State => quote!(&self.state),
                 ComponentImplementationArg::Hooks => quote!(&mut self.hooks),
                 ComponentImplementationArg::Props => quote!(props),
+                ComponentImplementationArg::Context => {
+                    let type_name = self.context_type.as_ref().unwrap();
+                    quote!(#type_name::new(updater))
+                }
             })
             .collect::<Vec<_>>();
 
@@ -366,7 +429,7 @@ impl ToTokens for ParsedComponent {
 
                 fn update(&mut self, props: &Self::Props, updater: &mut ::iocraft::ComponentUpdater<'_>) {
                     let e = Self::implementation(#(#impl_args),*);
-                    updater.update_children([e]);
+                    updater.update_children([e], None);
                 }
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {

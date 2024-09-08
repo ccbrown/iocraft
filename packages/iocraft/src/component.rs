@@ -99,6 +99,38 @@ impl<C: Any + Component> AnyComponent for C {
     }
 }
 
+#[derive(Clone, Default)]
+pub(crate) enum ComponentContextProvider<'a> {
+    #[default]
+    Root,
+    Child {
+        parent: &'a ComponentContextProvider<'a>,
+        context: Box<&'a dyn Any>,
+    },
+}
+
+impl<'a> ComponentContextProvider<'a> {
+    pub fn with_context(&'a self, context: Box<&'a dyn Any>) -> Self {
+        Self::Child {
+            parent: self,
+            context,
+        }
+    }
+
+    pub fn get_context<T: Any>(&self) -> Option<&T> {
+        match self {
+            Self::Root => None,
+            Self::Child { parent, context } => {
+                if let Some(context) = context.downcast_ref::<T>() {
+                    Some(context)
+                } else {
+                    parent.get_context()
+                }
+            }
+        }
+    }
+}
+
 pub(crate) struct InstantiatedComponent {
     node_id: NodeId,
     component: Box<dyn AnyComponent>,
@@ -128,8 +160,17 @@ impl InstantiatedComponent {
         self.props = props;
     }
 
-    pub fn update(&mut self, layout_engine: &mut LayoutEngine) {
-        let mut updater = ComponentUpdater::new(self.node_id, &mut self.children, layout_engine);
+    pub fn update(
+        &mut self,
+        layout_engine: &mut LayoutEngine,
+        context_provider: &ComponentContextProvider<'_>,
+    ) {
+        let mut updater = ComponentUpdater::new(
+            self.node_id,
+            &mut self.children,
+            layout_engine,
+            context_provider,
+        );
         self.props
             .update_component(&mut self.component, &mut updater);
     }

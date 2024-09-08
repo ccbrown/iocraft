@@ -172,7 +172,7 @@ impl Component for Box {
             }
         };
         updater.set_layout_style(style);
-        updater.update_children(props.children.iter().cloned());
+        updater.update_children(props.children.iter().cloned(), None);
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {

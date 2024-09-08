@@ -1,10 +1,11 @@
 use crate::{
     canvas::{Canvas, CanvasSubviewMut},
-    component::{ComponentProps, Components, InstantiatedComponent},
+    component::{ComponentContextProvider, ComponentProps, Components, InstantiatedComponent},
     components, AnyElement,
 };
 use crossterm::{cursor, queue, terminal};
 use std::{
+    any::Any,
     collections::HashMap,
     io::{self, stdout, Write},
     mem,
@@ -16,6 +17,7 @@ pub struct ComponentUpdater<'a> {
     node_id: NodeId,
     children: &'a mut Components,
     layout_engine: &'a mut LayoutEngine,
+    context_provider: &'a ComponentContextProvider<'a>,
 }
 
 impl<'a> ComponentUpdater<'a> {
@@ -23,12 +25,18 @@ impl<'a> ComponentUpdater<'a> {
         node_id: NodeId,
         children: &'a mut Components,
         layout_engine: &'a mut LayoutEngine,
+        context_provider: &'a ComponentContextProvider<'a>,
     ) -> Self {
         Self {
             node_id,
             children,
             layout_engine,
+            context_provider,
         }
+    }
+
+    pub fn get_context<T: Any>(&self) -> Option<&T> {
+        self.context_provider.get_context()
     }
 
     pub fn set_layout_style(&mut self, layout_style: taffy::style::Style) {
@@ -47,11 +55,15 @@ impl<'a> ComponentUpdater<'a> {
             .expect("we should be able to mark the node as dirty");
     }
 
-    pub fn update_children<I, T>(&mut self, children: I)
+    pub fn update_children<I, T>(&mut self, children: I, context: Option<Box<&dyn Any>>)
     where
         I: IntoIterator<Item = T>,
         T: Into<AnyElement>,
     {
+        let context_provider = match context {
+            Some(context) => self.context_provider.with_context(context),
+            None => self.context_provider.clone(),
+        };
         let mut used_components = HashMap::with_capacity(self.children.components.len());
 
         for child in children {
@@ -75,7 +87,7 @@ impl<'a> ComponentUpdater<'a> {
                     InstantiatedComponent::new(new_node_id, props)
                 }
             };
-            component.update(self.layout_engine);
+            component.update(self.layout_engine, &context_provider);
             if used_components.insert(key.clone(), component).is_some() {
                 panic!("duplicate key for sibling components: {}", key);
             }
@@ -183,7 +195,9 @@ impl Tree {
     }
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
-        self.root_component.update(&mut self.layout_engine);
+        let context = ComponentContextProvider::default();
+        self.root_component
+            .update(&mut self.layout_engine, &context);
 
         self.layout_engine
             .compute_layout_with_measure(
