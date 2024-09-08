@@ -230,11 +230,7 @@ impl ToTokens for ParsedContext {
 
         let field_assignments = context.fields.iter().map(|field| {
             let field_name = &field.ident;
-            let expect = format!(
-                "missing context for field `{}`",
-                field_name.as_ref().unwrap()
-            );
-            quote! { #field_name: updater.get_context().expect(#expect) }
+            quote! { #field_name: updater.get_context() }
         });
 
         tokens.extend(quote! {
