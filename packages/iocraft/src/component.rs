@@ -19,10 +19,7 @@ pub(crate) struct ComponentHelper<C: Component> {
     _marker: PhantomData<C>,
 }
 
-impl<C: Component> ComponentHelper<C>
-where
-    C::Props: Send,
-{
+impl<C: Component> ComponentHelper<C> {
     pub fn boxed() -> Box<dyn ComponentHelperExt> {
         Box::new(Self {
             _marker: PhantomData,
@@ -43,10 +40,7 @@ pub trait ComponentHelperExt: Any + Send {
     fn copy(&self) -> Box<dyn ComponentHelperExt>;
 }
 
-impl<C: Component> ComponentHelperExt for ComponentHelper<C>
-where
-    C::Props: Send,
-{
+impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
     fn new_component(&self, props: &dyn Any) -> Box<dyn AnyComponent> {
         Box::new(C::new(
             props.downcast_ref().expect("we should be able to downcast"),
