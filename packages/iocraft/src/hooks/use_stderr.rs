@@ -11,6 +11,7 @@ struct UseStderrState {
     waker: Option<Waker>,
 }
 
+#[derive(Clone)]
 pub struct UseStderrHandle {
     state: Arc<Mutex<UseStderrState>>,
 }

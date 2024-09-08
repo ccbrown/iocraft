@@ -11,6 +11,7 @@ struct UseStdoutState {
     waker: Option<Waker>,
 }
 
+#[derive(Clone)]
 pub struct UseStdoutHandle {
     state: Arc<Mutex<UseStdoutState>>,
 }
