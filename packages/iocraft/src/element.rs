@@ -157,7 +157,7 @@ pub trait ElementExt: private::Sealed + Sized {
         }
     }
 
-    fn render_loop(&self) -> impl Future<Output = ()>;
+    fn render_loop(&self) -> impl Future<Output = io::Result<()>>;
 }
 
 impl<T> ElementExt for T
@@ -168,7 +168,7 @@ where
         render(self, max_width)
     }
 
-    async fn render_loop(&self) {
-        terminal_render_loop(self).await;
+    async fn render_loop(&self) -> io::Result<()> {
+        terminal_render_loop(self).await
     }
 }

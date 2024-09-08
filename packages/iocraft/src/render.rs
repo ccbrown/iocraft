@@ -3,10 +3,10 @@ use crate::{
     component::{ComponentProps, Components, InstantiatedComponent},
     components, AnyElement,
 };
-use crossterm::{cursor, queue, terminal, QueueableCommand};
+use crossterm::{cursor, queue, terminal};
 use std::{
     collections::HashMap,
-    io::{stdout, Write},
+    io::{self, stdout, Write},
     mem,
 };
 pub use taffy::NodeId;
@@ -224,18 +224,21 @@ impl Tree {
         canvas
     }
 
-    async fn terminal_render_loop(&mut self) -> ! {
+    async fn terminal_render_loop(&mut self) -> io::Result<()> {
         let mut dest = stdout();
-        queue!(dest, cursor::SavePosition).expect("we should be able to queue commands");
+        queue!(dest, cursor::SavePosition)?;
         loop {
-            dest.queue(cursor::RestorePosition)
-                .expect("we should be able to queue commands");
-            dest.flush().expect("we should be able to flush the output");
-            let (width, _) = terminal::size().expect("we should be able to get the terminal size");
+            let (width, _) = terminal::size()?;
+            queue!(
+                dest,
+                terminal::BeginSynchronizedUpdate,
+                cursor::RestorePosition,
+                terminal::Clear(terminal::ClearType::FromCursorDown),
+            )?;
+            dest.flush()?;
             let canvas = self.render(Some(width as _));
-            canvas
-                .write_ansi(stdout())
-                .expect("we should be able to write to stdout");
+            queue!(dest, cursor::SavePosition, terminal::EndSynchronizedUpdate)?;
+            canvas.write_ansi(stdout())?;
             self.root_component.wait().await;
         }
     }
@@ -246,7 +249,7 @@ pub fn render<E: Into<AnyElement>>(e: E, max_width: Option<usize>) -> Canvas {
     tree.render(max_width)
 }
 
-pub(crate) async fn terminal_render_loop<E: Into<AnyElement>>(e: E) -> ! {
+pub(crate) async fn terminal_render_loop<E: Into<AnyElement>>(e: E) -> io::Result<()> {
     let mut tree = Tree::new(e.into());
     tree.terminal_render_loop().await
 }
