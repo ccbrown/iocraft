@@ -177,11 +177,11 @@ struct Tree<'a> {
     layout_engine: LayoutEngine,
     wrapper_node_id: NodeId,
     root_component: InstantiatedComponent,
-    root_component_props: &'a (dyn Any + Send),
+    root_component_props: &'a dyn Any,
 }
 
 impl<'a> Tree<'a> {
-    fn new(props: &'a (dyn Any + Send), helper: Box<dyn ComponentHelperExt>) -> Self {
+    fn new(props: &'a dyn Any, helper: Box<dyn ComponentHelperExt>) -> Self {
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())

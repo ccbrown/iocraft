@@ -20,7 +20,6 @@ pub trait ExtendWithElements<T>: Sized {
 impl<T, U> ExtendWithElements<T> for Element<U>
 where
     U: ElementType + 'static,
-    <U as ElementType>::Props: Send,
     T: From<Element<U>>,
 {
     fn extend<E: Extend<T>>(self, dest: &mut E) {
@@ -66,7 +65,6 @@ pub struct Element<T: ElementType> {
 impl<T> Display for Element<T>
 where
     T: Component + 'static,
-    <T as Component>::Props: Send,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.render(None).fmt(f)
@@ -79,7 +77,7 @@ pub trait ElementType {
 
 pub struct AnyElement {
     key: ElementKey,
-    props: Box<dyn Any + Send>,
+    props: Box<dyn Any>,
     helper: Box<dyn ComponentHelperExt>,
 }
 
@@ -92,7 +90,6 @@ impl Display for AnyElement {
 impl<T> From<Element<T>> for AnyElement
 where
     T: Component + 'static,
-    <T as Component>::Props: Send,
 {
     fn from(e: Element<T>) -> Self {
         Self {
@@ -106,7 +103,7 @@ where
 impl<T> From<&Element<T>> for AnyElement
 where
     T: Component + 'static,
-    <T as Component>::Props: Clone + Send,
+    <T as Component>::Props: Clone,
 {
     fn from(e: &Element<T>) -> Self {
         Self {
@@ -129,7 +126,7 @@ mod private {
 
 pub trait ElementExt: private::Sealed + Sized {
     fn key(&self) -> &ElementKey;
-    fn props(&self) -> &(dyn Any + Send);
+    fn props(&self) -> &dyn Any;
 
     #[doc(hidden)]
     fn helper(&self) -> Box<dyn ComponentHelperExt>;
@@ -167,7 +164,7 @@ impl ElementExt for AnyElement {
         &self.key
     }
 
-    fn props(&self) -> &(dyn Any + Send) {
+    fn props(&self) -> &dyn Any {
         &self.props
     }
 
@@ -190,7 +187,7 @@ impl ElementExt for &AnyElement {
         &self.key
     }
 
-    fn props(&self) -> &(dyn Any + Send) {
+    fn props(&self) -> &dyn Any {
         self.props.as_ref()
     }
 
@@ -211,13 +208,12 @@ impl ElementExt for &AnyElement {
 impl<T> ElementExt for Element<T>
 where
     T: Component + 'static,
-    <T as Component>::Props: Send,
 {
     fn key(&self) -> &ElementKey {
         &self.key
     }
 
-    fn props(&self) -> &(dyn Any + Send) {
+    fn props(&self) -> &dyn Any {
         &self.props
     }
 
@@ -238,13 +234,12 @@ where
 impl<T> ElementExt for &Element<T>
 where
     T: Component + 'static,
-    <T as Component>::Props: Send,
 {
     fn key(&self) -> &ElementKey {
         &self.key
     }
 
-    fn props(&self) -> &(dyn Any + Send) {
+    fn props(&self) -> &dyn Any {
         &self.props
     }
 

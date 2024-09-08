@@ -28,7 +28,7 @@ impl<C: Component> ComponentHelper<C> {
 }
 
 #[doc(hidden)]
-pub trait ComponentHelperExt: Any + Send {
+pub trait ComponentHelperExt: Any {
     fn new_component(&self, props: &dyn Any) -> Box<dyn AnyComponent>;
     fn update_component(
         &self,
@@ -65,7 +65,7 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
     }
 }
 
-pub trait Component: Any + Unpin + Send {
+pub trait Component: Any + Unpin {
     type Props;
 
     fn new(props: &Self::Props) -> Self;
@@ -83,7 +83,7 @@ impl<C: Component> ElementType for C {
 }
 
 #[doc(hidden)]
-pub trait AnyComponent: Any + Unpin + Send {
+pub trait AnyComponent: Any + Unpin {
     fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
@@ -147,11 +147,7 @@ pub(crate) struct InstantiatedComponent {
 }
 
 impl InstantiatedComponent {
-    pub fn new(
-        node_id: NodeId,
-        props: &(dyn Any + Send),
-        helper: Box<dyn ComponentHelperExt>,
-    ) -> Self {
+    pub fn new(node_id: NodeId, props: &dyn Any, helper: Box<dyn ComponentHelperExt>) -> Self {
         Self {
             node_id,
             component: helper.new_component(props),
@@ -172,7 +168,7 @@ impl InstantiatedComponent {
         &mut self,
         layout_engine: &mut LayoutEngine,
         context_provider: &ComponentContextProvider<'_>,
-        props: &(dyn Any + Send),
+        props: &dyn Any,
     ) {
         let mut updater = ComponentUpdater::new(
             self.node_id,
