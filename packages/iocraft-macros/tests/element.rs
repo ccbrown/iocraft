@@ -1,4 +1,4 @@
-use iocraft::{element, AnyElement, Component, ComponentUpdater, Element};
+use iocraft::{element, AnyElement, Component, Element};
 
 #[derive(Clone, Default)]
 struct MyComponent;
@@ -15,8 +15,6 @@ impl Component for MyComponent {
     fn new(_props: &Self::Props) -> Self {
         Self
     }
-
-    fn update(&mut self, _props: &Self::Props, _updater: &mut ComponentUpdater<'_>) {}
 }
 
 struct MyContainer;
@@ -32,8 +30,6 @@ impl Component for MyContainer {
     fn new(_props: &Self::Props) -> Self {
         Self
     }
-
-    fn update(&mut self, _props: &Self::Props, _updater: &mut ComponentUpdater<'_>) {}
 }
 
 #[test]

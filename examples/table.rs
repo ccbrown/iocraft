@@ -78,5 +78,5 @@ fn main() {
         User::new(8, "Heidi", "heidi@example.com"),
     ];
 
-    element!(UsersTable(users: users)).print();
+    element!(UsersTable(users)).print();
 }

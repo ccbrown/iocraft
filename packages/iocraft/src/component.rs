@@ -62,7 +62,8 @@ pub trait Component: Any + Unpin + Send {
     type Props;
 
     fn new(props: &Self::Props) -> Self;
-    fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>);
+
+    fn update(&mut self, _props: &Self::Props, _updater: &mut ComponentUpdater<'_>) {}
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
