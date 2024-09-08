@@ -303,6 +303,26 @@ mod tests {
 
         assert_eq!(
             element! {
+                Box(padding: 1) {
+                    Text(content: "foo")
+                }
+            }
+            .to_string(),
+            "\n foo\n\n"
+        );
+
+        assert_eq!(
+            element! {
+                Box(margin: 2) {
+                    Text(content: "foo")
+                }
+            }
+            .to_string(),
+            "\n\n  foo\n\n\n"
+        );
+
+        assert_eq!(
+            element! {
                 Box(width: 20) {
                     Box(width: 60pct) {
                         Text(content: "foo")

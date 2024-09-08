@@ -38,23 +38,24 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn new(width: usize) -> Self {
+    pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
-            cells: Vec::new(),
+            cells: vec![vec![Cell::default(); width]; height],
         }
     }
 
-    fn row_mut(&mut self, row: usize) -> &mut Vec<Cell> {
-        while row >= self.cells.len() {
-            self.cells.push(vec![Cell::default(); self.width]);
-        }
-        &mut self.cells[row]
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.cells.len()
     }
 
     fn set_background_color(&mut self, x: usize, y: usize, w: usize, h: usize, color: Color) {
         for y in y..y + h {
-            let row = self.row_mut(y);
+            let row = &mut self.cells[y];
             for x in x..x + w {
                 if x < row.len() {
                     row[x].background_color = Some(color);
@@ -67,7 +68,7 @@ impl Canvas {
     where
         I: IntoIterator<Item = char>,
     {
-        let row = self.row_mut(y);
+        let row = &mut self.cells[y];
         for (i, c) in chars.into_iter().enumerate() {
             if x + i < row.len() {
                 row[x + i].character = Some(Character { value: c, style });
@@ -98,7 +99,7 @@ impl Canvas {
         let mut text_style = TextStyle::default();
         for row in &self.cells {
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
-            for cell in row.iter().take(last_non_empty.map_or(row.len(), |i| i + 1)) {
+            for cell in row.iter().take(last_non_empty.map_or(0, |i| i + 1)) {
                 if ansi {
                     // For certain changes, we need to reset all attributes.
                     let mut needs_reset = false;

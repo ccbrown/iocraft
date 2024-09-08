@@ -25,7 +25,14 @@ struct UsersTableProps {
 #[component]
 fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
     element! {
-        Box(flex_direction: FlexDirection::Column, width: 60, border_style: BorderStyle::Round, border_color: Color::Cyan) {
+        Box(
+            margin_top: 1,
+            margin_bottom: 1,
+            flex_direction: FlexDirection::Column,
+            width: 60,
+            border_style: BorderStyle::Round,
+            border_color: Color::Cyan,
+        ) {
             Box(border_style: BorderStyle::Single, border_edges: Edges::Bottom, border_color: Color::Grey) {
                 Box(width: 10pct) {
                     Text(content: "Id", weight: Weight::Bold)

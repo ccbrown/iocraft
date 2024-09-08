@@ -1,7 +1,7 @@
 use crate::{
     canvas::{Canvas, CanvasSubviewMut},
-    component::{Components, InstantiatedComponent},
-    AnyElement,
+    component::{ComponentProps, Components, InstantiatedComponent},
+    components, AnyElement,
 };
 use crossterm::{cursor, queue, terminal, QueueableCommand};
 use std::{
@@ -164,14 +164,21 @@ struct Tree {
 
 impl Tree {
     fn new(e: AnyElement) -> Self {
-        let (_, props) = e.into_key_and_props();
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
             .expect("we should be able to add the root");
+        let root_component = InstantiatedComponent::new(
+            root_node_id,
+            // Wrap the element in another component so that top level margins work correctly.
+            Box::new(ComponentProps::<components::Box>(components::BoxProps {
+                children: vec![e.into()],
+                ..Default::default()
+            })),
+        );
         Self {
             layout_engine,
-            root_component: InstantiatedComponent::new(root_node_id, props),
+            root_component,
         }
     }
 
@@ -200,7 +207,7 @@ impl Tree {
             .layout_engine
             .layout(self.root_component.node_id())
             .expect("we should be able to get the root layout");
-        let mut canvas = Canvas::new(root_layout.size.width as _);
+        let mut canvas = Canvas::new(root_layout.size.width as _, root_layout.size.height as _);
         let mut renderer = ComponentRenderer {
             node_id: self.root_component.node_id(),
             node_position: Point { x: 0, y: 0 },

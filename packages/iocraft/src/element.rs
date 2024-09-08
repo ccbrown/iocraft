@@ -18,8 +18,8 @@ pub trait ExtendWithElements<T>: Sized {
 
 impl<T, U> ExtendWithElements<T> for Element<U>
 where
-    U: Component + 'static,
-    <U as Component>::Props: Clone + Send,
+    U: ElementType + 'static,
+    <U as ElementType>::Props: Clone + Send,
     T: From<Element<U>>,
 {
     fn extend<E: Extend<T>>(self, dest: &mut E) {
@@ -56,6 +56,7 @@ impl ElementKey {
     }
 }
 
+#[derive(Clone)]
 pub struct Element<T: ElementType> {
     pub key: ElementKey,
     pub props: T::Props,

@@ -65,8 +65,9 @@ impl_from_percent!(Padding);
 
 macro_rules! new_size_type {
     ($name:ident, $def:expr) => {
-        #[derive(Clone, Copy, Debug, PartialEq)]
+        #[derive(Clone, Copy, Debug, Default, PartialEq)]
         pub enum $name {
+            #[default]
             Unset,
             Auto,
             Length(u32),
@@ -74,24 +75,18 @@ macro_rules! new_size_type {
         }
 
         impl $name {
-            pub fn or(self, other: Self) -> Self {
+            pub fn or<T: Into<Self>>(self, other: T) -> Self {
                 match self {
-                    $name::Unset => other,
+                    $name::Unset => other.into(),
                     _ => self,
                 }
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                $def
             }
         }
 
         impl From<$name> for LengthPercentageAuto {
             fn from(p: $name) -> Self {
                 match p {
-                    $name::Unset => LengthPercentageAuto::Auto,
+                    $name::Unset => $def.into(),
                     $name::Auto => LengthPercentageAuto::Auto,
                     $name::Length(l) => LengthPercentageAuto::Length(l as _),
                     $name::Percent(p) => LengthPercentageAuto::Percent(p / 100.0),
@@ -102,7 +97,7 @@ macro_rules! new_size_type {
         impl From<$name> for Dimension {
             fn from(p: $name) -> Self {
                 match p {
-                    $name::Unset => Dimension::Auto,
+                    $name::Unset => $def.into(),
                     $name::Auto => Dimension::Auto,
                     $name::Length(l) => Dimension::Length(l as _),
                     $name::Percent(p) => Dimension::Percent(p / 100.0),
@@ -115,8 +110,8 @@ macro_rules! new_size_type {
     };
 }
 
-new_size_type!(Margin, Self::Length(0));
-new_size_type!(Size, Self::Auto);
+new_size_type!(Margin, Margin::Length(0));
+new_size_type!(Size, Size::Auto);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum FlexBasis {
