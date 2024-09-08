@@ -1,9 +1,9 @@
 use iocraft::{element, AnyElement, Component, Element};
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct MyComponent;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct MyComponentProps {
     foo: String,
     children: Vec<Element<MyComponent>>,
@@ -19,7 +19,7 @@ impl Component for MyComponent {
 
 struct MyContainer;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct MyContainerProps {
     children: Vec<AnyElement>,
 }

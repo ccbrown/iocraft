@@ -428,8 +428,8 @@ impl ToTokens for ParsedComponent {
                 }
 
                 fn update(&mut self, props: &Self::Props, updater: &mut ::iocraft::ComponentUpdater<'_>) {
-                    let e = Self::implementation(#(#impl_args),*);
-                    updater.update_children([e], None);
+                    let e = Self::implementation(#(#impl_args),*).into();
+                    updater.update_children([&e], None);
                 }
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {

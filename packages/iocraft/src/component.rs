@@ -6,55 +6,68 @@ use futures::future::poll_fn;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
 pub use taffy::NodeId;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct NoProps;
 
-pub(crate) struct ComponentProps<C: Component>(pub(crate) C::Props);
-
-pub(crate) trait AnyComponentProps: Any + Send {
-    fn new_component(&self) -> Box<dyn AnyComponent>;
-    fn update_component(
-        &self,
-        component: &mut Box<dyn AnyComponent>,
-        updater: &mut ComponentUpdater<'_>,
-    );
-    fn clone_impl(&self) -> Box<dyn AnyComponentProps>;
-    fn component_type_id(&self) -> TypeId;
+pub(crate) struct ComponentHelper<C: Component> {
+    _marker: PhantomData<C>,
 }
 
-impl<C: Component> AnyComponentProps for ComponentProps<C>
+impl<C: Component> ComponentHelper<C>
 where
-    C::Props: Clone + Send,
+    C::Props: Send,
 {
-    fn new_component(&self) -> Box<dyn AnyComponent> {
-        Box::new(C::new(&self.0))
+    pub fn boxed() -> Box<dyn ComponentHelperExt> {
+        Box::new(Self {
+            _marker: PhantomData,
+        })
+    }
+}
+
+#[doc(hidden)]
+pub trait ComponentHelperExt: Any + Send {
+    fn new_component(&self, props: &dyn Any) -> Box<dyn AnyComponent>;
+    fn update_component(
+        &self,
+        component: &mut Box<dyn AnyComponent>,
+        props: &dyn Any,
+        updater: &mut ComponentUpdater<'_>,
+    );
+    fn component_type_id(&self) -> TypeId;
+    fn copy(&self) -> Box<dyn ComponentHelperExt>;
+}
+
+impl<C: Component> ComponentHelperExt for ComponentHelper<C>
+where
+    C::Props: Send,
+{
+    fn new_component(&self, props: &dyn Any) -> Box<dyn AnyComponent> {
+        Box::new(C::new(
+            props.downcast_ref().expect("we should be able to downcast"),
+        ))
     }
 
     fn update_component(
         &self,
         component: &mut Box<dyn AnyComponent>,
+        props: &dyn Any,
         updater: &mut ComponentUpdater<'_>,
     ) {
-        component.update(&self.0, updater);
-    }
-
-    fn clone_impl(&self) -> Box<dyn AnyComponentProps> {
-        Box::new(Self(self.0.clone()))
+        component.update(props, updater);
     }
 
     fn component_type_id(&self) -> TypeId {
         TypeId::of::<C>()
     }
-}
 
-impl Clone for Box<dyn AnyComponentProps> {
-    fn clone(&self) -> Self {
-        self.clone_impl()
+    fn copy(&self) -> Box<dyn ComponentHelperExt> {
+        Self::boxed()
     }
 }
 
@@ -75,7 +88,8 @@ impl<C: Component> ElementType for C {
     type Props = C::Props;
 }
 
-pub(crate) trait AnyComponent: Any + Unpin + Send {
+#[doc(hidden)]
+pub trait AnyComponent: Any + Unpin + Send {
     fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
@@ -134,17 +148,21 @@ impl<'a> ComponentContextProvider<'a> {
 pub(crate) struct InstantiatedComponent {
     node_id: NodeId,
     component: Box<dyn AnyComponent>,
-    props: Box<dyn AnyComponentProps>,
     children: Components,
+    helper: Box<dyn ComponentHelperExt>,
 }
 
 impl InstantiatedComponent {
-    pub fn new(node_id: NodeId, props: Box<dyn AnyComponentProps>) -> Self {
+    pub fn new(
+        node_id: NodeId,
+        props: &(dyn Any + Send),
+        helper: Box<dyn ComponentHelperExt>,
+    ) -> Self {
         Self {
             node_id,
-            component: props.new_component(),
-            props,
+            component: helper.new_component(props),
             children: Components::default(),
+            helper,
         }
     }
 
@@ -156,14 +174,11 @@ impl InstantiatedComponent {
         &*self.component
     }
 
-    pub fn set_props(&mut self, props: Box<dyn AnyComponentProps>) {
-        self.props = props;
-    }
-
     pub fn update(
         &mut self,
         layout_engine: &mut LayoutEngine,
         context_provider: &ComponentContextProvider<'_>,
+        props: &(dyn Any + Send),
     ) {
         let mut updater = ComponentUpdater::new(
             self.node_id,
@@ -171,8 +186,8 @@ impl InstantiatedComponent {
             layout_engine,
             context_provider,
         );
-        self.props
-            .update_component(&mut self.component, &mut updater);
+        self.helper
+            .update_component(&mut self.component, props, &mut updater);
     }
 
     pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {

@@ -1,7 +1,7 @@
 use crate::{
     canvas::{Canvas, CanvasSubviewMut},
-    component::{ComponentContextProvider, ComponentProps, Components, InstantiatedComponent},
-    components, AnyElement,
+    component::{ComponentContextProvider, ComponentHelperExt, Components, InstantiatedComponent},
+    element::ElementExt,
 };
 use crossterm::{cursor, queue, terminal};
 use std::{
@@ -58,7 +58,7 @@ impl<'a> ComponentUpdater<'a> {
     pub fn update_children<I, T>(&mut self, children: I, context: Option<Box<&dyn Any>>)
     where
         I: IntoIterator<Item = T>,
-        T: Into<AnyElement>,
+        T: ElementExt,
     {
         let context_provider = match context {
             Some(context) => self.context_provider.with_context(context),
@@ -67,13 +67,14 @@ impl<'a> ComponentUpdater<'a> {
         let mut used_components = HashMap::with_capacity(self.children.components.len());
 
         for child in children {
-            let e: AnyElement = child.into();
-            let (key, props) = e.into_key_and_props();
-            let mut component: InstantiatedComponent = match self.children.components.remove(&key) {
-                Some(mut component)
-                    if component.component().type_id() == props.component_type_id() =>
+            let mut component: InstantiatedComponent = match self
+                .children
+                .components
+                .remove(child.key())
+            {
+                Some(component)
+                    if component.component().type_id() == child.helper().component_type_id() =>
                 {
-                    component.set_props(props);
                     component
                 }
                 _ => {
@@ -84,12 +85,15 @@ impl<'a> ComponentUpdater<'a> {
                     self.layout_engine
                         .add_child(self.node_id, new_node_id)
                         .expect("we should be able to add the child");
-                    InstantiatedComponent::new(new_node_id, props)
+                    InstantiatedComponent::new(new_node_id, child.props(), child.helper())
                 }
             };
-            component.update(self.layout_engine, &context_provider);
-            if used_components.insert(key.clone(), component).is_some() {
-                panic!("duplicate key for sibling components: {}", key);
+            component.update(self.layout_engine, &context_provider, child.props());
+            if used_components
+                .insert(child.key().clone(), component)
+                .is_some()
+            {
+                panic!("duplicate key for sibling components: {}", child.key());
             }
         }
 
@@ -169,39 +173,38 @@ pub(crate) struct LayoutEngineNodeContext {
 
 pub(crate) type LayoutEngine = TaffyTree<LayoutEngineNodeContext>;
 
-struct Tree {
+struct Tree<'a> {
     layout_engine: LayoutEngine,
+    wrapper_node_id: NodeId,
     root_component: InstantiatedComponent,
+    root_component_props: &'a (dyn Any + Send),
 }
 
-impl Tree {
-    fn new(e: AnyElement) -> Self {
+impl<'a> Tree<'a> {
+    fn new(props: &'a (dyn Any + Send), helper: Box<dyn ComponentHelperExt>) -> Self {
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
             .expect("we should be able to add the root");
-        let root_component = InstantiatedComponent::new(
-            root_node_id,
-            // Wrap the element in another component so that top level margins work correctly.
-            Box::new(ComponentProps::<components::Box>(components::BoxProps {
-                children: vec![e.into()],
-                ..Default::default()
-            })),
-        );
+        let wrapper_node_id = layout_engine
+            .new_with_children(Style::default(), &[root_node_id])
+            .expect("we should be able to add the root");
         Self {
             layout_engine,
-            root_component,
+            wrapper_node_id,
+            root_component: InstantiatedComponent::new(root_node_id, props, helper),
+            root_component_props: props,
         }
     }
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         let context = ComponentContextProvider::default();
         self.root_component
-            .update(&mut self.layout_engine, &context);
+            .update(&mut self.layout_engine, &context, self.root_component_props);
 
         self.layout_engine
             .compute_layout_with_measure(
-                self.root_component.node_id(),
+                self.wrapper_node_id,
                 Size {
                     width: max_width
                         .map(|w| AvailableSpace::Definite(w as _))
@@ -217,14 +220,24 @@ impl Tree {
             )
             .expect("we should be able to compute the layout");
 
+        let wrapper_layout = self
+            .layout_engine
+            .layout(self.wrapper_node_id)
+            .expect("we should be able to get the wrapper layout");
+        let mut canvas = Canvas::new(
+            wrapper_layout.size.width as _,
+            wrapper_layout.size.height as _,
+        );
         let root_layout = self
             .layout_engine
             .layout(self.root_component.node_id())
             .expect("we should be able to get the root layout");
-        let mut canvas = Canvas::new(root_layout.size.width as _, root_layout.size.height as _);
         let mut renderer = ComponentRenderer {
             node_id: self.root_component.node_id(),
-            node_position: Point { x: 0, y: 0 },
+            node_position: Point {
+                x: root_layout.location.x as _,
+                y: root_layout.location.y as _,
+            },
             node_size: Size {
                 width: root_layout.size.width as _,
                 height: root_layout.size.height as _,
@@ -252,18 +265,20 @@ impl Tree {
             dest.flush()?;
             let canvas = self.render(Some(width as _));
             queue!(dest, cursor::SavePosition, terminal::EndSynchronizedUpdate)?;
+            // TODO: by comparing this canvas to the previous one, we could do incremental updates
+            // instead of redrawing everything
             canvas.write_ansi(stdout())?;
             self.root_component.wait().await;
         }
     }
 }
 
-pub fn render<E: Into<AnyElement>>(e: E, max_width: Option<usize>) -> Canvas {
-    let mut tree = Tree::new(e.into());
+pub fn render<E: ElementExt>(e: E, max_width: Option<usize>) -> Canvas {
+    let mut tree = Tree::new(e.props(), e.helper());
     tree.render(max_width)
 }
 
-pub(crate) async fn terminal_render_loop<E: Into<AnyElement>>(e: E) -> io::Result<()> {
-    let mut tree = Tree::new(e.into());
+pub(crate) async fn terminal_render_loop<E: ElementExt>(e: E) -> io::Result<()> {
+    let mut tree = Tree::new(e.props(), e.helper());
     tree.terminal_render_loop().await
 }

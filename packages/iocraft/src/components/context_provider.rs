@@ -1,7 +1,7 @@
 use crate::{AnyElement, Component, ComponentUpdater};
 use std::{any::Any, marker::PhantomData};
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct ContextProviderProps<T> {
     pub children: Vec<AnyElement>,
     pub value: Option<T>,
@@ -12,7 +12,7 @@ pub struct ContextProvider<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T: Clone + Unpin + Send + 'static> Component for ContextProvider<T> {
+impl<T: Unpin + Send + 'static> Component for ContextProvider<T> {
     type Props = ContextProviderProps<T>;
 
     fn new(_props: &Self::Props) -> Self {
@@ -23,7 +23,7 @@ impl<T: Clone + Unpin + Send + 'static> Component for ContextProvider<T> {
 
     fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
         updater.update_children(
-            props.children.iter().cloned(),
+            props.children.iter(),
             props.value.as_ref().map(|v| Box::new(v as &dyn Any)),
         );
     }

@@ -17,7 +17,7 @@ impl User {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct UsersTableProps {
     users: Vec<User>,
 }

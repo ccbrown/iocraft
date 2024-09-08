@@ -112,7 +112,7 @@ impl BorderStyle {
 }
 
 #[with_layout_style_props]
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct BoxProps {
     pub children: Vec<AnyElement>,
     pub border_style: BorderStyle,
@@ -172,7 +172,7 @@ impl Component for Box {
             }
         };
         updater.set_layout_style(style);
-        updater.update_children(props.children.iter().cloned(), None);
+        updater.update_children(props.children.iter(), None);
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {

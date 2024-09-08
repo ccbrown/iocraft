@@ -1,9 +1,10 @@
 use crate::{
-    component::{AnyComponentProps, Component, ComponentProps},
+    component::{Component, ComponentHelper, ComponentHelperExt},
     render, terminal_render_loop, Canvas,
 };
 use crossterm::{terminal, tty::IsTty};
 use std::{
+    any::Any,
     fmt::{self, Display, Formatter},
     future::Future,
     io::{self, stderr, stdout, Write},
@@ -19,7 +20,7 @@ pub trait ExtendWithElements<T>: Sized {
 impl<T, U> ExtendWithElements<T> for Element<U>
 where
     U: ElementType + 'static,
-    <U as ElementType>::Props: Clone + Send,
+    <U as ElementType>::Props: Send,
     T: From<Element<U>>,
 {
     fn extend<E: Extend<T>>(self, dest: &mut E) {
@@ -65,7 +66,7 @@ pub struct Element<T: ElementType> {
 impl<T> Display for Element<T>
 where
     T: Component + 'static,
-    <T as Component>::Props: Clone + Send,
+    <T as Component>::Props: Send,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.render(None).fmt(f)
@@ -76,16 +77,10 @@ pub trait ElementType {
     type Props;
 }
 
-#[derive(Clone)]
 pub struct AnyElement {
     key: ElementKey,
-    props: Box<dyn AnyComponentProps>,
-}
-
-impl AnyElement {
-    pub(crate) fn into_key_and_props(self) -> (ElementKey, Box<dyn AnyComponentProps>) {
-        (self.key, self.props)
-    }
+    props: Box<dyn Any + Send>,
+    helper: Box<dyn ComponentHelperExt>,
 }
 
 impl Display for AnyElement {
@@ -97,12 +92,13 @@ impl Display for AnyElement {
 impl<T> From<Element<T>> for AnyElement
 where
     T: Component + 'static,
-    <T as Component>::Props: Clone + Send,
+    <T as Component>::Props: Send,
 {
     fn from(e: Element<T>) -> Self {
         Self {
             key: e.key,
-            props: Box::new(ComponentProps::<T>(e.props)),
+            props: Box::new(e.props),
+            helper: ComponentHelper::<T>::boxed(),
         }
     }
 }
@@ -115,39 +111,45 @@ where
     fn from(e: &Element<T>) -> Self {
         Self {
             key: e.key.clone(),
-            props: Box::new(ComponentProps::<T>(e.props.clone())),
+            props: Box::new(e.props.clone()),
+            helper: ComponentHelper::<T>::boxed(),
         }
     }
 }
 
-impl From<&AnyElement> for AnyElement {
-    fn from(e: &AnyElement) -> Self {
-        e.clone()
-    }
-}
-
 mod private {
+    use super::*;
+
     pub trait Sealed {}
-    impl<T> Sealed for T where super::AnyElement: for<'a> From<&'a T> {}
+    impl Sealed for AnyElement {}
+    impl Sealed for &AnyElement {}
+    impl<T> Sealed for Element<T> where T: Component + 'static {}
+    impl<T> Sealed for &Element<T> where T: Component + 'static {}
 }
 
 pub trait ElementExt: private::Sealed + Sized {
+    fn key(&self) -> &ElementKey;
+    fn props(&self) -> &(dyn Any + Send);
+
+    #[doc(hidden)]
+    fn helper(&self) -> Box<dyn ComponentHelperExt>;
+
     fn render(&self, max_width: Option<usize>) -> Canvas;
 
-    fn print(&self) {
+    fn print(self) {
         self.write_to_raw_fd(stdout()).unwrap();
     }
 
-    fn eprint(&self) {
+    fn eprint(self) {
         self.write_to_raw_fd(stderr()).unwrap();
     }
 
-    fn write<W: Write>(&self, w: W) -> io::Result<()> {
+    fn write<W: Write>(self, w: W) -> io::Result<()> {
         let canvas = self.render(None);
         canvas.write(w)
     }
 
-    fn write_to_raw_fd<F: Write + AsRawFd>(&self, fd: F) -> io::Result<()> {
+    fn write_to_raw_fd<F: Write + AsRawFd>(self, fd: F) -> io::Result<()> {
         if fd.is_tty() {
             let (width, _) = terminal::size().expect("we should be able to get the terminal size");
             let canvas = self.render(Some(width as _));
@@ -160,15 +162,102 @@ pub trait ElementExt: private::Sealed + Sized {
     fn render_loop(&self) -> impl Future<Output = io::Result<()>>;
 }
 
-impl<T> ElementExt for T
-where
-    AnyElement: for<'a> From<&'a T>,
-{
+impl ElementExt for AnyElement {
+    fn key(&self) -> &ElementKey {
+        &self.key
+    }
+
+    fn props(&self) -> &(dyn Any + Send) {
+        &self.props
+    }
+
+    #[doc(hidden)]
+    fn helper(&self) -> Box<dyn ComponentHelperExt> {
+        self.helper.copy()
+    }
+
     fn render(&self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
 
     async fn render_loop(&self) -> io::Result<()> {
         terminal_render_loop(self).await
+    }
+}
+
+impl ElementExt for &AnyElement {
+    fn key(&self) -> &ElementKey {
+        &self.key
+    }
+
+    fn props(&self) -> &(dyn Any + Send) {
+        self.props.as_ref()
+    }
+
+    #[doc(hidden)]
+    fn helper(&self) -> Box<dyn ComponentHelperExt> {
+        self.helper.copy()
+    }
+
+    fn render(&self, max_width: Option<usize>) -> Canvas {
+        render(*self, max_width)
+    }
+
+    async fn render_loop(&self) -> io::Result<()> {
+        terminal_render_loop(*self).await
+    }
+}
+
+impl<T> ElementExt for Element<T>
+where
+    T: Component + 'static,
+    <T as Component>::Props: Send,
+{
+    fn key(&self) -> &ElementKey {
+        &self.key
+    }
+
+    fn props(&self) -> &(dyn Any + Send) {
+        &self.props
+    }
+
+    #[doc(hidden)]
+    fn helper(&self) -> Box<dyn ComponentHelperExt> {
+        ComponentHelper::<T>::boxed()
+    }
+
+    fn render(&self, max_width: Option<usize>) -> Canvas {
+        render(self, max_width)
+    }
+
+    async fn render_loop(&self) -> io::Result<()> {
+        terminal_render_loop(self).await
+    }
+}
+
+impl<T> ElementExt for &Element<T>
+where
+    T: Component + 'static,
+    <T as Component>::Props: Send,
+{
+    fn key(&self) -> &ElementKey {
+        &self.key
+    }
+
+    fn props(&self) -> &(dyn Any + Send) {
+        &self.props
+    }
+
+    #[doc(hidden)]
+    fn helper(&self) -> Box<dyn ComponentHelperExt> {
+        ComponentHelper::<T>::boxed()
+    }
+
+    fn render(&self, max_width: Option<usize>) -> Canvas {
+        render(*self, max_width)
+    }
+
+    async fn render_loop(&self) -> io::Result<()> {
+        terminal_render_loop(*self).await
     }
 }
