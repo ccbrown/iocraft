@@ -9,7 +9,7 @@ struct MyContextConsumerContext<'a> {
 }
 
 #[component]
-fn MyContextConsumer(context: MyContextConsumerContext) -> impl Into<AnyElement> {
+fn MyContextConsumer(context: MyContextConsumerContext) -> impl Into<AnyElement<'static>> {
     element! {
         Box(border_style: BorderStyle::Round, border_color: Color::Cyan) {
             Text(content: "The number of the day is... ")

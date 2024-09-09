@@ -17,13 +17,13 @@ impl User {
     }
 }
 
-#[derive(Default)]
-struct UsersTableProps {
-    users: Vec<User>,
+#[props]
+struct UsersTableProps<'a> {
+    users: Option<&'a Vec<User>>,
 }
 
 #[component]
-fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
+fn UsersTable<'a>(props: &UsersTableProps<'a>) -> impl Into<AnyElement<'a>> {
     element! {
         Box(
             margin_top: 1,
@@ -47,7 +47,7 @@ fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
                 }
             }
 
-            #(props.users.iter().enumerate().map(|(i, user)| element! {
+            #(props.users.map(|users| users.iter().enumerate().map(|(i, user)| element! {
                 Box(background_color: if i % 2 == 0 { None } else { Some(Color::DarkGrey) }) {
                     Box(width: 10pct) {
                         Text(content: user.id.to_string())
@@ -61,7 +61,7 @@ fn UsersTable(props: &UsersTableProps) -> impl Into<AnyElement> {
                         Text(content: user.email.clone())
                     }
                 }
-            }))
+            })).into_iter().flatten())
         }
     }
 }
@@ -78,5 +78,5 @@ fn main() {
         User::new(8, "Heidi", "heidi@example.com"),
     ];
 
-    element!(UsersTable(users)).print();
+    element!(UsersTable(users: &users)).print();
 }

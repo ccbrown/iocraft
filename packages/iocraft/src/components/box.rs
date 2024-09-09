@@ -1,4 +1,7 @@
-use crate::{AnyElement, Color, Component, ComponentRenderer, ComponentUpdater, Edges, TextStyle};
+use crate::{
+    AnyElement, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Edges,
+    TextStyle,
+};
 use iocraft_macros::with_layout_style_props;
 use taffy::{LengthPercentage, Rect};
 
@@ -112,9 +115,9 @@ impl BorderStyle {
 }
 
 #[with_layout_style_props]
-#[derive(Default)]
-pub struct BoxProps {
-    pub children: Vec<AnyElement>,
+#[derive(Covariant, Default)]
+pub struct BoxProps<'a> {
+    pub children: Vec<AnyElement<'a>>,
     pub border_style: BorderStyle,
     pub border_color: Option<Color>,
     pub border_edges: Option<Edges>,
@@ -130,13 +133,13 @@ pub struct Box {
 }
 
 impl Component for Box {
-    type Props = BoxProps;
+    type Props<'a> = BoxProps<'a>;
 
-    fn new(_props: &Self::Props) -> Self {
+    fn new(_props: &Self::Props<'_>) -> Self {
         Default::default()
     }
 
-    fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater<'_>) {
         self.border_style = props.border_style;
         self.border_text_style = TextStyle {
             color: props.border_color,

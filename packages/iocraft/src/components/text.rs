@@ -1,7 +1,9 @@
-use crate::{Color, Component, ComponentRenderer, ComponentUpdater, TextStyle, Weight};
+use crate::{
+    Color, Component, ComponentRenderer, ComponentUpdater, Covariant, TextStyle, Weight,
+};
 use taffy::Size;
 
-#[derive(Clone, Default)]
+#[derive(Default, Covariant)]
 pub struct TextProps {
     pub color: Option<Color>,
     pub content: String,
@@ -15,13 +17,13 @@ pub struct Text {
 }
 
 impl Component for Text {
-    type Props = TextProps;
+    type Props<'a> = TextProps;
 
-    fn new(_props: &Self::Props) -> Self {
+    fn new(_props: &Self::Props<'_>) -> Self {
         Self::default()
     }
 
-    fn update(&mut self, props: &Self::Props, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater<'_>) {
         self.style = TextStyle {
             color: props.color,
             weight: props.weight,

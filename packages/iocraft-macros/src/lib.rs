@@ -8,8 +8,8 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Brace, Comma, Paren},
-    DeriveInput, Error, Expr, FieldValue, FnArg, Ident, ItemFn, ItemStruct, Lit, Result, Token,
-    Type, TypePath,
+    DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Ident, ItemFn, ItemStruct, Lifetime,
+    Lit, Result, Token, Type, TypePath,
 };
 
 enum ParsedElementChild {
@@ -101,7 +101,7 @@ impl ToTokens for ParsedElement {
 
         tokens.extend(quote! {
             {
-                type Props = <#ty as ::iocraft::ElementType>::Props;
+                type Props<'a> = <#ty as ::iocraft::ElementType>::Props<'a>;
                 let mut _iocraft_element = ::iocraft::Element::<#ty>{
                     key: ::iocraft::ElementKey::new(),
                     props: Props{
@@ -120,6 +120,172 @@ impl ToTokens for ParsedElement {
 pub fn element(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
     quote!(#element).into()
+}
+
+struct ParsedCovariant {
+    def: ItemStruct,
+}
+
+impl Parse for ParsedCovariant {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let def: ItemStruct = input.parse()?;
+        Ok(Self { def })
+    }
+}
+
+impl ToTokens for ParsedCovariant {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let def = &self.def;
+        let name = &def.ident;
+        let where_clause = &def.generics.where_clause;
+
+        let has_generics = def.generics.params.len() > 0;
+        let lifetime_generic_count = def
+            .generics
+            .params
+            .iter()
+            .filter(|param| match param {
+                GenericParam::Lifetime(_) => true,
+                _ => false,
+            })
+            .count();
+
+        let generics = &def.generics;
+
+        let generics_names = def.generics.params.iter().map(|param| match param {
+            GenericParam::Type(ty) => {
+                let name = &ty.ident;
+                quote!(#name)
+            }
+            GenericParam::Lifetime(lt) => {
+                let name = &lt.lifetime;
+                quote!(#name)
+            }
+            GenericParam::Const(c) => {
+                let name = &c.ident;
+                quote!(#name)
+            }
+        });
+        let bracketed_generic_names = match has_generics {
+            true => quote!(<#(#generics_names),*>),
+            false => quote!(),
+        };
+
+        let static_generics_names = def.generics.params.iter().map(|param| match param {
+            GenericParam::Type(ty) => {
+                let name = &ty.ident;
+                quote!(#name)
+            }
+            GenericParam::Lifetime(_) => quote!('static),
+            GenericParam::Const(c) => {
+                let name = &c.ident;
+                quote!(#name)
+            }
+        });
+        let bracketed_static_generic_names = match has_generics {
+            true => quote!(<#(#static_generics_names),*>),
+            false => quote!(),
+        };
+
+        // If the struct is generic over lifetimes, emit code that will break things at compile
+        // time when the struct is not covariant with respect to its lifetimes.
+        if lifetime_generic_count > 0 {
+            let generic_decls = {
+                let mut lifetime_index = 0;
+                def.generics.params.iter().map(move |param| match param {
+                    GenericParam::Lifetime(_) => {
+                        let a = Lifetime::new(
+                            format!("'a{}", lifetime_index).as_str(),
+                            Span::call_site(),
+                        );
+                        let b = Lifetime::new(
+                            format!("'b{}", lifetime_index).as_str(),
+                            Span::call_site(),
+                        );
+                        lifetime_index += 1;
+                        quote!(#a, #b: #a)
+                    }
+                    _ => quote!(#param),
+                })
+            };
+
+            let test_args = ["a", "b"].iter().map(|arg| {
+                let mut lifetime_index = 0;
+                let generic_params = def.generics.params.iter().map(|param| match param {
+                    GenericParam::Type(ty) => {
+                        let name = &ty.ident;
+                        quote!(#name)
+                    }
+                    GenericParam::Lifetime(_) => {
+                        let lt = Lifetime::new(
+                            format!("'{}{}", arg, lifetime_index).as_str(),
+                            Span::call_site(),
+                        );
+                        lifetime_index += 1;
+                        quote!(#lt)
+                    }
+                    GenericParam::Const(c) => {
+                        let name = &c.ident;
+                        quote!(#name)
+                    }
+                });
+                let arg_ident = Ident::new(arg, Span::call_site());
+                quote!(#arg_ident: &#name<#(#generic_params),*>)
+            });
+
+            tokens.extend(quote! {
+                mod covariance_test {
+                    use super::*;
+
+                    fn take_two<T>(_a: T, _b: T) {}
+
+                    fn test_type_covariance<#(#generic_decls),*>(#(#test_args),*) {
+                        take_two(a, b)
+                    }
+                }
+            });
+        }
+
+        tokens.extend(quote! {
+            unsafe impl #generics ::iocraft::Covariant for #name #bracketed_generic_names #where_clause {
+                type StaticSelf = #name #bracketed_static_generic_names;
+            }
+        });
+    }
+}
+
+#[proc_macro_derive(Covariant)]
+pub fn derive_covariant_type(item: TokenStream) -> TokenStream {
+    let props = parse_macro_input!(item as ParsedCovariant);
+    quote!(#props).into()
+}
+
+struct ParsedProps {
+    props: ItemStruct,
+}
+
+impl Parse for ParsedProps {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let props: ItemStruct = input.parse()?;
+        Ok(Self { props })
+    }
+}
+
+impl ToTokens for ParsedProps {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let props = &self.props;
+
+        tokens.extend(quote! {
+            #[derive(Default, ::iocraft::Covariant)]
+            #props
+        });
+    }
+}
+
+#[proc_macro_attribute]
+pub fn props(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let props = parse_macro_input!(item as ParsedProps);
+    quote!(#props).into()
 }
 
 struct ParsedState {
@@ -359,6 +525,7 @@ impl ToTokens for ParsedComponent {
         let args = &self.f.sig.inputs;
         let block = &self.f.block;
         let output = &self.f.sig.output;
+        let generics = &self.f.sig.generics;
 
         let state_decl = self.state_type.as_ref().map(|ty| quote!(state: #ty,));
         let state_init = self
@@ -412,13 +579,13 @@ impl ToTokens for ParsedComponent {
             }
 
             impl #name {
-                fn implementation(#args) #output #block
+                fn implementation #generics (#args) #output #block
             }
 
             impl ::iocraft::Component for #name {
-                type Props = #props_type_name;
+                type Props<'a> = #props_type_name;
 
-                fn new(_props: &Self::Props) -> Self {
+                fn new(_props: &Self::Props<'_>) -> Self {
                     let mut signal_owner = ::iocraft::SignalOwner::new();
                     Self {
                         #state_init
@@ -427,7 +594,7 @@ impl ToTokens for ParsedComponent {
                     }
                 }
 
-                fn update(&mut self, props: &Self::Props, updater: &mut ::iocraft::ComponentUpdater<'_>) {
+                fn update(&mut self, props: &Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater<'_>) {
                     let e = Self::implementation(#(#impl_args),*).into();
                     updater.update_children([&e], None);
                 }
@@ -505,10 +672,34 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                 quote! { #field_name: self.#field_name }
             });
 
+            let where_clause = &ast.generics.where_clause;
+
+            let has_generics = ast.generics.params.len() > 0;
+            let generics = &ast.generics;
+
+            let generics_names = ast.generics.params.iter().map(|param| match param {
+                GenericParam::Type(ty) => {
+                    let name = &ty.ident;
+                    quote!(#name)
+                }
+                GenericParam::Lifetime(lt) => {
+                    let name = &lt.lifetime;
+                    quote!(#name)
+                }
+                GenericParam::Const(c) => {
+                    let name = &c.ident;
+                    quote!(#name)
+                }
+            });
+            let bracketed_generic_names = match has_generics {
+                true => quote!(<#(#generics_names),*>),
+                false => quote!(),
+            };
+
             return quote! {
                 #ast
 
-                impl #struct_name {
+                impl #generics #struct_name #bracketed_generic_names #where_clause {
                     pub fn layout_style(&self) -> ::iocraft::LayoutStyle {
                         ::iocraft::LayoutStyle{
                             #(#field_assignments,)*
@@ -518,6 +709,6 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             }
             .into();
         }
-        _ => panic!("`add_field` has to be used with structs "),
+        _ => panic!("`with_layout_style_props` can only be used with structs "),
     }
 }

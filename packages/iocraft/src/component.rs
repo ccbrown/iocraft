@@ -1,5 +1,6 @@
 use crate::{
     element::{ElementKey, ElementType},
+    props::{AnyProps, Covariant},
     render::{ComponentRenderer, ComponentUpdater, LayoutEngine},
 };
 use futures::future::poll_fn;
@@ -11,9 +12,6 @@ use std::{
     task::{Context, Poll},
 };
 pub use taffy::NodeId;
-
-#[derive(Clone, Copy, Default)]
-pub struct NoProps;
 
 pub(crate) struct ComponentHelper<C: Component> {
     _marker: PhantomData<C>,
@@ -29,11 +27,11 @@ impl<C: Component> ComponentHelper<C> {
 
 #[doc(hidden)]
 pub trait ComponentHelperExt: Any {
-    fn new_component(&self, props: &dyn Any) -> Box<dyn AnyComponent>;
+    fn new_component(&self, props: AnyProps) -> Box<dyn AnyComponent>;
     fn update_component(
         &self,
         component: &mut Box<dyn AnyComponent>,
-        props: &dyn Any,
+        props: AnyProps,
         updater: &mut ComponentUpdater<'_>,
     );
     fn component_type_id(&self) -> TypeId;
@@ -41,7 +39,7 @@ pub trait ComponentHelperExt: Any {
 }
 
 impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
-    fn new_component(&self, props: &dyn Any) -> Box<dyn AnyComponent> {
+    fn new_component(&self, props: AnyProps) -> Box<dyn AnyComponent> {
         Box::new(C::new(
             props.downcast_ref().expect("we should be able to downcast"),
         ))
@@ -50,7 +48,7 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
     fn update_component(
         &self,
         component: &mut Box<dyn AnyComponent>,
-        props: &dyn Any,
+        props: AnyProps,
         updater: &mut ComponentUpdater<'_>,
     ) {
         component.update(props, updater);
@@ -66,11 +64,13 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
 }
 
 pub trait Component: Any + Unpin {
-    type Props;
+    type Props<'a>: Covariant
+    where
+        Self: 'a;
 
-    fn new(props: &Self::Props) -> Self;
+    fn new(props: &Self::Props<'_>) -> Self;
 
-    fn update(&mut self, _props: &Self::Props, _updater: &mut ComponentUpdater<'_>) {}
+    fn update(&mut self, _props: &Self::Props<'_>, _updater: &mut ComponentUpdater<'_>) {}
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
@@ -79,18 +79,18 @@ pub trait Component: Any + Unpin {
 }
 
 impl<C: Component> ElementType for C {
-    type Props = C::Props;
+    type Props<'a> = C::Props<'a>;
 }
 
 #[doc(hidden)]
 pub trait AnyComponent: Any + Unpin {
-    fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>);
+    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater<'_>);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
 impl<C: Any + Component> AnyComponent for C {
-    fn update(&mut self, props: &dyn Any, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater<'_>) {
         Component::update(
             self,
             props.downcast_ref().expect("we should be able to downcast"),
@@ -147,7 +147,7 @@ pub(crate) struct InstantiatedComponent {
 }
 
 impl InstantiatedComponent {
-    pub fn new(node_id: NodeId, props: &dyn Any, helper: Box<dyn ComponentHelperExt>) -> Self {
+    pub fn new(node_id: NodeId, props: AnyProps, helper: Box<dyn ComponentHelperExt>) -> Self {
         Self {
             node_id,
             component: helper.new_component(props),
@@ -168,7 +168,7 @@ impl InstantiatedComponent {
         &mut self,
         layout_engine: &mut LayoutEngine,
         context_provider: &ComponentContextProvider<'_>,
-        props: &dyn Any,
+        props: AnyProps,
     ) {
         let mut updater = ComponentUpdater::new(
             self.node_id,

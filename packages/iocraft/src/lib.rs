@@ -4,6 +4,7 @@ mod components;
 mod element;
 mod hook;
 mod hooks;
+mod props;
 mod render;
 mod signal;
 mod style;

@@ -1,33 +1,33 @@
-use iocraft::{element, AnyElement, Component, Element};
+use iocraft::{element, AnyElement, Component, Covariant, Element};
 
 #[derive(Default)]
 struct MyComponent;
 
-#[derive(Default)]
+#[derive(Covariant, Default)]
 struct MyComponentProps {
     foo: String,
-    children: Vec<Element<MyComponent>>,
+    children: Vec<Element<'static, MyComponent>>,
 }
 
 impl Component for MyComponent {
-    type Props = MyComponentProps;
+    type Props<'a> = MyComponentProps;
 
-    fn new(_props: &Self::Props) -> Self {
+    fn new(_props: &Self::Props<'_>) -> Self {
         Self
     }
 }
 
 struct MyContainer;
 
-#[derive(Default)]
+#[derive(Covariant, Default)]
 struct MyContainerProps {
-    children: Vec<AnyElement>,
+    children: Vec<AnyElement<'static>>,
 }
 
 impl Component for MyContainer {
-    type Props = MyContainerProps;
+    type Props<'a> = MyContainerProps;
 
-    fn new(_props: &Self::Props) -> Self {
+    fn new(_props: &Self::Props<'_>) -> Self {
         Self
     }
 }

@@ -1,10 +1,10 @@
 use crate::{
     component::{Component, ComponentHelper, ComponentHelperExt},
+    props::AnyProps,
     render, terminal_render_loop, Canvas,
 };
 use crossterm::{terminal, tty::IsTty};
 use std::{
-    any::Any,
     fmt::{self, Display, Formatter},
     future::Future,
     io::{self, stderr, stdout, Write},
@@ -17,10 +17,10 @@ pub trait ExtendWithElements<T>: Sized {
     fn extend<E: Extend<T>>(self, dest: &mut E);
 }
 
-impl<T, U> ExtendWithElements<T> for Element<U>
+impl<'a, T, U> ExtendWithElements<T> for Element<'a, U>
 where
-    U: ElementType + 'static,
-    T: From<Element<U>>,
+    U: ElementType + 'a,
+    T: From<Element<'a, U>>,
 {
     fn extend<E: Extend<T>>(self, dest: &mut E) {
         dest.extend([self.into()]);
@@ -57,14 +57,14 @@ impl ElementKey {
 }
 
 #[derive(Clone)]
-pub struct Element<T: ElementType> {
+pub struct Element<'a, T: ElementType + 'a> {
     pub key: ElementKey,
-    pub props: T::Props,
+    pub props: T::Props<'a>,
 }
 
-impl<T> Display for Element<T>
+impl<'a, T> Display for Element<'a, T>
 where
-    T: Component + 'static,
+    T: Component,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.render(None).fmt(f)
@@ -72,43 +72,44 @@ where
 }
 
 pub trait ElementType {
-    type Props;
+    type Props<'a>
+    where
+        Self: 'a;
 }
 
-pub struct AnyElement {
+pub struct AnyElement<'a> {
     key: ElementKey,
-    props: Box<dyn Any>,
+    props: AnyProps<'a>,
     helper: Box<dyn ComponentHelperExt>,
 }
 
-impl Display for AnyElement {
+impl<'a> Display for AnyElement<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.render(None).fmt(f)
     }
 }
 
-impl<T> From<Element<T>> for AnyElement
+impl<'a, T> From<Element<'a, T>> for AnyElement<'a>
 where
-    T: Component + 'static,
+    T: Component + 'a,
 {
-    fn from(e: Element<T>) -> Self {
+    fn from(e: Element<'a, T>) -> Self {
         Self {
             key: e.key,
-            props: Box::new(e.props),
+            props: AnyProps::owned(e.props),
             helper: ComponentHelper::<T>::boxed(),
         }
     }
 }
 
-impl<T> From<&Element<T>> for AnyElement
+impl<'a, T> From<&'a Element<'a, T>> for AnyElement<'a>
 where
-    T: Component + 'static,
-    <T as Component>::Props: Clone,
+    T: Component,
 {
-    fn from(e: &Element<T>) -> Self {
+    fn from(e: &'a Element<'a, T>) -> Self {
         Self {
             key: e.key.clone(),
-            props: Box::new(e.props.clone()),
+            props: AnyProps::borrowed(&e.props),
             helper: ComponentHelper::<T>::boxed(),
         }
     }
@@ -118,15 +119,15 @@ mod private {
     use super::*;
 
     pub trait Sealed {}
-    impl Sealed for AnyElement {}
-    impl Sealed for &AnyElement {}
-    impl<T> Sealed for Element<T> where T: Component + 'static {}
-    impl<T> Sealed for &Element<T> where T: Component + 'static {}
+    impl<'a> Sealed for AnyElement<'a> {}
+    impl<'a> Sealed for &AnyElement<'a> {}
+    impl<'a, T> Sealed for Element<'a, T> where T: Component {}
+    impl<'a, T> Sealed for &Element<'a, T> where T: Component {}
 }
 
 pub trait ElementExt: private::Sealed + Sized {
     fn key(&self) -> &ElementKey;
-    fn props(&self) -> &dyn Any;
+    fn props(&self) -> AnyProps;
 
     #[doc(hidden)]
     fn helper(&self) -> Box<dyn ComponentHelperExt>;
@@ -159,13 +160,13 @@ pub trait ElementExt: private::Sealed + Sized {
     fn render_loop(&self) -> impl Future<Output = io::Result<()>>;
 }
 
-impl ElementExt for AnyElement {
+impl<'a> ElementExt for AnyElement<'a> {
     fn key(&self) -> &ElementKey {
         &self.key
     }
 
-    fn props(&self) -> &dyn Any {
-        &self.props
+    fn props(&self) -> AnyProps {
+        self.props.borrow()
     }
 
     #[doc(hidden)]
@@ -182,13 +183,13 @@ impl ElementExt for AnyElement {
     }
 }
 
-impl ElementExt for &AnyElement {
+impl<'a> ElementExt for &AnyElement<'a> {
     fn key(&self) -> &ElementKey {
         &self.key
     }
 
-    fn props(&self) -> &dyn Any {
-        self.props.as_ref()
+    fn props(&self) -> AnyProps {
+        self.props.borrow()
     }
 
     #[doc(hidden)]
@@ -205,7 +206,7 @@ impl ElementExt for &AnyElement {
     }
 }
 
-impl<T> ElementExt for Element<T>
+impl<'a, T> ElementExt for Element<'a, T>
 where
     T: Component + 'static,
 {
@@ -213,8 +214,8 @@ where
         &self.key
     }
 
-    fn props(&self) -> &dyn Any {
-        &self.props
+    fn props(&self) -> AnyProps {
+        AnyProps::borrowed(&self.props)
     }
 
     #[doc(hidden)]
@@ -231,7 +232,7 @@ where
     }
 }
 
-impl<T> ElementExt for &Element<T>
+impl<'a, T> ElementExt for &Element<'a, T>
 where
     T: Component + 'static,
 {
@@ -239,8 +240,8 @@ where
         &self.key
     }
 
-    fn props(&self) -> &dyn Any {
-        &self.props
+    fn props(&self) -> AnyProps {
+        AnyProps::borrowed(&self.props)
     }
 
     #[doc(hidden)]

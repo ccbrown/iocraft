@@ -2,6 +2,7 @@ use crate::{
     canvas::{Canvas, CanvasSubviewMut},
     component::{ComponentContextProvider, ComponentHelperExt, Components, InstantiatedComponent},
     element::ElementExt,
+    props::AnyProps,
 };
 use crossterm::{cursor, queue, terminal};
 use std::{
@@ -177,11 +178,11 @@ struct Tree<'a> {
     layout_engine: LayoutEngine,
     wrapper_node_id: NodeId,
     root_component: InstantiatedComponent,
-    root_component_props: &'a dyn Any,
+    root_component_props: AnyProps<'a>,
 }
 
 impl<'a> Tree<'a> {
-    fn new(props: &'a dyn Any, helper: Box<dyn ComponentHelperExt>) -> Self {
+    fn new(props: AnyProps<'a>, helper: Box<dyn ComponentHelperExt>) -> Self {
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
@@ -192,15 +193,18 @@ impl<'a> Tree<'a> {
         Self {
             layout_engine,
             wrapper_node_id,
-            root_component: InstantiatedComponent::new(root_node_id, props, helper),
+            root_component: InstantiatedComponent::new(root_node_id, props.borrow(), helper),
             root_component_props: props,
         }
     }
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         let context = ComponentContextProvider::default();
-        self.root_component
-            .update(&mut self.layout_engine, &context, self.root_component_props);
+        self.root_component.update(
+            &mut self.layout_engine,
+            &context,
+            self.root_component_props.borrow(),
+        );
 
         self.layout_engine
             .compute_layout_with_measure(

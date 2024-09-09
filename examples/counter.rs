@@ -12,7 +12,7 @@ struct CounterHooks {
 }
 
 #[component]
-fn Counter(state: &CounterState, hooks: &mut CounterHooks) -> impl Into<AnyElement> {
+fn Counter(state: &CounterState, hooks: &mut CounterHooks) -> impl Into<AnyElement<'static>> {
     hooks.run_loop.use_future({
         let mut count = state.count.clone();
         || async move {
