@@ -2,7 +2,7 @@ use crate::{AnyElement, Component, ComponentUpdater, Covariant};
 use std::{any::Any, marker::PhantomData};
 
 #[derive(Covariant, Default)]
-pub struct ContextProviderProps<'a, T: 'static> {
+pub struct ContextProviderProps<'a, T: Any + Unpin> {
     pub children: Vec<AnyElement<'a>>,
     pub value: Option<T>,
 }
@@ -12,7 +12,7 @@ pub struct ContextProvider<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T: Unpin + 'static> Component for ContextProvider<T> {
+impl<T: Any + Unpin> Component for ContextProvider<T> {
     type Props<'a> = ContextProviderProps<'a, T>;
 
     fn new(_props: &Self::Props<'_>) -> Self {

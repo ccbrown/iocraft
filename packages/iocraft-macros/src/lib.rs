@@ -171,22 +171,6 @@ impl ToTokens for ParsedCovariant {
             false => quote!(),
         };
 
-        let static_generics_names = def.generics.params.iter().map(|param| match param {
-            GenericParam::Type(ty) => {
-                let name = &ty.ident;
-                quote!(#name)
-            }
-            GenericParam::Lifetime(_) => quote!('static),
-            GenericParam::Const(c) => {
-                let name = &c.ident;
-                quote!(#name)
-            }
-        });
-        let bracketed_static_generic_names = match has_generics {
-            true => quote!(<#(#static_generics_names),*>),
-            false => quote!(),
-        };
-
         // If the struct is generic over lifetimes, emit code that will break things at compile
         // time when the struct is not covariant with respect to its lifetimes.
         if lifetime_generic_count > 0 {
@@ -234,22 +218,18 @@ impl ToTokens for ParsedCovariant {
             });
 
             tokens.extend(quote! {
-                mod covariance_test {
-                    use super::*;
-
+                const _: () = {
                     fn take_two<T>(_a: T, _b: T) {}
 
                     fn test_type_covariance<#(#generic_decls),*>(#(#test_args),*) {
                         take_two(a, b)
                     }
-                }
+                };
             });
         }
 
         tokens.extend(quote! {
-            unsafe impl #generics ::iocraft::Covariant for #name #bracketed_generic_names #where_clause {
-                type StaticSelf = #name #bracketed_static_generic_names;
-            }
+            unsafe impl #generics ::iocraft::Covariant for #name #bracketed_generic_names #where_clause {}
         });
     }
 }
