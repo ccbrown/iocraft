@@ -26,11 +26,11 @@ impl<'a> AnyProps<'a> {
         Self::Borrowed(props)
     }
 
-    pub fn downcast_ref<T: Covariant>(&self) -> Option<&T> {
+    pub unsafe fn downcast_ref_unchecked<T: Covariant>(&self) -> &T {
         unsafe {
-            transmute::<Option<&T::StaticSelf>, Option<&T>>(match self {
-                Self::Owned(props) => props.downcast_ref::<T::StaticSelf>(),
-                Self::Borrowed(props) => props.downcast_ref::<T::StaticSelf>(),
+            transmute::<&T::StaticSelf, &T>(match self {
+                Self::Owned(props) => props.downcast_ref::<T::StaticSelf>().unwrap(),
+                Self::Borrowed(props) => props.downcast_ref::<T::StaticSelf>().unwrap(),
             })
         }
     }

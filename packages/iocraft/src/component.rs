@@ -40,9 +40,7 @@ pub trait ComponentHelperExt: Any {
 
 impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
     fn new_component(&self, props: AnyProps) -> Box<dyn AnyComponent> {
-        Box::new(C::new(
-            props.downcast_ref().expect("we should be able to downcast"),
-        ))
+        Box::new(C::new(unsafe { props.downcast_ref_unchecked() }))
     }
 
     fn update_component(
@@ -91,11 +89,7 @@ pub trait AnyComponent: Any + Unpin {
 
 impl<C: Any + Component> AnyComponent for C {
     fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater<'_>) {
-        Component::update(
-            self,
-            props.downcast_ref().expect("we should be able to downcast"),
-            updater,
-        );
+        Component::update(self, unsafe { props.downcast_ref_unchecked() }, updater);
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
