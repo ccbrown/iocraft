@@ -369,6 +369,15 @@ impl Parse for ParsedContext {
     }
 }
 
+fn is_option(ty: Type) -> bool {
+    match ty {
+        Type::Path(path) => path.path.segments.last().map_or(false, |segment| {
+            segment.ident == "Option" && !segment.arguments.is_empty()
+        }),
+        _ => false,
+    }
+}
+
 impl ToTokens for ParsedContext {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let context = &self.context;
@@ -376,7 +385,15 @@ impl ToTokens for ParsedContext {
 
         let field_assignments = context.fields.iter().map(|field| {
             let field_name = &field.ident;
-            quote! { #field_name: updater.get_context() }
+            if is_option(field.ty.clone()) {
+                quote! { #field_name: updater.get_context() }
+            } else {
+                let err_msg = format!(
+                    "missing required context for {}",
+                    field_name.as_ref().unwrap()
+                );
+                quote! { #field_name: updater.get_context().expect(#err_msg) }
+            }
         });
 
         tokens.extend(quote! {

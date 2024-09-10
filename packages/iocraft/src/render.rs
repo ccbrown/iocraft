@@ -1,6 +1,7 @@
 use crate::{
     canvas::{Canvas, CanvasSubviewMut},
     component::{ComponentContextProvider, ComponentHelperExt, Components, InstantiatedComponent},
+    context::{ExitMode, SystemContext},
     element::ElementExt,
     props::AnyProps,
 };
@@ -177,6 +178,7 @@ struct Tree<'a> {
     wrapper_node_id: NodeId,
     root_component: InstantiatedComponent,
     root_component_props: AnyProps<'a>,
+    system_context: SystemContext,
 }
 
 impl<'a> Tree<'a> {
@@ -193,11 +195,12 @@ impl<'a> Tree<'a> {
             wrapper_node_id,
             root_component: InstantiatedComponent::new(root_node_id, props.borrow(), helper),
             root_component_props: props,
+            system_context: SystemContext::new(),
         }
     }
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
-        let context = ComponentContextProvider::default();
+        let context = ComponentContextProvider::root(Box::new(&self.system_context));
         self.root_component.update(
             &mut self.layout_engine,
             &context,
@@ -267,11 +270,18 @@ impl<'a> Tree<'a> {
             dest.flush()?;
             let canvas = self.render(Some(width as _));
             queue!(dest, cursor::SavePosition, terminal::EndSynchronizedUpdate)?;
+            if self.system_context.exit_mode() == Some(ExitMode::ClearOutput) {
+                break;
+            }
             // TODO: by comparing this canvas to the previous one, we could do incremental updates
             // instead of redrawing everything
             canvas.write_ansi(stdout())?;
+            if self.system_context.exit_mode().is_some() {
+                break;
+            }
             self.root_component.wait().await;
         }
+        Ok(())
     }
 }
 

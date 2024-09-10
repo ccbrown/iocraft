@@ -6,6 +6,7 @@ struct NumberOfTheDay(i32);
 
 #[allow(dead_code)]
 #[context]
-pub struct MyBasicContext<'a> {
-    number: Option<&'a NumberOfTheDay>,
+pub struct MyContext<'a> {
+    optional_number: Option<&'a NumberOfTheDay>,
+    number: &'a NumberOfTheDay,
 }

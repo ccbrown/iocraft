@@ -1,6 +1,7 @@
 pub use crate::canvas::*;
 pub use crate::component::*;
 pub use crate::components::*;
+pub use crate::context::*;
 pub use crate::element::*;
 pub use crate::hook::*;
 pub use crate::hooks::*;

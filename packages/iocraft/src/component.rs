@@ -101,10 +101,10 @@ impl<C: Any + Component> AnyComponent for C {
     }
 }
 
-#[derive(Default)]
 pub(crate) enum ComponentContextProvider<'a> {
-    #[default]
-    Root,
+    Root {
+        system_context: Box<&'a dyn Any>,
+    },
     Child {
         parent: &'a ComponentContextProvider<'a>,
         context: Box<&'a dyn Any>,
@@ -112,6 +112,10 @@ pub(crate) enum ComponentContextProvider<'a> {
 }
 
 impl<'a> ComponentContextProvider<'a> {
+    pub fn root(system_context: Box<&'a dyn Any>) -> Self {
+        Self::Root { system_context }
+    }
+
     pub fn with_context(&'a self, context: Box<&'a dyn Any>) -> Self {
         Self::Child {
             parent: self,
@@ -121,7 +125,7 @@ impl<'a> ComponentContextProvider<'a> {
 
     pub fn get_context<T: Any>(&self) -> Option<&T> {
         match self {
-            Self::Root => None,
+            Self::Root { system_context } => system_context.downcast_ref::<T>(),
             Self::Child { parent, context } => {
                 if let Some(context) = context.downcast_ref::<T>() {
                     Some(context)

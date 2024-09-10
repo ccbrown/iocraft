@@ -1,6 +1,11 @@
 use iocraft::prelude::*;
 use std::time::Duration;
 
+#[context]
+struct ProgressBarContext<'a> {
+    system: &'a SystemContext,
+}
+
 #[state]
 struct ProgressBarState {
     progress: Signal<f32>,
@@ -15,6 +20,7 @@ struct ProgressBarHooks {
 fn ProgressBar(
     state: &ProgressBarState,
     hooks: &mut ProgressBarHooks,
+    context: ProgressBarContext,
 ) -> impl Into<AnyElement<'static>> {
     hooks.run_loop.use_future({
         let progress = state.progress.clone();
@@ -25,6 +31,10 @@ fn ProgressBar(
             }
         }
     });
+
+    if state.progress >= 100.0 {
+        context.system.exit(ExitMode::PreserveOutput);
+    }
 
     element! {
         Box {
@@ -40,4 +50,5 @@ fn ProgressBar(
 
 fn main() {
     smol::block_on(element!(ProgressBar).render_loop()).unwrap();
+    println!("done!");
 }
