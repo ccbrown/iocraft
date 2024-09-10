@@ -49,6 +49,18 @@ pub struct Signal<T> {
     inner: Mutable<T>,
 }
 
+impl<T: Copy> Signal<T> {
+    pub fn get(&self) -> T {
+        self.inner.get()
+    }
+}
+
+impl<T> Signal<T> {
+    pub fn set(&self, value: T) {
+        self.inner.set(value);
+    }
+}
+
 impl<T: Debug> Debug for Signal<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.inner.lock_ref().fmt(f)

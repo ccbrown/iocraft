@@ -101,7 +101,7 @@ impl<C: Any + Component> AnyComponent for C {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) enum ComponentContextProvider<'a> {
     #[default]
     Root,

@@ -61,10 +61,8 @@ impl<'a> ComponentUpdater<'a> {
         I: IntoIterator<Item = T>,
         T: ElementExt,
     {
-        let context_provider = match context {
-            Some(context) => self.context_provider.with_context(context),
-            None => self.context_provider.clone(),
-        };
+        let context_provider = context.map(|cx| self.context_provider.with_context(cx));
+        let context_provider = context_provider.as_ref().unwrap_or(self.context_provider);
         let mut used_components = HashMap::with_capacity(self.children.components.len());
 
         for child in children {
