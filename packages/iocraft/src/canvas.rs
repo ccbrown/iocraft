@@ -95,8 +95,13 @@ impl Canvas {
     }
 
     fn write_impl<W: Write>(&self, mut w: W, ansi: bool) -> io::Result<()> {
+        if ansi {
+            write!(w, csi!("0m"))?;
+        }
+
         let mut background_color = None;
         let mut text_style = TextStyle::default();
+
         for row in &self.cells {
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
             for cell in row.iter().take(last_non_empty.map_or(0, |i| i + 1)) {
@@ -149,6 +154,10 @@ impl Canvas {
                 } else {
                     w.write(b" ")?;
                 }
+            }
+            if ansi {
+                // clear until end of line
+                write!(w, csi!("K"))?;
             }
             w.write(b"\n")?;
         }

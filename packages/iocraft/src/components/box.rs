@@ -1,6 +1,5 @@
 use crate::{
-    AnyElement, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Edges,
-    TextStyle,
+    AnyElement, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Edges, TextStyle,
 };
 use iocraft_macros::with_layout_style_props;
 use taffy::{LengthPercentage, Rect};
@@ -139,7 +138,7 @@ impl Component for Box {
         Default::default()
     }
 
-    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater) {
         self.border_style = props.border_style;
         self.border_text_style = TextStyle {
             color: props.border_color,

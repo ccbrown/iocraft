@@ -336,16 +336,36 @@ impl ToTokens for ParsedHooks {
                 }
             }
         });
+        let pre_component_updates = hooks.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! {
+                self.#field_name.pre_component_update(updater);
+            }
+        });
+        let post_component_updates = hooks.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! {
+                self.#field_name.post_component_update(updater);
+            }
+        });
 
         tokens.extend(quote! {
             #[derive(Default)]
             #hooks
 
             impl #name {
-                fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+                fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context) -> std::task::Poll<()> {
                     #(#status_vars)*
                     #(#returns)*
                     std::task::Poll::Pending
+                }
+
+                fn pre_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
+                    #(#pre_component_updates)*
+                }
+
+                fn post_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
+                    #(#post_component_updates)*
                 }
             }
         });
@@ -400,7 +420,7 @@ impl ToTokens for ParsedContext {
             #context
 
             impl<'a> #name<'a> {
-                fn new(updater: &'a ::iocraft::ComponentUpdater<'a>) -> Self {
+                fn new(updater: &'a ::iocraft::ComponentUpdater) -> Self {
                     Self {
                         #(#field_assignments,)*
                     }
@@ -547,6 +567,14 @@ impl ToTokens for ParsedComponent {
                 }
             }
         });
+        let hooks_pre_component_update = self
+            .hooks_type
+            .as_ref()
+            .map(|_| quote! { self.hooks.pre_component_update(updater); });
+        let hooks_post_component_update = self
+            .hooks_type
+            .as_ref()
+            .map(|_| quote! { self.hooks.post_component_update(updater); });
 
         let props_type_name = self
             .props_type
@@ -591,9 +619,13 @@ impl ToTokens for ParsedComponent {
                     }
                 }
 
-                fn update(&mut self, props: &Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater<'_>) {
-                    let e = Self::implementation(#(#impl_args),*).into();
-                    updater.update_children([&e], None);
+                fn update(&mut self, props: &Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater) {
+                    #hooks_pre_component_update
+                    {
+                        let e = Self::implementation(#(#impl_args),*).into();
+                        updater.update_children([&e], None);
+                    }
+                    #hooks_post_component_update
                 }
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {

@@ -1,4 +1,4 @@
-use crate::Hook;
+use crate::{ComponentUpdater, Hook};
 use std::{
     pin::Pin,
     sync::{Arc, Mutex},
@@ -17,7 +17,11 @@ struct UseStdioState {
 }
 
 impl UseStdioState {
-    fn exec(&mut self) {
+    fn exec(&mut self, updater: &mut ComponentUpdater) {
+        if self.queue.is_empty() {
+            return;
+        }
+        updater.clear_terminal_output();
         for msg in self.queue.drain(..) {
             match msg {
                 Message::Stdout(msg) => println!("{}", msg),
@@ -63,7 +67,7 @@ pub struct UseStdio {
 }
 
 impl Hook for UseStdio {
-    fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_change(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         let mut state = self.state.lock().unwrap();
         if state.queue.is_empty() {
             state.waker = Some(cx.waker().clone());
@@ -72,20 +76,21 @@ impl Hook for UseStdio {
             Poll::Ready(())
         }
     }
+
+    fn post_component_update(&mut self, updater: &mut ComponentUpdater) {
+        let mut state = self.state.lock().unwrap();
+        state.exec(updater);
+    }
 }
 
 impl UseStdio {
     pub fn use_stdout(&mut self) -> UseStdoutHandle {
-        let mut state = self.state.lock().unwrap();
-        state.exec();
         UseStdoutHandle {
             state: self.state.clone(),
         }
     }
 
     pub fn use_stderr(&mut self) -> UseStderrHandle {
-        let mut state = self.state.lock().unwrap();
-        state.exec();
         UseStderrHandle {
             state: self.state.clone(),
         }

@@ -1,7 +1,7 @@
 use crate::{
     element::{ElementKey, ElementType},
     props::{AnyProps, Covariant},
-    render::{ComponentRenderer, ComponentUpdater, LayoutEngine},
+    render::{ComponentRenderer, ComponentUpdater, UpdateContext},
 };
 use futures::future::poll_fn;
 use std::{
@@ -32,7 +32,7 @@ pub trait ComponentHelperExt: Any {
         &self,
         component: &mut Box<dyn AnyComponent>,
         props: AnyProps,
-        updater: &mut ComponentUpdater<'_>,
+        updater: &mut ComponentUpdater,
     );
     fn component_type_id(&self) -> TypeId;
     fn copy(&self) -> Box<dyn ComponentHelperExt>;
@@ -47,7 +47,7 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
         &self,
         component: &mut Box<dyn AnyComponent>,
         props: AnyProps,
-        updater: &mut ComponentUpdater<'_>,
+        updater: &mut ComponentUpdater,
     ) {
         component.update(props, updater);
     }
@@ -68,7 +68,7 @@ pub trait Component: Any + Unpin {
 
     fn new(props: &Self::Props<'_>) -> Self;
 
-    fn update(&mut self, _props: &Self::Props<'_>, _updater: &mut ComponentUpdater<'_>) {}
+    fn update(&mut self, _props: &Self::Props<'_>, _updater: &mut ComponentUpdater) {}
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
@@ -82,13 +82,13 @@ impl<C: Component> ElementType for C {
 
 #[doc(hidden)]
 pub trait AnyComponent: Any + Unpin {
-    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater<'_>);
+    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater);
     fn render(&self, renderer: &mut ComponentRenderer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
 impl<C: Any + Component> AnyComponent for C {
-    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater) {
         Component::update(self, unsafe { props.downcast_ref_unchecked() }, updater);
     }
 
@@ -164,15 +164,15 @@ impl InstantiatedComponent {
 
     pub fn update(
         &mut self,
-        layout_engine: &mut LayoutEngine,
-        context_provider: &ComponentContextProvider<'_>,
+        context: &mut UpdateContext<'_>,
+        component_context_provider: &ComponentContextProvider<'_>,
         props: AnyProps,
     ) {
         let mut updater = ComponentUpdater::new(
             self.node_id,
             &mut self.children,
-            layout_engine,
-            context_provider,
+            context,
+            component_context_provider,
         );
         self.helper
             .update_component(&mut self.component, props, &mut updater);

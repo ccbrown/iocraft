@@ -1,6 +1,4 @@
-use crate::{
-    Color, Component, ComponentRenderer, ComponentUpdater, Covariant, TextStyle, Weight,
-};
+use crate::{Color, Component, ComponentRenderer, ComponentUpdater, Covariant, TextStyle, Weight};
 use taffy::Size;
 
 #[derive(Default, Covariant)]
@@ -23,7 +21,7 @@ impl Component for Text {
         Self::default()
     }
 
-    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater<'_>) {
+    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater) {
         self.style = TextStyle {
             color: props.color,
             weight: props.weight,

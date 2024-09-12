@@ -15,44 +15,64 @@ use std::{
 pub use taffy::NodeId;
 use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
 
-pub struct ComponentUpdater<'a> {
-    node_id: NodeId,
-    children: &'a mut Components,
+pub(crate) struct UpdateContext<'a> {
     layout_engine: &'a mut LayoutEngine,
-    context_provider: &'a ComponentContextProvider<'a>,
+    did_clear_terminal_output: bool,
 }
 
-impl<'a> ComponentUpdater<'a> {
+pub struct ComponentUpdater<'a, 'b: 'a> {
+    node_id: NodeId,
+    children: &'a mut Components,
+    context: &'a mut UpdateContext<'b>,
+    component_context_provider: &'a ComponentContextProvider<'a>,
+}
+
+impl<'a, 'b> ComponentUpdater<'a, 'b> {
     pub(crate) fn new(
         node_id: NodeId,
         children: &'a mut Components,
-        layout_engine: &'a mut LayoutEngine,
-        context_provider: &'a ComponentContextProvider<'a>,
+        context: &'a mut UpdateContext<'b>,
+        component_context_provider: &'a ComponentContextProvider<'a>,
     ) -> Self {
         Self {
             node_id,
             children,
-            layout_engine,
-            context_provider,
+            context,
+            component_context_provider,
+        }
+    }
+
+    pub fn clear_terminal_output(&mut self) {
+        if !self.context.did_clear_terminal_output {
+            queue!(
+                stdout(),
+                cursor::RestorePosition,
+                terminal::Clear(terminal::ClearType::FromCursorDown)
+            )
+            .unwrap();
+            self.context.did_clear_terminal_output = true;
         }
     }
 
     pub fn get_context<T: Any>(&self) -> Option<&T> {
-        self.context_provider.get_context()
+        self.component_context_provider.get_context()
     }
 
     pub fn set_layout_style(&mut self, layout_style: taffy::style::Style) {
-        self.layout_engine
+        self.context
+            .layout_engine
             .set_style(self.node_id, layout_style)
             .expect("we should be able to set the style");
     }
 
     pub fn set_measure_func(&mut self, measure_func: MeasureFunc) {
-        self.layout_engine
+        self.context
+            .layout_engine
             .get_node_context_mut(self.node_id)
             .expect("we should be able to get the node")
             .measure_func = Some(measure_func);
-        self.layout_engine
+        self.context
+            .layout_engine
             .mark_dirty(self.node_id)
             .expect("we should be able to mark the node as dirty");
     }
@@ -62,8 +82,11 @@ impl<'a> ComponentUpdater<'a> {
         I: IntoIterator<Item = T>,
         T: ElementExt,
     {
-        let context_provider = context.map(|cx| self.context_provider.with_context(cx));
-        let context_provider = context_provider.as_ref().unwrap_or(self.context_provider);
+        let component_context_provider =
+            context.map(|cx| self.component_context_provider.with_context(cx));
+        let component_context_provider = component_context_provider
+            .as_ref()
+            .unwrap_or(self.component_context_provider);
         let mut used_components = HashMap::with_capacity(self.children.components.len());
 
         for child in children {
@@ -79,16 +102,22 @@ impl<'a> ComponentUpdater<'a> {
                 }
                 _ => {
                     let new_node_id = self
+                        .context
                         .layout_engine
                         .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
                         .expect("we should be able to add the node");
-                    self.layout_engine
+                    self.context
+                        .layout_engine
                         .add_child(self.node_id, new_node_id)
                         .expect("we should be able to add the child");
                     InstantiatedComponent::new(new_node_id, child.props(), child.helper())
                 }
             };
-            component.update(self.layout_engine, &context_provider, child.props());
+            component.update(
+                &mut self.context,
+                &component_context_provider,
+                child.props(),
+            );
             if used_components
                 .insert(child.key().clone(), component)
                 .is_some()
@@ -98,7 +127,8 @@ impl<'a> ComponentUpdater<'a> {
         }
 
         for (_, component) in self.children.components.drain() {
-            self.layout_engine
+            self.context
+                .layout_engine
                 .remove(component.node_id())
                 .expect("we should be able to remove the node");
         }
@@ -181,6 +211,11 @@ struct Tree<'a> {
     system_context: SystemContext,
 }
 
+struct RenderOutput {
+    canvas: Canvas,
+    did_clear_terminal_output: bool,
+}
+
 impl<'a> Tree<'a> {
     fn new(props: AnyProps<'a>, helper: Box<dyn ComponentHelperExt>) -> Self {
         let mut layout_engine = TaffyTree::new();
@@ -199,13 +234,20 @@ impl<'a> Tree<'a> {
         }
     }
 
-    fn render(&mut self, max_width: Option<usize>) -> Canvas {
-        let context = ComponentContextProvider::root(Box::new(&self.system_context));
-        self.root_component.update(
-            &mut self.layout_engine,
-            &context,
-            self.root_component_props.borrow(),
-        );
+    fn render(&mut self, max_width: Option<usize>) -> RenderOutput {
+        let did_clear_terminal_output = {
+            let mut context = UpdateContext {
+                layout_engine: &mut self.layout_engine,
+                did_clear_terminal_output: false,
+            };
+            let component_context = ComponentContextProvider::root(Box::new(&self.system_context));
+            self.root_component.update(
+                &mut context,
+                &component_context,
+                self.root_component_props.borrow(),
+            );
+            context.did_clear_terminal_output
+        };
 
         self.layout_engine
             .compute_layout_with_measure(
@@ -253,41 +295,63 @@ impl<'a> Tree<'a> {
             },
         };
         self.root_component.render(&mut renderer);
-        canvas
+        RenderOutput {
+            canvas,
+            did_clear_terminal_output,
+        }
     }
 
     async fn terminal_render_loop(&mut self) -> io::Result<()> {
         let mut dest = stdout();
         queue!(dest, cursor::SavePosition)?;
+        let cursor_hider = CursorHider::new()?;
         loop {
             let (width, _) = terminal::size()?;
-            queue!(
-                dest,
-                terminal::BeginSynchronizedUpdate,
-                cursor::RestorePosition,
-                terminal::Clear(terminal::ClearType::FromCursorDown),
-            )?;
+            queue!(dest, terminal::BeginSynchronizedUpdate,)?;
             dest.flush()?;
-            let canvas = self.render(Some(width as _));
-            queue!(dest, cursor::SavePosition, terminal::EndSynchronizedUpdate)?;
-            if self.system_context.exit_mode() == Some(ExitMode::ClearOutput) {
-                break;
+            let output = self.render(Some(width as _));
+            if output.did_clear_terminal_output {
+                queue!(dest, cursor::SavePosition)?;
+            } else {
+                queue!(dest, cursor::RestorePosition)?;
             }
-            // TODO: by comparing this canvas to the previous one, we could do incremental updates
-            // instead of redrawing everything
-            canvas.write_ansi(stdout())?;
+            if self.system_context.exit_mode() == Some(ExitMode::ClearOutput) {
+                queue!(dest, terminal::Clear(terminal::ClearType::FromCursorDown))?;
+            } else {
+                // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
+                // only write the diff
+                output.canvas.write_ansi(stdout())?;
+                queue!(dest, terminal::Clear(terminal::ClearType::FromCursorDown))?;
+            }
+            queue!(dest, terminal::EndSynchronizedUpdate)?;
             if self.system_context.exit_mode().is_some() {
                 break;
             }
             self.root_component.wait().await;
         }
+        mem::drop(cursor_hider);
         Ok(())
     }
 }
 
-pub fn render<E: ElementExt>(e: E, max_width: Option<usize>) -> Canvas {
+struct CursorHider;
+
+impl CursorHider {
+    pub fn new() -> io::Result<Self> {
+        queue!(stdout(), cursor::Hide)?;
+        Ok(Self)
+    }
+}
+
+impl Drop for CursorHider {
+    fn drop(&mut self) {
+        let _ = queue!(stdout(), cursor::Show);
+    }
+}
+
+pub(crate) fn render<E: ElementExt>(e: E, max_width: Option<usize>) -> Canvas {
     let mut tree = Tree::new(e.props(), e.helper());
-    tree.render(max_width)
+    tree.render(max_width).canvas
 }
 
 pub(crate) async fn terminal_render_loop<E: ElementExt>(e: E) -> io::Result<()> {
