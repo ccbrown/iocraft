@@ -4,13 +4,13 @@ use std::time::Duration;
 #[hooks]
 struct ExampleHooks {
     run_loop: UseFuture,
-    stdio: UseStdio,
+    output: UseOutput,
 }
 
 #[component]
 fn Example(hooks: &mut ExampleHooks) -> impl Into<AnyElement> {
-    let stdout = hooks.stdio.use_stdout();
-    let stderr = hooks.stdio.use_stderr();
+    let stdout = hooks.output.use_stdout();
+    let stderr = hooks.output.use_stderr();
 
     hooks.run_loop.use_future(|| async move {
         loop {

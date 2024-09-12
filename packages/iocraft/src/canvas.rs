@@ -158,8 +158,11 @@ impl Canvas {
             if ansi {
                 // clear until end of line
                 write!(w, csi!("K"))?;
+                // add a carriage return in case we're in raw mode
+                w.write(b"\r\n")?;
+            } else {
+                w.write(b"\n")?;
             }
-            w.write(b"\n")?;
         }
         if ansi {
             write!(w, csi!("0m"))?;

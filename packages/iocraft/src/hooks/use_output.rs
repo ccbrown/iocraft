@@ -11,21 +11,35 @@ enum Message {
 }
 
 #[derive(Default)]
-struct UseStdioState {
+struct UseOutputState {
     queue: Vec<Message>,
     waker: Option<Waker>,
 }
 
-impl UseStdioState {
+impl UseOutputState {
     fn exec(&mut self, updater: &mut ComponentUpdater) {
         if self.queue.is_empty() {
             return;
         }
         updater.clear_terminal_output();
+        let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
         for msg in self.queue.drain(..) {
             match msg {
-                Message::Stdout(msg) => println!("{}", msg),
-                Message::Stderr(msg) => eprintln!("{}", msg),
+                // add carriage returns in case we're in raw mode
+                Message::Stdout(msg) => {
+                    if needs_carriage_returns {
+                        print!("{}\r\n", msg)
+                    } else {
+                        println!("{}", msg)
+                    }
+                }
+                Message::Stderr(msg) => {
+                    if needs_carriage_returns {
+                        eprint!("{}\r\n", msg)
+                    } else {
+                        eprintln!("{}", msg)
+                    }
+                }
             }
         }
     }
@@ -33,7 +47,7 @@ impl UseStdioState {
 
 #[derive(Clone)]
 pub struct UseStdoutHandle {
-    state: Arc<Mutex<UseStdioState>>,
+    state: Arc<Mutex<UseOutputState>>,
 }
 
 impl UseStdoutHandle {
@@ -48,7 +62,7 @@ impl UseStdoutHandle {
 
 #[derive(Clone)]
 pub struct UseStderrHandle {
-    state: Arc<Mutex<UseStdioState>>,
+    state: Arc<Mutex<UseOutputState>>,
 }
 
 impl UseStderrHandle {
@@ -62,11 +76,11 @@ impl UseStderrHandle {
 }
 
 #[derive(Default)]
-pub struct UseStdio {
-    state: Arc<Mutex<UseStdioState>>,
+pub struct UseOutput {
+    state: Arc<Mutex<UseOutputState>>,
 }
 
-impl Hook for UseStdio {
+impl Hook for UseOutput {
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         let mut state = self.state.lock().unwrap();
         if state.queue.is_empty() {
@@ -83,7 +97,7 @@ impl Hook for UseStdio {
     }
 }
 
-impl UseStdio {
+impl UseOutput {
     pub fn use_stdout(&mut self) -> UseStdoutHandle {
         UseStdoutHandle {
             state: self.state.clone(),

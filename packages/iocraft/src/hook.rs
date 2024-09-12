@@ -5,7 +5,9 @@ use std::{
 };
 
 pub trait Hook: Default {
-    fn poll_change(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()>;
+    fn poll_change(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<()> {
+        Poll::Pending
+    }
 
     fn pre_component_update(&mut self, _updater: &mut ComponentUpdater) {}
     fn post_component_update(&mut self, _updater: &mut ComponentUpdater) {}

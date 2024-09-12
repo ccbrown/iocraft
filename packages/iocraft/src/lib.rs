@@ -9,6 +9,7 @@ mod props;
 mod render;
 mod signal;
 mod style;
+mod terminal;
 
 extern crate self as iocraft;
 

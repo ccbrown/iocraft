@@ -1,14 +1,8 @@
 use std::cell::RefCell;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ExitMode {
-    ClearOutput,
-    PreserveOutput,
-}
-
 #[derive(Default)]
 struct SystemContextInner {
-    exit_mode: Option<ExitMode>,
+    should_exit: bool,
 }
 
 pub struct SystemContext {
@@ -22,12 +16,12 @@ impl SystemContext {
         }
     }
 
-    pub fn exit(&self, mode: ExitMode) {
+    pub fn exit(&self) {
         let mut inner = self.inner.borrow_mut();
-        inner.exit_mode = Some(mode);
+        inner.should_exit = true;
     }
 
-    pub(crate) fn exit_mode(&self) -> Option<ExitMode> {
-        self.inner.borrow().exit_mode
+    pub(crate) fn should_exit(&self) -> bool {
+        self.inner.borrow().should_exit
     }
 }

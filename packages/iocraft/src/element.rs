@@ -27,6 +27,12 @@ where
     }
 }
 
+impl<'a> ExtendWithElements<AnyElement<'a>> for AnyElement<'a> {
+    fn extend<E: Extend<AnyElement<'a>>>(self, dest: &mut E) {
+        dest.extend([self]);
+    }
+}
+
 impl<T, U, I> ExtendWithElements<T> for I
 where
     I: IntoIterator<Item = U>,
@@ -86,6 +92,15 @@ pub struct AnyElement<'a> {
 impl<'a> Display for AnyElement<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.render(None).fmt(f)
+    }
+}
+
+impl<'a, T> Element<'a, T>
+where
+    T: Component + 'a,
+{
+    pub fn into_any(self) -> AnyElement<'a> {
+        self.into()
     }
 }
 

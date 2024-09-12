@@ -33,7 +33,7 @@ fn ProgressBar(
     });
 
     if state.progress >= 100.0 {
-        context.system.exit(ExitMode::PreserveOutput);
+        context.system.exit();
     }
 
     element! {

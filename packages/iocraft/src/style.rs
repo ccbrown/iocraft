@@ -8,7 +8,9 @@ use taffy::{
 
 // Re-export basic enum types.
 pub use crossterm::style::Color;
-pub use taffy::style::{Display, FlexDirection, FlexWrap, Overflow};
+pub use taffy::style::{
+    AlignContent, AlignItems, Display, FlexDirection, FlexWrap, JustifyContent, Overflow,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Percent(pub f32);
@@ -187,6 +189,9 @@ impl From<LayoutStyle> for Style {
             flex_basis: s.flex_basis.into(),
             flex_grow: s.flex_grow,
             flex_shrink: s.flex_shrink.unwrap_or(1.0),
+            align_items: s.align_items,
+            align_content: s.align_content,
+            justify_content: s.justify_content,
             ..Default::default()
         }
     }

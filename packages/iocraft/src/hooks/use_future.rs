@@ -15,7 +15,7 @@ impl Hook for UseFuture {
     fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         match self.f.as_mut() {
             Some(f) => f.as_mut().poll(cx),
-            None => Poll::Ready(()),
+            None => Poll::Pending,
         }
     }
 }

@@ -1,11 +1,13 @@
 use crate::{
     canvas::{Canvas, CanvasSubviewMut},
     component::{ComponentContextProvider, ComponentHelperExt, Components, InstantiatedComponent},
-    context::{ExitMode, SystemContext},
+    context::SystemContext,
     element::ElementExt,
     props::AnyProps,
+    terminal::{Terminal, TerminalEvents},
 };
 use crossterm::{cursor, queue, terminal};
+use futures::future::{select, FutureExt};
 use std::{
     any::Any,
     collections::HashMap,
@@ -16,6 +18,7 @@ pub use taffy::NodeId;
 use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
 
 pub(crate) struct UpdateContext<'a> {
+    terminal: Option<&'a mut Terminal>,
     layout_engine: &'a mut LayoutEngine,
     did_clear_terminal_output: bool,
 }
@@ -40,6 +43,18 @@ impl<'a, 'b> ComponentUpdater<'a, 'b> {
             context,
             component_context_provider,
         }
+    }
+
+    pub fn terminal_events(&mut self) -> Option<TerminalEvents> {
+        self.context.terminal.as_mut().and_then(|t| t.events().ok())
+    }
+
+    pub fn is_terminal_raw_mode_enabled(&self) -> bool {
+        self.context
+            .terminal
+            .as_ref()
+            .map(|t| t.is_raw_mode_enabled())
+            .unwrap_or(false)
     }
 
     pub fn clear_terminal_output(&mut self) {
@@ -234,9 +249,14 @@ impl<'a> Tree<'a> {
         }
     }
 
-    fn render(&mut self, max_width: Option<usize>) -> RenderOutput {
+    fn render(
+        &mut self,
+        max_width: Option<usize>,
+        terminal: Option<&mut Terminal>,
+    ) -> RenderOutput {
         let did_clear_terminal_output = {
             let mut context = UpdateContext {
+                terminal,
                 layout_engine: &mut self.layout_engine,
                 did_clear_terminal_output: false,
             };
@@ -303,55 +323,46 @@ impl<'a> Tree<'a> {
 
     async fn terminal_render_loop(&mut self) -> io::Result<()> {
         let mut dest = stdout();
+        let mut terminal = Terminal::new()?;
         queue!(dest, cursor::SavePosition)?;
-        let cursor_hider = CursorHider::new()?;
         loop {
             let (width, _) = terminal::size()?;
             queue!(dest, terminal::BeginSynchronizedUpdate,)?;
             dest.flush()?;
-            let output = self.render(Some(width as _));
+            let output = self.render(Some(width as _), Some(&mut terminal));
             if output.did_clear_terminal_output {
                 queue!(dest, cursor::SavePosition)?;
             } else {
                 queue!(dest, cursor::RestorePosition)?;
             }
-            if self.system_context.exit_mode() == Some(ExitMode::ClearOutput) {
-                queue!(dest, terminal::Clear(terminal::ClearType::FromCursorDown))?;
-            } else {
-                // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
-                // only write the diff
-                output.canvas.write_ansi(stdout())?;
-                queue!(dest, terminal::Clear(terminal::ClearType::FromCursorDown))?;
-            }
-            queue!(dest, terminal::EndSynchronizedUpdate)?;
-            if self.system_context.exit_mode().is_some() {
+            // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
+            // only write the diff
+            output.canvas.write_ansi(stdout())?;
+            queue!(
+                dest,
+                terminal::Clear(terminal::ClearType::FromCursorDown,),
+                terminal::EndSynchronizedUpdate
+            )?;
+            if self.system_context.should_exit() || terminal.received_ctrl_c() {
                 break;
             }
-            self.root_component.wait().await;
+            select(
+                self.root_component.wait().boxed_local(),
+                terminal.wait().boxed_local(),
+            )
+            .await;
+            if terminal.received_ctrl_c() {
+                break;
+            }
         }
-        mem::drop(cursor_hider);
+        mem::drop(terminal);
         Ok(())
-    }
-}
-
-struct CursorHider;
-
-impl CursorHider {
-    pub fn new() -> io::Result<Self> {
-        queue!(stdout(), cursor::Hide)?;
-        Ok(Self)
-    }
-}
-
-impl Drop for CursorHider {
-    fn drop(&mut self) {
-        let _ = queue!(stdout(), cursor::Show);
     }
 }
 
 pub(crate) fn render<E: ElementExt>(e: E, max_width: Option<usize>) -> Canvas {
     let mut tree = Tree::new(e.props(), e.helper());
-    tree.render(max_width).canvas
+    tree.render(max_width, None).canvas
 }
 
 pub(crate) async fn terminal_render_loop<E: ElementExt>(e: E) -> io::Result<()> {

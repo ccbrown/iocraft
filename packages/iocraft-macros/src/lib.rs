@@ -673,6 +673,9 @@ const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
     ("flex_basis", "::iocraft::FlexBasis"),
     ("flex_grow", "f32"),
     ("flex_shrink", "Option<f32>"),
+    ("align_items", "Option<::iocraft::AlignItems>"),
+    ("align_content", "Option<::iocraft::AlignContent>"),
+    ("justify_content", "Option<::iocraft::JustifyContent>"),
 ];
 
 #[proc_macro_attribute]

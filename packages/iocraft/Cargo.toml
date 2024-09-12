@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-crossterm = "0.28.1"
+crossterm = { version = "0.28.1", features = ["event-stream"] }
 futures = "0.3.30"
 taffy = { version = "0.5.2", default-features = false, features = ["flexbox", "taffy_tree"] }
 iocraft-macros = { path = "../iocraft-macros" }
