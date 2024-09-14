@@ -92,7 +92,7 @@ impl<'a, 'b> ComponentUpdater<'a, 'b> {
             .expect("we should be able to mark the node as dirty");
     }
 
-    pub fn update_children<I, T>(&mut self, children: I, context: Option<Box<&dyn Any>>)
+    pub fn update_children<I, T>(&mut self, children: I, context: Option<&dyn Any>)
     where
         I: IntoIterator<Item = T>,
         T: ElementExt,

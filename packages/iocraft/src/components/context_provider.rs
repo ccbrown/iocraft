@@ -24,7 +24,7 @@ impl<T: Any + Unpin> Component for ContextProvider<T> {
     fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater) {
         updater.update_children(
             props.children.iter(),
-            props.value.as_ref().map(|v| Box::new(v as &dyn Any)),
+            props.value.as_ref().map(|v| v as &dyn Any),
         );
     }
 }

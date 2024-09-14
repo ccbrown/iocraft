@@ -107,7 +107,7 @@ pub(crate) enum ComponentContextProvider<'a> {
     },
     Child {
         parent: &'a ComponentContextProvider<'a>,
-        context: Box<&'a dyn Any>,
+        context: &'a dyn Any,
     },
 }
 
@@ -116,7 +116,7 @@ impl<'a> ComponentContextProvider<'a> {
         Self::Root { system_context }
     }
 
-    pub fn with_context(&'a self, context: Box<&'a dyn Any>) -> Self {
+    pub fn with_context(&'a self, context: &'a dyn Any) -> Self {
         Self::Child {
             parent: self,
             context,
