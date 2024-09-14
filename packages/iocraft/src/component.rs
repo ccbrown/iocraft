@@ -103,7 +103,7 @@ impl<C: Any + Component> AnyComponent for C {
 
 pub(crate) enum ComponentContextProvider<'a> {
     Root {
-        system_context: Box<&'a dyn Any>,
+        system_context: &'a mut dyn Any,
     },
     Child {
         parent: &'a ComponentContextProvider<'a>,
@@ -112,7 +112,7 @@ pub(crate) enum ComponentContextProvider<'a> {
 }
 
 impl<'a> ComponentContextProvider<'a> {
-    pub fn root(system_context: Box<&'a dyn Any>) -> Self {
+    pub fn root(system_context: &'a mut dyn Any) -> Self {
         Self::Root { system_context }
     }
 

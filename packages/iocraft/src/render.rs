@@ -260,7 +260,7 @@ impl<'a> Tree<'a> {
                 layout_engine: &mut self.layout_engine,
                 did_clear_terminal_output: false,
             };
-            let component_context = ComponentContextProvider::root(Box::new(&self.system_context));
+            let component_context = ComponentContextProvider::root(&mut self.system_context);
             self.root_component.update(
                 &mut context,
                 &component_context,
