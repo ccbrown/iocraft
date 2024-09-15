@@ -15,8 +15,7 @@ use std::{
     io::{self, stdout, Write},
     mem,
 };
-pub use taffy::NodeId;
-use taffy::{AvailableSpace, Layout, Point, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
 
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
@@ -132,11 +131,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                                 InstantiatedComponent::new(new_node_id, child.props_mut(), h)
                             }
                         };
-                    component.update(
-                        &mut self.context,
-                        component_context_stack,
-                        child.props_mut(),
-                    );
+                    component.update(self.context, component_context_stack, child.props_mut());
                     if used_components
                         .insert(child.key().clone(), component)
                         .is_some()
@@ -171,11 +166,11 @@ pub struct ComponentRenderer<'a> {
 impl<'a> ComponentRenderer<'a> {
     /// Gets the calculated layout of the current node.
     pub fn layout(&self) -> Layout {
-        self.context
+        *self
+            .context
             .layout_engine
             .layout(self.node_id)
             .expect("we should be able to get the layout")
-            .clone()
     }
 
     pub fn canvas(&mut self) -> CanvasSubviewMut {

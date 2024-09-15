@@ -55,6 +55,12 @@ where
 #[derive(Clone, Hash, PartialEq, Eq, Debug, derive_more::Display)]
 pub struct ElementKey(uuid::Uuid);
 
+impl Default for ElementKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ElementKey {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())

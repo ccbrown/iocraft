@@ -123,6 +123,7 @@ impl<'a> ContextStack<'a> {
     }
 }
 
+#[doc(hidden)]
 pub trait ContextImplExt<'a> {
     type Refs<'b: 'a>;
 
@@ -131,6 +132,7 @@ pub trait ContextImplExt<'a> {
     fn borrow_refs<'b: 'a, 'c: 'b>(refs: &'b mut Self::Refs<'c>) -> Self;
 }
 
+#[doc(hidden)]
 pub trait ContextRef<'a> {
     type Ref;
     type RefOwner<'r>;

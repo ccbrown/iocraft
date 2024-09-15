@@ -1,7 +1,15 @@
 use std::marker::PhantomData;
 
+/// This trait marks a type as being covariant.
+///
+/// # Safety
+///
+/// If the type is not actually covariant, then the safety of the program is compromised. You can
+/// use the `#[derive(Covariant)]` macro to implement this trait safely. If the type is not
+/// actually covariant, the derive macro will not compile.
 pub unsafe trait Covariant {}
 
+#[doc(hidden)]
 #[derive(Clone, Copy, iocraft_macros::Covariant, Default)]
 pub struct NoProps;
 

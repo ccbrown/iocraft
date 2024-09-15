@@ -152,16 +152,16 @@ impl Canvas {
                 if let Some(c) = &cell.character {
                     write!(w, "{}", c.value)?;
                 } else {
-                    w.write(b" ")?;
+                    w.write_all(b" ")?;
                 }
             }
             if ansi {
                 // clear until end of line
                 write!(w, csi!("K"))?;
                 // add a carriage return in case we're in raw mode
-                w.write(b"\r\n")?;
+                w.write_all(b"\r\n")?;
             } else {
-                w.write(b"\n")?;
+                w.write_all(b"\n")?;
             }
         }
         if ansi {

@@ -139,15 +139,12 @@ impl ToTokens for ParsedCovariant {
         let name = &def.ident;
         let where_clause = &def.generics.where_clause;
 
-        let has_generics = def.generics.params.len() > 0;
+        let has_generics = !def.generics.params.is_empty();
         let lifetime_generic_count = def
             .generics
             .params
             .iter()
-            .filter(|param| match param {
-                GenericParam::Lifetime(_) => true,
-                _ => false,
-            })
+            .filter(|param| matches!(param, GenericParam::Lifetime(_)))
             .count();
 
         let generics = &def.generics;
@@ -711,24 +708,22 @@ const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
     ("justify_content", "Option<::iocraft::JustifyContent>"),
 ];
 
+#[doc(hidden)]
 #[proc_macro_attribute]
 pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut ast = parse_macro_input!(item as DeriveInput);
     match &mut ast.data {
         syn::Data::Struct(ref mut struct_data) => {
-            match &mut struct_data.fields {
-                syn::Fields::Named(fields) => {
-                    for (field_name, field_type) in LAYOUT_STYLE_FIELDS {
-                        let field_name = Ident::new(field_name, Span::call_site());
-                        let field_type = syn::parse_str::<Type>(field_type).unwrap();
-                        fields.named.push(
-                            syn::Field::parse_named
-                                .parse2(quote! { pub #field_name: #field_type })
-                                .unwrap(),
-                        );
-                    }
+            if let syn::Fields::Named(fields) = &mut struct_data.fields {
+                for (field_name, field_type) in LAYOUT_STYLE_FIELDS {
+                    let field_name = Ident::new(field_name, Span::call_site());
+                    let field_type = syn::parse_str::<Type>(field_type).unwrap();
+                    fields.named.push(
+                        syn::Field::parse_named
+                            .parse2(quote! { pub #field_name: #field_type })
+                            .unwrap(),
+                    );
                 }
-                _ => (),
             }
 
             let struct_name = &ast.ident;
@@ -739,7 +734,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
 
             let where_clause = &ast.generics.where_clause;
 
-            let has_generics = ast.generics.params.len() > 0;
+            let has_generics = !ast.generics.params.is_empty();
             let generics = &ast.generics;
 
             let generics_names = ast.generics.params.iter().map(|param| match param {
@@ -761,7 +756,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                 false => quote!(),
             };
 
-            return quote! {
+            quote! {
                 #ast
 
                 impl #generics #struct_name #bracketed_generic_names #where_clause {
@@ -772,7 +767,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                     }
                 }
             }
-            .into();
+            .into()
         }
         _ => panic!("`with_layout_style_props` can only be used with structs "),
     }

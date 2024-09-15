@@ -12,7 +12,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-pub use taffy::NodeId;
+use taffy::NodeId;
 
 pub(crate) struct ComponentHelper<C: Component> {
     _marker: PhantomData<C>,
@@ -164,6 +164,7 @@ impl InstantiatedComponent {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct Components {
     pub components: HashMap<ElementKey, InstantiatedComponent>,
 }
@@ -188,14 +189,6 @@ impl Components {
             Poll::Ready(())
         } else {
             Poll::Pending
-        }
-    }
-}
-
-impl Default for Components {
-    fn default() -> Self {
-        Self {
-            components: HashMap::new(),
         }
     }
 }
