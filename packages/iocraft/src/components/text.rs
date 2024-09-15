@@ -21,7 +21,7 @@ impl Component for Text {
         Self::default()
     }
 
-    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater) {
+    fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
         self.style = TextStyle {
             color: props.color,
             weight: props.weight,
@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_text() {
-        assert_eq!(element!(Text).to_string(), "\n");
+        assert_eq!(element!(Text).into_string(), "\n");
 
-        assert_eq!(element!(Text(content: "foo")).to_string(), "foo\n");
+        assert_eq!(element!(Text(content: "foo")).into_string(), "foo\n");
     }
 }

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 #[context]
 struct ProgressBarContext<'a> {
-    system: &'a SystemContext,
+    system: &'a mut SystemContext,
 }
 
 #[state]

@@ -138,7 +138,7 @@ impl Component for Box {
         Default::default()
     }
 
-    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater) {
+    fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
         self.border_style = props.border_style;
         self.border_text_style = TextStyle {
             color: props.border_color,
@@ -174,7 +174,7 @@ impl Component for Box {
             }
         };
         updater.set_layout_style(style);
-        updater.update_children(props.children.iter(), None);
+        updater.update_children(props.children.iter_mut(), None);
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_box() {
-        assert_eq!(element!(Box).to_string(), "");
+        assert_eq!(element!(Box).into_string(), "");
 
         assert_eq!(
             element! {
@@ -299,7 +299,7 @@ mod tests {
                     Text(content: "bar")
                 }
             }
-            .to_string(),
+            .into_string(),
             "foobar\n"
         );
 
@@ -309,7 +309,7 @@ mod tests {
                     Text(content: "foo")
                 }
             }
-            .to_string(),
+            .into_string(),
             "\n foo\n\n"
         );
 
@@ -319,7 +319,7 @@ mod tests {
                     Text(content: "foo")
                 }
             }
-            .to_string(),
+            .into_string(),
             "\n\n  foo\n\n\n"
         );
 
@@ -334,7 +334,7 @@ mod tests {
                     }
                 }
             }
-            .to_string(),
+            .into_string(),
             "foo         bar\n"
         );
 
@@ -349,7 +349,7 @@ mod tests {
                     }
                 }
             }
-            .to_string(),
+            .into_string(),
             indoc! {"
                 ┌──────────────────┐
                 │foo        bar    │

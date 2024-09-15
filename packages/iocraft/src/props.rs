@@ -25,7 +25,7 @@ impl<T> DropRaw for DropRawImpl<T> {
 pub struct AnyProps<'a> {
     raw: *mut (), // *T
     drop: Option<Box<dyn DropRaw + 'a>>,
-    _marker: PhantomData<&'a ()>,
+    _marker: PhantomData<&'a mut ()>,
 }
 
 impl<'a> AnyProps<'a> {
@@ -40,7 +40,7 @@ impl<'a> AnyProps<'a> {
         }
     }
 
-    pub(crate) fn borrowed<T: Covariant>(props: &'a T) -> Self {
+    pub(crate) fn borrowed<T: Covariant>(props: &'a mut T) -> Self {
         Self {
             raw: props as *const T as *mut (),
             drop: None,
@@ -52,7 +52,11 @@ impl<'a> AnyProps<'a> {
         unsafe { &*(self.raw as *const T) }
     }
 
-    pub(crate) fn borrow(&self) -> Self {
+    pub(crate) unsafe fn downcast_mut_unchecked<T: Covariant>(&mut self) -> &mut T {
+        unsafe { &mut *(self.raw as *mut T) }
+    }
+
+    pub(crate) fn borrow(&mut self) -> Self {
         Self {
             raw: self.raw,
             drop: None,

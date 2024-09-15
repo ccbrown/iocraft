@@ -2,7 +2,7 @@ use iocraft::prelude::*;
 
 #[context]
 struct ExampleContext<'a> {
-    system: &'a SystemContext,
+    system: &'a mut SystemContext,
 }
 
 #[state]

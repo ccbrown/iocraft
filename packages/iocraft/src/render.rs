@@ -1,7 +1,7 @@
 use crate::{
     canvas::{Canvas, CanvasSubviewMut},
-    component::{ComponentContextProvider, ComponentHelperExt, Components, InstantiatedComponent},
-    context::SystemContext,
+    component::{ComponentHelperExt, Components, InstantiatedComponent},
+    context::{Context, ContextStack, SystemContext},
     element::ElementExt,
     props::AnyProps,
     terminal::{Terminal, TerminalEvents},
@@ -10,6 +10,7 @@ use crossterm::{cursor, queue, terminal};
 use futures::future::{select, FutureExt};
 use std::{
     any::Any,
+    cell::{Ref, RefMut},
     collections::HashMap,
     io::{self, stdout, Write},
     mem,
@@ -23,25 +24,25 @@ pub(crate) struct UpdateContext<'a> {
     did_clear_terminal_output: bool,
 }
 
-pub struct ComponentUpdater<'a, 'b: 'a> {
+pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a> {
     node_id: NodeId,
     children: &'a mut Components,
     context: &'a mut UpdateContext<'b>,
-    component_context_provider: &'a ComponentContextProvider<'a>,
+    component_context_stack: &'a mut ContextStack<'c>,
 }
 
-impl<'a, 'b> ComponentUpdater<'a, 'b> {
+impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     pub(crate) fn new(
         node_id: NodeId,
         children: &'a mut Components,
         context: &'a mut UpdateContext<'b>,
-        component_context_provider: &'a ComponentContextProvider<'a>,
+        component_context_stack: &'a mut ContextStack<'c>,
     ) -> Self {
         Self {
             node_id,
             children,
             context,
-            component_context_provider,
+            component_context_stack,
         }
     }
 
@@ -69,8 +70,12 @@ impl<'a, 'b> ComponentUpdater<'a, 'b> {
         }
     }
 
-    pub fn get_context<T: Any>(&self) -> Option<&T> {
-        self.component_context_provider.get_context()
+    pub fn get_context<T: Any>(&self) -> Option<Ref<T>> {
+        self.component_context_stack.get_context()
+    }
+
+    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<T>> {
+        self.component_context_stack.get_context_mut()
     }
 
     pub fn set_layout_style(&mut self, layout_style: taffy::style::Style) {
@@ -92,62 +97,62 @@ impl<'a, 'b> ComponentUpdater<'a, 'b> {
             .expect("we should be able to mark the node as dirty");
     }
 
-    pub fn update_children<I, T>(&mut self, children: I, context: Option<&dyn Any>)
+    pub fn update_children<I, T>(&mut self, children: I, context: Option<Context>)
     where
         I: IntoIterator<Item = T>,
         T: ElementExt,
     {
-        let component_context_provider =
-            context.map(|cx| self.component_context_provider.with_context(cx));
-        let component_context_provider = component_context_provider
-            .as_ref()
-            .unwrap_or(self.component_context_provider);
-        let mut used_components = HashMap::with_capacity(self.children.components.len());
+        self.component_context_stack
+            .with_context(context, |component_context_stack| {
+                let mut used_components = HashMap::with_capacity(self.children.components.len());
 
-        for child in children {
-            let mut component: InstantiatedComponent = match self
-                .children
-                .components
-                .remove(child.key())
-            {
-                Some(component)
-                    if component.component().type_id() == child.helper().component_type_id() =>
-                {
-                    component
+                for mut child in children {
+                    let mut component: InstantiatedComponent =
+                        match self.children.components.remove(child.key()) {
+                            Some(component)
+                                if component.component().type_id()
+                                    == child.helper().component_type_id() =>
+                            {
+                                component
+                            }
+                            _ => {
+                                let new_node_id = self
+                                    .context
+                                    .layout_engine
+                                    .new_leaf_with_context(
+                                        Style::default(),
+                                        LayoutEngineNodeContext::default(),
+                                    )
+                                    .expect("we should be able to add the node");
+                                self.context
+                                    .layout_engine
+                                    .add_child(self.node_id, new_node_id)
+                                    .expect("we should be able to add the child");
+                                let h = child.helper();
+                                InstantiatedComponent::new(new_node_id, child.props_mut(), h)
+                            }
+                        };
+                    component.update(
+                        &mut self.context,
+                        component_context_stack,
+                        child.props_mut(),
+                    );
+                    if used_components
+                        .insert(child.key().clone(), component)
+                        .is_some()
+                    {
+                        panic!("duplicate key for sibling components: {}", child.key());
+                    }
                 }
-                _ => {
-                    let new_node_id = self
-                        .context
-                        .layout_engine
-                        .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
-                        .expect("we should be able to add the node");
+
+                for (_, component) in self.children.components.drain() {
                     self.context
                         .layout_engine
-                        .add_child(self.node_id, new_node_id)
-                        .expect("we should be able to add the child");
-                    InstantiatedComponent::new(new_node_id, child.props(), child.helper())
+                        .remove(component.node_id())
+                        .expect("we should be able to remove the node");
                 }
-            };
-            component.update(
-                &mut self.context,
-                &component_context_provider,
-                child.props(),
-            );
-            if used_components
-                .insert(child.key().clone(), component)
-                .is_some()
-            {
-                panic!("duplicate key for sibling components: {}", child.key());
-            }
-        }
-
-        for (_, component) in self.children.components.drain() {
-            self.context
-                .layout_engine
-                .remove(component.node_id())
-                .expect("we should be able to remove the node");
-        }
-        mem::swap(&mut self.children.components, &mut used_components);
+                mem::swap(&mut self.children.components, &mut used_components);
+            });
     }
 }
 
@@ -232,7 +237,7 @@ struct RenderOutput {
 }
 
 impl<'a> Tree<'a> {
-    fn new(props: AnyProps<'a>, helper: Box<dyn ComponentHelperExt>) -> Self {
+    fn new(mut props: AnyProps<'a>, helper: Box<dyn ComponentHelperExt>) -> Self {
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
@@ -260,10 +265,10 @@ impl<'a> Tree<'a> {
                 layout_engine: &mut self.layout_engine,
                 did_clear_terminal_output: false,
             };
-            let component_context = ComponentContextProvider::root(&mut self.system_context);
+            let mut component_context_stack = ContextStack::root(&mut self.system_context);
             self.root_component.update(
                 &mut context,
-                &component_context,
+                &mut component_context_stack,
                 self.root_component_props.borrow(),
             );
             context.did_clear_terminal_output
@@ -360,12 +365,14 @@ impl<'a> Tree<'a> {
     }
 }
 
-pub(crate) fn render<E: ElementExt>(e: E, max_width: Option<usize>) -> Canvas {
-    let mut tree = Tree::new(e.props(), e.helper());
+pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canvas {
+    let h = e.helper();
+    let mut tree = Tree::new(e.props_mut(), h);
     tree.render(max_width, None).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E: ElementExt>(e: E) -> io::Result<()> {
-    let mut tree = Tree::new(e.props(), e.helper());
+pub(crate) async fn terminal_render_loop<E: ElementExt>(mut e: E) -> io::Result<()> {
+    let h = e.helper();
+    let mut tree = Tree::new(e.props_mut(), h);
     tree.terminal_render_loop().await
 }

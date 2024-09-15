@@ -5,7 +5,6 @@ use crate::{
 };
 use crossterm::{terminal, tty::IsTty};
 use std::{
-    fmt::{self, Display, Formatter},
     future::Future,
     io::{self, stderr, stdout, Write},
     os::fd::AsRawFd,
@@ -68,15 +67,6 @@ pub struct Element<'a, T: ElementType + 'a> {
     pub props: T::Props<'a>,
 }
 
-impl<'a, T> Display for Element<'a, T>
-where
-    T: Component,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.render(None).fmt(f)
-    }
-}
-
 pub trait ElementType {
     type Props<'a>
     where
@@ -87,12 +77,6 @@ pub struct AnyElement<'a> {
     key: ElementKey,
     props: AnyProps<'a>,
     helper: Box<dyn ComponentHelperExt>,
-}
-
-impl<'a> Display for AnyElement<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.render(None).fmt(f)
-    }
 }
 
 impl<'a, T> Element<'a, T>
@@ -117,14 +101,14 @@ where
     }
 }
 
-impl<'a, T> From<&'a Element<'a, T>> for AnyElement<'a>
+impl<'a, T> From<&'a mut Element<'a, T>> for AnyElement<'a>
 where
     T: Component,
 {
-    fn from(e: &'a Element<'a, T>) -> Self {
+    fn from(e: &'a mut Element<'a, T>) -> Self {
         Self {
             key: e.key.clone(),
-            props: AnyProps::borrowed(&e.props),
+            props: AnyProps::borrowed(&mut e.props),
             helper: ComponentHelper::<T>::boxed(),
         }
     }
@@ -135,19 +119,23 @@ mod private {
 
     pub trait Sealed {}
     impl<'a> Sealed for AnyElement<'a> {}
-    impl<'a> Sealed for &AnyElement<'a> {}
+    impl<'a> Sealed for &mut AnyElement<'a> {}
     impl<'a, T> Sealed for Element<'a, T> where T: Component {}
-    impl<'a, T> Sealed for &Element<'a, T> where T: Component {}
+    impl<'a, T> Sealed for &mut Element<'a, T> where T: Component {}
 }
 
 pub trait ElementExt: private::Sealed + Sized {
     fn key(&self) -> &ElementKey;
-    fn props(&self) -> AnyProps;
+    fn props_mut(&mut self) -> AnyProps;
 
     #[doc(hidden)]
     fn helper(&self) -> Box<dyn ComponentHelperExt>;
 
-    fn render(&self, max_width: Option<usize>) -> Canvas;
+    fn render(&mut self, max_width: Option<usize>) -> Canvas;
+
+    fn into_string(mut self) -> String {
+        self.render(None).to_string()
+    }
 
     fn print(self) {
         self.write_to_raw_fd(stdout()).unwrap();
@@ -157,12 +145,12 @@ pub trait ElementExt: private::Sealed + Sized {
         self.write_to_raw_fd(stderr()).unwrap();
     }
 
-    fn write<W: Write>(self, w: W) -> io::Result<()> {
+    fn write<W: Write>(mut self, w: W) -> io::Result<()> {
         let canvas = self.render(None);
         canvas.write(w)
     }
 
-    fn write_to_raw_fd<F: Write + AsRawFd>(self, fd: F) -> io::Result<()> {
+    fn write_to_raw_fd<F: Write + AsRawFd>(mut self, fd: F) -> io::Result<()> {
         if fd.is_tty() {
             let (width, _) = terminal::size().expect("we should be able to get the terminal size");
             let canvas = self.render(Some(width as _));
@@ -172,7 +160,7 @@ pub trait ElementExt: private::Sealed + Sized {
         }
     }
 
-    fn render_loop(&self) -> impl Future<Output = io::Result<()>>;
+    fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
 }
 
 impl<'a> ElementExt for AnyElement<'a> {
@@ -180,7 +168,7 @@ impl<'a> ElementExt for AnyElement<'a> {
         &self.key
     }
 
-    fn props(&self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps {
         self.props.borrow()
     }
 
@@ -189,21 +177,21 @@ impl<'a> ElementExt for AnyElement<'a> {
         self.helper.copy()
     }
 
-    fn render(&self, max_width: Option<usize>) -> Canvas {
+    fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
 
-    async fn render_loop(&self) -> io::Result<()> {
+    async fn render_loop(&mut self) -> io::Result<()> {
         terminal_render_loop(self).await
     }
 }
 
-impl<'a> ElementExt for &AnyElement<'a> {
+impl<'a> ElementExt for &mut AnyElement<'a> {
     fn key(&self) -> &ElementKey {
         &self.key
     }
 
-    fn props(&self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps {
         self.props.borrow()
     }
 
@@ -212,12 +200,12 @@ impl<'a> ElementExt for &AnyElement<'a> {
         self.helper.copy()
     }
 
-    fn render(&self, max_width: Option<usize>) -> Canvas {
-        render(*self, max_width)
+    fn render(&mut self, max_width: Option<usize>) -> Canvas {
+        render(&mut **self, max_width)
     }
 
-    async fn render_loop(&self) -> io::Result<()> {
-        terminal_render_loop(*self).await
+    async fn render_loop(&mut self) -> io::Result<()> {
+        terminal_render_loop(&mut **self).await
     }
 }
 
@@ -229,8 +217,8 @@ where
         &self.key
     }
 
-    fn props(&self) -> AnyProps {
-        AnyProps::borrowed(&self.props)
+    fn props_mut(&mut self) -> AnyProps {
+        AnyProps::borrowed(&mut self.props)
     }
 
     #[doc(hidden)]
@@ -238,16 +226,16 @@ where
         ComponentHelper::<T>::boxed()
     }
 
-    fn render(&self, max_width: Option<usize>) -> Canvas {
+    fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
 
-    async fn render_loop(&self) -> io::Result<()> {
+    async fn render_loop(&mut self) -> io::Result<()> {
         terminal_render_loop(self).await
     }
 }
 
-impl<'a, T> ElementExt for &Element<'a, T>
+impl<'a, T> ElementExt for &mut Element<'a, T>
 where
     T: Component + 'static,
 {
@@ -255,8 +243,8 @@ where
         &self.key
     }
 
-    fn props(&self) -> AnyProps {
-        AnyProps::borrowed(&self.props)
+    fn props_mut(&mut self) -> AnyProps {
+        AnyProps::borrowed(&mut self.props)
     }
 
     #[doc(hidden)]
@@ -264,11 +252,11 @@ where
         ComponentHelper::<T>::boxed()
     }
 
-    fn render(&self, max_width: Option<usize>) -> Canvas {
-        render(*self, max_width)
+    fn render(&mut self, max_width: Option<usize>) -> Canvas {
+        render(&mut **self, max_width)
     }
 
-    async fn render_loop(&self) -> io::Result<()> {
-        terminal_render_loop(*self).await
+    async fn render_loop(&mut self) -> io::Result<()> {
+        terminal_render_loop(&mut **self).await
     }
 }

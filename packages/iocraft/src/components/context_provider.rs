@@ -1,30 +1,25 @@
-use crate::{AnyElement, Component, ComponentUpdater, Covariant};
-use std::{any::Any, marker::PhantomData};
+use crate::{AnyElement, Component, ComponentUpdater, Context, Covariant};
 
 #[derive(Covariant, Default)]
-pub struct ContextProviderProps<'a, T: Any + Unpin> {
+pub struct ContextProviderProps<'a> {
     pub children: Vec<AnyElement<'a>>,
-    pub value: Option<T>,
+    pub value: Option<Context<'a>>,
 }
 
 #[derive(Default)]
-pub struct ContextProvider<T> {
-    _marker: PhantomData<T>,
-}
+pub struct ContextProvider;
 
-impl<T: Any + Unpin> Component for ContextProvider<T> {
-    type Props<'a> = ContextProviderProps<'a, T>;
+impl Component for ContextProvider {
+    type Props<'a> = ContextProviderProps<'a>;
 
     fn new(_props: &Self::Props<'_>) -> Self {
-        Self {
-            _marker: PhantomData,
-        }
+        Self
     }
 
-    fn update(&mut self, props: &Self::Props<'_>, updater: &mut ComponentUpdater) {
+    fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
         updater.update_children(
-            props.children.iter(),
-            props.value.as_ref().map(|v| v as &dyn Any),
+            props.children.iter_mut(),
+            props.value.as_mut().map(|cx| cx.borrow()),
         );
     }
 }

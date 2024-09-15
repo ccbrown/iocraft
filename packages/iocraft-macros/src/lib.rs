@@ -389,43 +389,67 @@ impl Parse for ParsedContext {
     }
 }
 
-fn is_option(ty: Type) -> bool {
-    match ty {
-        Type::Path(path) => path.path.segments.last().map_or(false, |segment| {
-            segment.ident == "Option" && !segment.arguments.is_empty()
-        }),
-        _ => false,
-    }
-}
-
 impl ToTokens for ParsedContext {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let context = &self.context;
         let name = &context.ident;
+        let generics = &context.generics;
+        let lifetime = generics.params.first();
 
-        let field_assignments = context.fields.iter().map(|field| {
+        let ref_fields = context.fields.iter().map(|field| {
             let field_name = &field.ident;
-            if is_option(field.ty.clone()) {
-                quote! { #field_name: updater.get_context() }
-            } else {
-                let err_msg = format!(
-                    "missing required context for {}",
-                    field_name.as_ref().unwrap()
-                );
-                quote! { #field_name: updater.get_context().expect(#err_msg) }
-            }
+            let field_type = &field.ty;
+            quote! { #field_name: <#field_type as ::iocraft::ContextRef<#lifetime>>::RefOwner<#lifetime> }
+        });
+
+        let ref_field_assignments = context.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            let field_type = &field.ty;
+            quote! { #field_name: <#field_type as ::iocraft::ContextRef>::get_from_component_updater(updater) }
+        });
+
+        let ref_field_borrows = context.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            let field_type = &field.ty;
+            quote! { #field_name: <#field_type as ::iocraft::ContextRef>::borrow(&mut refs.#field_name) }
         });
 
         tokens.extend(quote! {
             #context
 
-            impl<'a> #name<'a> {
-                fn new(updater: &'a ::iocraft::ComponentUpdater) -> Self {
-                    Self {
-                        #(#field_assignments,)*
+            const _: () = {
+                struct ContextRefs #generics {
+                    #(#ref_fields,)*
+                }
+
+                impl<'iocraft_lta> ContextRefs<'iocraft_lta> {
+                    fn refs_from_component_updater<#lifetime: 'iocraft_lta>(updater: &#lifetime ComponentUpdater) -> ContextRefs<#lifetime> {
+                        ContextRefs {
+                            #(#ref_field_assignments,)*
+                        }
                     }
                 }
-            }
+
+                impl<#lifetime> ContextRefs #generics {
+                    fn borrow_refs<'iocraft_ltb: #lifetime, 'iocraft_ltc: 'iocraft_ltb>(refs: &'iocraft_ltb mut ContextRefs<'iocraft_ltc>) -> #name<#lifetime> {
+                        #name {
+                            #(#ref_field_borrows,)*
+                        }
+                    }
+                }
+
+                impl<'a> ::iocraft::ContextImplExt<'a> for #name<'a> {
+                    type Refs<'b: 'a> = ContextRefs<'b>;
+
+                    fn refs_from_component_updater<'b: 'a>(updater: &'b ComponentUpdater) -> Self::Refs<'b> {
+                        ContextRefs::refs_from_component_updater(updater)
+                    }
+
+                    fn borrow_refs<'b: 'a, 'c: 'b>(refs: &'b mut Self::Refs<'c>) -> Self {
+                        ContextRefs::borrow_refs(refs)
+                    }
+                }
+            };
         });
     }
 }
@@ -582,6 +606,12 @@ impl ToTokens for ParsedComponent {
             .map(|ty| quote!(#ty))
             .unwrap_or_else(|| quote!(::iocraft::NoProps));
 
+        let context_refs = self.context_type.as_ref().map(|ty| {
+            quote! {
+                let mut context_refs = #ty::refs_from_component_updater(updater);
+            }
+        });
+
         let impl_args = self
             .args
             .iter()
@@ -591,7 +621,7 @@ impl ToTokens for ParsedComponent {
                 ComponentImplementationArg::Props => quote!(props),
                 ComponentImplementationArg::Context => {
                     let type_name = self.context_type.as_ref().unwrap();
-                    quote!(#type_name::new(updater))
+                    quote!(#type_name::borrow_refs(&mut context_refs))
                 }
             })
             .collect::<Vec<_>>();
@@ -619,11 +649,14 @@ impl ToTokens for ParsedComponent {
                     }
                 }
 
-                fn update(&mut self, props: &Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater) {
+                fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater) {
                     #hooks_pre_component_update
                     {
-                        let e = Self::implementation(#(#impl_args),*).into();
-                        updater.update_children([&e], None);
+                        let mut e = {
+                            #context_refs
+                            Self::implementation(#(#impl_args),*).into()
+                        };
+                        updater.update_children([&mut e], None);
                     }
                     #hooks_post_component_update
                 }

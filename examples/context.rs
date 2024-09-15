@@ -21,7 +21,7 @@ fn MyContextConsumer(context: MyContextConsumerContext) -> impl Into<AnyElement<
 
 fn main() {
     element! {
-        ContextProvider::<NumberOfTheDay>(value: NumberOfTheDay(42)) {
+        ContextProvider(value: Context::owned(NumberOfTheDay(42))) {
             MyContextConsumer
         }
     }

@@ -1,4 +1,5 @@
 use crate::{
+    context::ContextStack,
     element::{ElementKey, ElementType},
     props::{AnyProps, Covariant},
     render::{ComponentRenderer, ComponentUpdater, UpdateContext},
@@ -68,7 +69,7 @@ pub trait Component: Any + Unpin {
 
     fn new(props: &Self::Props<'_>) -> Self;
 
-    fn update(&mut self, _props: &Self::Props<'_>, _updater: &mut ComponentUpdater) {}
+    fn update(&mut self, _props: &mut Self::Props<'_>, _updater: &mut ComponentUpdater) {}
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
@@ -88,8 +89,8 @@ pub trait AnyComponent: Any + Unpin {
 }
 
 impl<C: Any + Component> AnyComponent for C {
-    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater) {
-        Component::update(self, unsafe { props.downcast_ref_unchecked() }, updater);
+    fn update(&mut self, mut props: AnyProps, updater: &mut ComponentUpdater) {
+        Component::update(self, unsafe { props.downcast_mut_unchecked() }, updater);
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
@@ -98,42 +99,6 @@ impl<C: Any + Component> AnyComponent for C {
 
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         Component::poll_change(self, cx)
-    }
-}
-
-pub(crate) enum ComponentContextProvider<'a> {
-    Root {
-        system_context: &'a mut dyn Any,
-    },
-    Child {
-        parent: &'a ComponentContextProvider<'a>,
-        context: &'a dyn Any,
-    },
-}
-
-impl<'a> ComponentContextProvider<'a> {
-    pub fn root(system_context: &'a mut dyn Any) -> Self {
-        Self::Root { system_context }
-    }
-
-    pub fn with_context(&'a self, context: &'a dyn Any) -> Self {
-        Self::Child {
-            parent: self,
-            context,
-        }
-    }
-
-    pub fn get_context<T: Any>(&self) -> Option<&T> {
-        match self {
-            Self::Root { system_context } => system_context.downcast_ref::<T>(),
-            Self::Child { parent, context } => {
-                if let Some(context) = context.downcast_ref::<T>() {
-                    Some(context)
-                } else {
-                    parent.get_context()
-                }
-            }
-        }
     }
 }
 
@@ -165,14 +130,14 @@ impl InstantiatedComponent {
     pub fn update(
         &mut self,
         context: &mut UpdateContext<'_>,
-        component_context_provider: &ComponentContextProvider<'_>,
+        component_context_stack: &mut ContextStack<'_>,
         props: AnyProps,
     ) {
         let mut updater = ComponentUpdater::new(
             self.node_id,
             &mut self.children,
             context,
-            component_context_provider,
+            component_context_stack,
         );
         self.helper
             .update_component(&mut self.component, props, &mut updater);
