@@ -1,4 +1,4 @@
-use crate::{Color, Weight};
+use crate::style::{Color, Weight};
 use crossterm::{
     csi,
     style::{Attribute, Colored},
