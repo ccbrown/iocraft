@@ -4,37 +4,58 @@ use crate::{
 use iocraft_macros::with_layout_style_props;
 use taffy::{LengthPercentage, Rect};
 
+/// A border style which can be applied to a [`Box`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BorderStyle {
+    /// No border.
     #[default]
     None,
+    /// A single-line border with 90-degree corners.
     Single,
+    /// A double-line border with 90-degree corners.
     Double,
+    /// A single-line border with rounded corners.
     Round,
+    /// A single-line border with bold lines and 90-degree corners.
     Bold,
+    /// A double-line border on the left and right with a single-line border on the top and bottom.
     DoubleLeftRight,
+    /// A double-line border on the top and bottom with a single-line border on the left and right.
     DoubleTopBottom,
+    /// A simple border consisting of basic ASCII characters.
     Classic,
+    /// A custom border, rendered with characters of your choice.
     Custom(BorderCharacters),
 }
 
+/// The characters used to render a custom border for a [`Box`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BorderCharacters {
+    /// The character used for the top-left corner.
     pub top_left: char,
+    /// The character used for the top-right corner.
     pub top_right: char,
+    /// The character used for the bottom-left corner.
     pub bottom_left: char,
+    /// The character used for the bottom-right corner.
     pub bottom_right: char,
+    /// The character used for the left edge.
     pub left: char,
+    /// The character used for the right edge.
     pub right: char,
+    /// The character used for the top edge.
     pub top: char,
+    /// The character used for the bottom edge.
     pub bottom: char,
 }
 
 impl BorderStyle {
+    /// Returns `true` if the border style is `None`.
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 
+    /// Returns the characters used to render the border.
     pub fn border_characters(&self) -> Option<BorderCharacters> {
         Some(match self {
             Self::None => return None,
@@ -113,16 +134,27 @@ impl BorderStyle {
     }
 }
 
+/// The props which can be passed to the [`Box`] component.
 #[with_layout_style_props]
 #[derive(Covariant, Default)]
 pub struct BoxProps<'a> {
+    /// The elements to render inside of the box.
     pub children: Vec<AnyElement<'a>>,
+
+    /// The style of the border. By default, the box will have no border.
     pub border_style: BorderStyle,
+
+    /// The color of the border.
     pub border_color: Option<Color>,
+
+    /// The edges to render the border on. By default, the border will be rendered on all edges.
     pub border_edges: Option<Edges>,
+
+    /// The color of the background.
     pub background_color: Option<Color>,
 }
 
+/// `Box` is your most fundamental building block for laying out and styling components.
 #[derive(Default)]
 pub struct Box {
     border_style: BorderStyle,

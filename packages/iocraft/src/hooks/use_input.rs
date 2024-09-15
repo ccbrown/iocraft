@@ -5,6 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
+/// `UseInput` is a hook that allows you to listen for user input such as key strokes.
 #[derive(Default)]
 pub struct UseInput {
     events: Option<TerminalEvents>,
@@ -33,6 +34,7 @@ impl Hook for UseInput {
 }
 
 impl UseInput {
+    /// Sets the callback to be invoked whenever a terminal event occurs.
     pub fn use_terminal_events<F>(&mut self, f: F)
     where
         F: FnMut(TerminalEvent) + Send + 'static,

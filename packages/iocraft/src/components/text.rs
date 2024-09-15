@@ -1,13 +1,20 @@
 use crate::{Color, Component, ComponentRenderer, ComponentUpdater, Covariant, TextStyle, Weight};
 use taffy::Size;
 
+/// The props which can be passed to the [`Text`] component.
 #[derive(Default, Covariant)]
 pub struct TextProps {
+    /// The color to make the text.
     pub color: Option<Color>,
+
+    /// The content of the text.
     pub content: String,
+
+    /// The weight of the text.
     pub weight: Weight,
 }
 
+/// `Text` is a component that renders a text string.
 #[derive(Default)]
 pub struct Text {
     style: TextStyle,

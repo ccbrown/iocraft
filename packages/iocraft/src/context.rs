@@ -6,6 +6,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+/// The system context, which is always available to all components.
 pub struct SystemContext {
     should_exit: bool,
 }
@@ -15,6 +16,8 @@ impl SystemContext {
         Self { should_exit: false }
     }
 
+    /// If called from a component that is being dynamically rendered, this will cause the render
+    /// loop to exit and return to the caller after the current render pass.
     pub fn exit(&mut self) {
         self.should_exit = true;
     }
@@ -24,9 +27,16 @@ impl SystemContext {
     }
 }
 
+/// A context that can be passed to components.
 pub enum Context<'a> {
+    /// Provides the context via a mutable reference. Children will be able to get mutable or
+    /// immutable references to the context.
     Mut(&'a mut dyn Any),
+    /// Provides the context via an immutable reference. Children will not be able to get a mutable
+    /// reference to the context.
     Ref(&'a dyn Any),
+    /// Provides the context via an owned value. Children will be able to get mutable or immutable
+    /// references to the context.
     Owned(Box<dyn Any>),
 }
 
@@ -43,6 +53,7 @@ impl<'a> Context<'a> {
         Context::Ref(context)
     }
 
+    #[doc(hidden)]
     pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
         match self {
             Context::Mut(context) => context.downcast_ref::<T>(),
@@ -51,6 +62,7 @@ impl<'a> Context<'a> {
         }
     }
 
+    #[doc(hidden)]
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         match self {
             Context::Mut(context) => context.downcast_mut::<T>(),
@@ -59,6 +71,7 @@ impl<'a> Context<'a> {
         }
     }
 
+    #[doc(hidden)]
     pub fn borrow(&mut self) -> Context {
         match self {
             Context::Mut(context) => Context::Mut(*context),

@@ -7,6 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
+#[doc(hidden)]
 #[derive(Default)]
 pub struct SignalOwner {
     signals: Vec<Pin<Box<dyn futures_signals::signal::Signal<Item = ()> + Send>>>,

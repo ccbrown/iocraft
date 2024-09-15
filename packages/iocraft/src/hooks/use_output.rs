@@ -45,12 +45,15 @@ impl UseOutputState {
     }
 }
 
+/// A handle to write to stdout, obtained from [`UseOutput::use_stdout`].
 #[derive(Clone)]
 pub struct UseStdoutHandle {
     state: Arc<Mutex<UseOutputState>>,
 }
 
 impl UseStdoutHandle {
+    /// Queues a message to be written asynchronously to stdout, about the rendered component
+    /// output.
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
         state.queue.push(Message::Stdout(msg.to_string()));
@@ -60,12 +63,15 @@ impl UseStdoutHandle {
     }
 }
 
+/// A handle to write to stderr, obtained from [`UseOutput::use_stderr`].
 #[derive(Clone)]
 pub struct UseStderrHandle {
     state: Arc<Mutex<UseOutputState>>,
 }
 
 impl UseStderrHandle {
+    /// Queues a message to be written asynchronously to stderr, about the rendered component
+    /// output.
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
         state.queue.push(Message::Stderr(msg.to_string()));
@@ -75,6 +81,8 @@ impl UseStderrHandle {
     }
 }
 
+/// `UseOutput` is a hook that allows you to write to stdout and stderr from a component. The
+/// output will be appended to stdout or stderr, above the rendered component output.
 #[derive(Default)]
 pub struct UseOutput {
     state: Arc<Mutex<UseOutputState>>,
@@ -98,12 +106,14 @@ impl Hook for UseOutput {
 }
 
 impl UseOutput {
+    /// Gets a handle which can be used to write to stdout.
     pub fn use_stdout(&mut self) -> UseStdoutHandle {
         UseStdoutHandle {
             state: self.state.clone(),
         }
     }
 
+    /// Gets a handle which can be used to write to stderr.
     pub fn use_stderr(&mut self) -> UseStderrHandle {
         UseStderrHandle {
             state: self.state.clone(),

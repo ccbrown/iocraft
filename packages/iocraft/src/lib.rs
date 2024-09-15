@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 // # Organization
 //
 // Code is organized into modules primarily for the purpose of organizing code. Types will be

@@ -1,11 +1,16 @@
 use crate::{AnyElement, Component, ComponentUpdater, Context, Covariant};
 
+/// The props which can be passed to the [`ContextProvider`] component.
 #[derive(Covariant, Default)]
 pub struct ContextProviderProps<'a> {
+    /// The children of the component.
     pub children: Vec<AnyElement<'a>>,
+
+    /// The context to provide to the children.
     pub value: Option<Context<'a>>,
 }
 
+/// `ContextProvider` is a component that provides a context to its children.
 #[derive(Default)]
 pub struct ContextProvider;
 

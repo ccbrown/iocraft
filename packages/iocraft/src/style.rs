@@ -12,19 +12,26 @@ pub use taffy::style::{
     AlignContent, AlignItems, Display, FlexDirection, FlexWrap, JustifyContent, Overflow,
 };
 
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Percent(pub f32);
 
+/// Defines the area to reserve around the element's content, but inside the border.
+///
+/// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Padding {
+    /// No padding.
     #[default]
     Unset,
+    /// Sets an absolute value.
     Length(u32),
+    /// Sets a percentage of the width or height of the parent.
     Percent(f32),
 }
 
 impl Padding {
-    pub fn or(self, other: Self) -> Self {
+    fn or(self, other: Self) -> Self {
         match self {
             Padding::Unset => other,
             _ => self,
@@ -66,18 +73,24 @@ impl_from_length!(Padding);
 impl_from_percent!(Padding);
 
 macro_rules! new_size_type {
-    ($name:ident, $def:expr) => {
+    ($(#[$m:meta])* $name:ident, $def:expr) => {
+        $(#[$m])*
         #[derive(Clone, Copy, Debug, Default, PartialEq)]
         pub enum $name {
+            /// The default behavior.
             #[default]
             Unset,
+            /// Automatically selects a suitable size.
             Auto,
+            /// Sets an absolute value.
             Length(u32),
+            /// Sets a percentage of the width or height of the parent.
             Percent(f32),
         }
 
         impl $name {
-            pub fn or<T: Into<Self>>(self, other: T) -> Self {
+            #[allow(dead_code)]
+            fn or<T: Into<Self>>(self, other: T) -> Self {
                 match self {
                     $name::Unset => other.into(),
                     _ => self,
@@ -112,14 +125,31 @@ macro_rules! new_size_type {
     };
 }
 
-new_size_type!(Margin, Margin::Length(0));
-new_size_type!(Size, Size::Auto);
+new_size_type!(
+    /// Defines the area to reserve around the element's content, but outside the border.
+    ///
+    /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
+    Margin,
+    Margin::Length(0)
+);
 
+new_size_type!(
+    /// Defines a width or height of an element.
+    Size,
+    Size::Auto
+);
+
+/// Sets the initial main size of a flex item.
+///
+/// See [the MDN documentation for flex-basis](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-basis).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum FlexBasis {
+    /// Uses the value of the `width` or `height` property, or the content size if not set.
     #[default]
     Auto,
+    /// Sets an absolute value.
     Length(u32),
+    /// Sets a percentage of the width or height of the parent.
     Percent(f32),
 }
 
@@ -133,15 +163,20 @@ impl From<FlexBasis> for Dimension {
     }
 }
 
+/// A weight which can be applied to text.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Weight {
+    /// The normal weight.
     #[default]
     Normal,
+    /// The bold weight.
     Bold,
+    /// The light weight.
     Light,
 }
 
 bitflags! {
+    /// Defines the edges of an element, e.g. for border styling.
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
     pub struct Edges: u8 {
         const Top = 0b00000001;
@@ -151,6 +186,7 @@ bitflags! {
     }
 }
 
+#[doc(hidden)]
 #[with_layout_style_props]
 pub struct LayoutStyle {
     // fields added by proc macro, defined in ../macros/src/lib.rs
