@@ -10,7 +10,7 @@
 // re-exported in the root so that users of the library have a flat namespace to work with.
 //
 // The exception is the models that represent collections of types, namely hooks and components.
-// Those types will remain in their modules for the publix API.
+// Those types will remain in their modules for the public API.
 
 mod canvas;
 mod component;
