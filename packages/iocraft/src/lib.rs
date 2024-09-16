@@ -1,8 +1,12 @@
+//! # iocraft
+//!
+//! `iocraft` is a library for crafting beautiful text output and interfaces for the terminal or logs.
+
 #![warn(missing_docs)]
 
 // # Organization
 //
-// Code is organized into modules primarily for the purpose of organizing code. Types will be
+// Code is organized into modules primarily for the benefit of the maintainers. Types will be
 // re-exported in the root so that users of the library have a flat namespace to work with.
 //
 // The exception is the models that represent collections of types, namely hooks and components.
@@ -35,9 +39,14 @@ mod flattened_exports {
 }
 
 pub use flattened_exports::*;
+
+/// Components for crafting your UI.
 pub mod components;
+
+/// Hooks for adding behavior to your components.
 pub mod hooks;
 
+/// By importing this module, you'll bring all of the crate's commonly used types into scope.
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::flattened_exports::*;

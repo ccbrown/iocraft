@@ -11,12 +11,16 @@ use std::{
 #[derive(Clone)]
 struct Character {
     value: char,
-    style: TextStyle,
+    style: CanvasTextStyle,
 }
 
+/// Describes the style of text to be rendered via a [`Canvas`].
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct TextStyle {
+pub struct CanvasTextStyle {
+    /// The color of the text.
     pub color: Option<Color>,
+
+    /// The weight of the text.
     pub weight: Weight,
 }
 
@@ -32,12 +36,16 @@ impl Cell {
     }
 }
 
+/// Canvas is a low-level abstraction for rendering output. Most users of the library will not need
+/// to use it directly. However, it is used by low level component implementations and can be used
+/// to store and copy their output.
 pub struct Canvas {
     width: usize,
     cells: Vec<Vec<Cell>>,
 }
 
 impl Canvas {
+    /// Constructs a new canvas with the given dimensions.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
@@ -45,10 +53,12 @@ impl Canvas {
         }
     }
 
+    /// Returns the width of the canvas.
     pub fn width(&self) -> usize {
         self.width
     }
 
+    /// Returns the height of the canvas.
     pub fn height(&self) -> usize {
         self.cells.len()
     }
@@ -64,7 +74,7 @@ impl Canvas {
         }
     }
 
-    fn set_text_chars<I>(&mut self, x: usize, y: usize, chars: I, style: TextStyle)
+    fn set_text_chars<I>(&mut self, x: usize, y: usize, chars: I, style: CanvasTextStyle)
     where
         I: IntoIterator<Item = char>,
     {
@@ -76,6 +86,7 @@ impl Canvas {
         }
     }
 
+    /// Gets a subview of the canvas for writing.
     pub fn subview_mut(
         &mut self,
         x: usize,
@@ -100,7 +111,7 @@ impl Canvas {
         }
 
         let mut background_color = None;
-        let mut text_style = TextStyle::default();
+        let mut text_style = CanvasTextStyle::default();
 
         for row in &self.cells {
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
@@ -116,7 +127,7 @@ impl Canvas {
                     if needs_reset {
                         write!(w, csi!("0m"))?;
                         background_color = None;
-                        text_style = TextStyle::default();
+                        text_style = CanvasTextStyle::default();
                     }
 
                     if cell.background_color != background_color {
@@ -171,10 +182,12 @@ impl Canvas {
         Ok(())
     }
 
+    /// Writes the canvas to the given writer with ANSI escape codes.
     pub fn write_ansi<W: Write>(&self, w: W) -> io::Result<()> {
         self.write_impl(w, true)
     }
 
+    /// Writes the canvas to the given writer as unstyled text, without ANSI escape codes.
     pub fn write<W: Write>(&self, w: W) -> io::Result<()> {
         self.write_impl(w, false)
     }
@@ -189,6 +202,8 @@ impl Display for Canvas {
     }
 }
 
+/// Represents a writeable region of a [`Canvas`]. All coordinates provided to functions of this
+/// type are relative to the region's top-left corner.
 pub struct CanvasSubviewMut<'a> {
     x: usize,
     y: usize,
@@ -199,6 +214,7 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl<'a> CanvasSubviewMut<'a> {
+    /// Fills the region with the given color.
     pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
         let mut left = self.x as isize + x;
         let mut top = self.y as isize + y;
@@ -219,7 +235,8 @@ impl<'a> CanvasSubviewMut<'a> {
         );
     }
 
-    pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: TextStyle) {
+    /// Writes text to the region.
+    pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         if self.clip && y < 0 || y >= self.height as isize {
             return;
         }

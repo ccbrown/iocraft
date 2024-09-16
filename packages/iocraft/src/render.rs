@@ -23,6 +23,8 @@ pub(crate) struct UpdateContext<'a> {
     did_clear_terminal_output: bool,
 }
 
+/// Provides information and operations that low level component implementations may need to
+/// utilize during the update phase.
 pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a> {
     node_id: NodeId,
     children: &'a mut Components,
@@ -45,10 +47,13 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
         }
     }
 
+    /// Puts the terminal into raw mode if it isn't already, and returns a stream of terminal
+    /// events.
     pub fn terminal_events(&mut self) -> Option<TerminalEvents> {
         self.context.terminal.as_mut().and_then(|t| t.events().ok())
     }
 
+    /// Returns whether the terminal is in raw mode.
     pub fn is_terminal_raw_mode_enabled(&self) -> bool {
         self.context
             .terminal
@@ -57,6 +62,8 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             .unwrap_or(false)
     }
 
+    /// Removes the currently rendered output from the terminal, e.g. to allow for the printing of
+    /// output above the component.
     pub fn clear_terminal_output(&mut self) {
         if !self.context.did_clear_terminal_output {
             queue!(
@@ -69,14 +76,17 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
         }
     }
 
+    /// Gets an immutable reference to context of the given type.
     pub fn get_context<T: Any>(&self) -> Option<Ref<T>> {
         self.component_context_stack.get_context()
     }
 
+    /// Gets a mutable reference to context of the given type.
     pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<T>> {
         self.component_context_stack.get_context_mut()
     }
 
+    /// Sets the layout style of the current component.
     pub fn set_layout_style(&mut self, layout_style: taffy::style::Style) {
         self.context
             .layout_engine
@@ -84,6 +94,8 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             .expect("we should be able to set the style");
     }
 
+    /// Sets the measure function of the current component, which is invoked to calculate the area
+    /// that the component's content should occupy.
     pub fn set_measure_func(&mut self, measure_func: MeasureFunc) {
         self.context
             .layout_engine
@@ -96,6 +108,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             .expect("we should be able to mark the node as dirty");
     }
 
+    /// Updates the children of the current component.
     pub fn update_children<I, T>(&mut self, children: I, context: Option<Context>)
     where
         I: IntoIterator<Item = T>,
@@ -156,6 +169,8 @@ struct RenderContext<'a> {
     canvas: &'a mut Canvas,
 }
 
+/// Provides information and operations that low level component implementations may need to
+/// utilize during the render phase.
 pub struct ComponentRenderer<'a> {
     node_id: NodeId,
     node_position: Point<u16>,
@@ -173,6 +188,7 @@ impl<'a> ComponentRenderer<'a> {
             .expect("we should be able to get the layout")
     }
 
+    /// Gets the region of the canvas that the component should be rendered to.
     pub fn canvas(&mut self) -> CanvasSubviewMut {
         self.context.canvas.subview_mut(
             self.node_position.x as usize,

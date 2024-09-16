@@ -45,19 +45,24 @@ impl SignalOwner {
     }
 }
 
+/// `Signal` is a clonable wrapper for a value that can be observed for changes. Signals used as
+/// part of a component's state will cause the component to be re-rendered when the signal's value
+/// changes.
 #[derive(Clone)]
 pub struct Signal<T> {
     inner: Mutable<T>,
 }
 
 impl<T: Copy> Signal<T> {
+    /// Gets the current value of the signal.
     pub fn get(&self) -> T {
         self.inner.get()
     }
 }
 
 impl<T> Signal<T> {
-    pub fn set(&self, value: T) {
+    /// Sets the value of the signal.
+    pub fn set(&mut self, value: T) {
         self.inner.set(value);
     }
 }

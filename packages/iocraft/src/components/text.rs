@@ -1,4 +1,6 @@
-use crate::{Color, Component, ComponentRenderer, ComponentUpdater, Covariant, TextStyle, Weight};
+use crate::{
+    CanvasTextStyle, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Weight,
+};
 use taffy::Size;
 
 /// The props which can be passed to the [`Text`] component.
@@ -17,7 +19,7 @@ pub struct TextProps {
 /// `Text` is a component that renders a text string.
 #[derive(Default)]
 pub struct Text {
-    style: TextStyle,
+    style: CanvasTextStyle,
     content: String,
 }
 
@@ -29,7 +31,7 @@ impl Component for Text {
     }
 
     fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
-        self.style = TextStyle {
+        self.style = CanvasTextStyle {
             color: props.color,
             weight: props.weight,
         };
@@ -49,8 +51,8 @@ mod tests {
 
     #[test]
     fn test_text() {
-        assert_eq!(element!(Text).into_string(), "\n");
+        assert_eq!(element!(Text).to_string(), "\n");
 
-        assert_eq!(element!(Text(content: "foo")).into_string(), "foo\n");
+        assert_eq!(element!(Text(content: "foo")).to_string(), "foo\n");
     }
 }

@@ -14,20 +14,31 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+// Re-exports for basic types.
 pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
+/// An event fired when a key is pressed.
 #[derive(Clone, Debug)]
-pub struct TerminalKeyEvent {
+pub struct KeyEvent {
+    /// A code indicating the key that was pressed.
     pub code: KeyCode,
+
+    /// The modifiers that were active when the key was pressed.
     pub modifiers: KeyModifiers,
+
+    /// Whether the key was pressed or released.
     pub kind: KeyEventKind,
+
+    /// Additional flags used to disambiguate key events.
     pub state: KeyEventState,
 }
 
+/// An event fired by the terminal.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
-    Key(TerminalKeyEvent),
+    /// A key event, fired when a key is pressed.
+    Key(KeyEvent),
 }
 
 struct TerminalEventsInner {
@@ -35,6 +46,7 @@ struct TerminalEventsInner {
     waker: Option<Waker>,
 }
 
+/// A stream of terminal events.
 pub struct TerminalEvents {
     inner: Arc<Mutex<TerminalEventsInner>>,
 }
@@ -90,7 +102,7 @@ impl Terminal {
                             {
                                 self.received_ctrl_c = true;
                             }
-                            Some(TerminalEvent::Key(TerminalKeyEvent {
+                            Some(TerminalEvent::Key(KeyEvent {
                                 code: event.code,
                                 modifiers: event.modifiers,
                                 kind: event.kind,

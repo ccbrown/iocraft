@@ -62,16 +62,28 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
     }
 }
 
+/// `Component` defines a component type and the methods required for instantiating and rendering
+/// the component.
+///
+/// Most users will not need to implement this trait directly. This is only required for new, low
+/// level component type definitions.
 pub trait Component: Any + Unpin {
+    /// The type of properties that the component accepts.
     type Props<'a>: Covariant
     where
         Self: 'a;
 
+    /// Creates a new instance of the component from a set of properties.
     fn new(props: &Self::Props<'_>) -> Self;
 
+    /// Invoked whenever the properties of the component or layout may have changed.
     fn update(&mut self, _props: &mut Self::Props<'_>, _updater: &mut ComponentUpdater) {}
+
+    /// Invoked to render the component.
     fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
 
+    /// Invoked to determine whether a change has occurred that would require the component to be
+    /// updated and re-rendered.
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
         Poll::Pending
     }

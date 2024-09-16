@@ -1,5 +1,6 @@
 use crate::{
-    AnyElement, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Edges, TextStyle,
+    AnyElement, CanvasTextStyle, Color, Component, ComponentRenderer, ComponentUpdater, Covariant,
+    Edges,
 };
 use iocraft_macros::with_layout_style_props;
 use taffy::{LengthPercentage, Rect};
@@ -158,7 +159,7 @@ pub struct BoxProps<'a> {
 #[derive(Default)]
 pub struct Box {
     border_style: BorderStyle,
-    border_text_style: TextStyle,
+    border_text_style: CanvasTextStyle,
     border_edges: Edges,
     background_color: Option<Color>,
 }
@@ -172,7 +173,7 @@ impl Component for Box {
 
     fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
         self.border_style = props.border_style;
-        self.border_text_style = TextStyle {
+        self.border_text_style = CanvasTextStyle {
             color: props.border_color,
             ..Default::default()
         };
@@ -322,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_box() {
-        assert_eq!(element!(Box).into_string(), "");
+        assert_eq!(element!(Box).to_string(), "");
 
         assert_eq!(
             element! {
@@ -331,7 +332,7 @@ mod tests {
                     Text(content: "bar")
                 }
             }
-            .into_string(),
+            .to_string(),
             "foobar\n"
         );
 
@@ -341,7 +342,7 @@ mod tests {
                     Text(content: "foo")
                 }
             }
-            .into_string(),
+            .to_string(),
             "\n foo\n\n"
         );
 
@@ -351,7 +352,7 @@ mod tests {
                     Text(content: "foo")
                 }
             }
-            .into_string(),
+            .to_string(),
             "\n\n  foo\n\n\n"
         );
 
@@ -366,7 +367,7 @@ mod tests {
                     }
                 }
             }
-            .into_string(),
+            .to_string(),
             "foo         bar\n"
         );
 
@@ -381,7 +382,7 @@ mod tests {
                     }
                 }
             }
-            .into_string(),
+            .to_string(),
             indoc! {"
                 ┌──────────────────┐
                 │foo        bar    │

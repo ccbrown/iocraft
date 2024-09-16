@@ -32,7 +32,7 @@ fn Example(
         let y = state.y.clone();
         let should_exit = state.should_exit.clone();
         move |event| match event {
-            TerminalEvent::Key(TerminalKeyEvent { code, .. }) => match code {
+            TerminalEvent::Key(KeyEvent { code, .. }) => match code {
                 KeyCode::Char('q') => should_exit.set(true),
                 KeyCode::Up => y.set((y.get() as i32 - 1).max(0) as _),
                 KeyCode::Down => y.set((y.get() + 1).min(AREA_HEIGHT - 1)),

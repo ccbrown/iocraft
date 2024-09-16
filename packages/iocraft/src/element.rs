@@ -52,6 +52,8 @@ where
     elements.extend(dest);
 }
 
+/// Used to identify an element within the scope of its parent. This is used to minimize the number
+/// of times components are destroyed and recreated from render-to-render.
 #[derive(Clone, Hash, PartialEq, Eq, Debug, derive_more::Display)]
 pub struct ElementKey(uuid::Uuid);
 
@@ -62,23 +64,32 @@ impl Default for ElementKey {
 }
 
 impl ElementKey {
+    /// Constructs a new, random element key.
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
     }
 }
 
+/// An element is a description of an uninstantiated components, including its key and properties.
 #[derive(Clone)]
 pub struct Element<'a, T: ElementType + 'a> {
+    /// The key of the element.
     pub key: ElementKey,
+    /// The properties of the element.
     pub props: T::Props<'a>,
 }
 
+/// A trait implemented by all element types to define the properties that can be passed to them.
+///
+/// This trait is automatically implemented for all types that implement [`Component`].
 pub trait ElementType {
+    /// The type of the properties that can be passed to the element.
     type Props<'a>
     where
         Self: 'a;
 }
 
+/// A type-erased element that can be created from any [`Element`].
 pub struct AnyElement<'a> {
     key: ElementKey,
     props: AnyProps<'a>,
@@ -89,6 +100,7 @@ impl<'a, T> Element<'a, T>
 where
     T: Component + 'a,
 {
+    /// Converts the element into an [`AnyElement`].
     pub fn into_any(self) -> AnyElement<'a> {
         self.into()
     }
@@ -130,33 +142,48 @@ mod private {
     impl<'a, T> Sealed for &mut Element<'a, T> where T: Component {}
 }
 
+/// A trait implemented by all element types, providing methods for common operations on them.
 pub trait ElementExt: private::Sealed + Sized {
+    /// Returns the key of the element.
     fn key(&self) -> &ElementKey;
+
+    #[doc(hidden)]
     fn props_mut(&mut self) -> AnyProps;
 
     #[doc(hidden)]
     fn helper(&self) -> Box<dyn ComponentHelperExt>;
 
+    /// Renders the element into a canvas.
     fn render(&mut self, max_width: Option<usize>) -> Canvas;
 
-    fn into_string(mut self) -> String {
+    /// Renders the element into a string.
+    ///
+    /// Note that unlike [`std::fmt::Display`] and [`std::string::ToString`], this method requires
+    /// the element to be mutable, as it's possible for the properties of the element to change
+    /// during rendering.
+    fn to_string(&mut self) -> String {
         self.render(None).to_string()
     }
 
-    fn print(self) {
+    /// Renders the element and prints it to stdout.
+    fn print(&mut self) {
         self.write_to_raw_fd(stdout()).unwrap();
     }
 
-    fn eprint(self) {
+    /// Renders the element and prints it to stderr.
+    fn eprint(&mut self) {
         self.write_to_raw_fd(stderr()).unwrap();
     }
 
-    fn write<W: Write>(mut self, w: W) -> io::Result<()> {
+    /// Renders the element and writes it to the given writer.
+    fn write<W: Write>(&mut self, w: W) -> io::Result<()> {
         let canvas = self.render(None);
         canvas.write(w)
     }
 
-    fn write_to_raw_fd<F: Write + AsRawFd>(mut self, fd: F) -> io::Result<()> {
+    /// Renders the element and writes it to the given raw file descriptor. If the file descriptor
+    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes.
+    fn write_to_raw_fd<F: Write + AsRawFd>(&mut self, fd: F) -> io::Result<()> {
         if fd.is_tty() {
             let (width, _) = terminal::size().expect("we should be able to get the terminal size");
             let canvas = self.render(Some(width as _));
@@ -166,6 +193,7 @@ pub trait ElementExt: private::Sealed + Sized {
         }
     }
 
+    /// Renders the element in a loop, allowing it to be dynamic and interactive.
     fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
 }
 

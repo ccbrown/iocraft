@@ -179,9 +179,13 @@ bitflags! {
     /// Defines the edges of an element, e.g. for border styling.
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
     pub struct Edges: u8 {
+        /// The top edge.
         const Top = 0b00000001;
+        /// The right edge.
         const Right = 0b00000010;
+        /// The bottom edge.
         const Bottom = 0b00000100;
+        /// The left edge.
         const Left = 0b00001000;
     }
 }

@@ -1,3 +1,7 @@
+//! This crate defines the macros used by `iocraft`.
+
+#![warn(missing_docs)]
+
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
@@ -116,6 +120,7 @@ impl ToTokens for ParsedElement {
     }
 }
 
+/// Used to declare an element and its properties.
 #[proc_macro]
 pub fn element(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
@@ -231,6 +236,7 @@ impl ToTokens for ParsedCovariant {
     }
 }
 
+/// Makes a struct as being covariant. If the struct is not actually covariant, compilation will fail.
 #[proc_macro_derive(Covariant)]
 pub fn derive_covariant_type(item: TokenStream) -> TokenStream {
     let props = parse_macro_input!(item as ParsedCovariant);
@@ -259,6 +265,7 @@ impl ToTokens for ParsedProps {
     }
 }
 
+/// Defines a struct containing properties to be accepted by components.
 #[proc_macro_attribute]
 pub fn props(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let props = parse_macro_input!(item as ParsedProps);
@@ -299,6 +306,7 @@ impl ToTokens for ParsedState {
     }
 }
 
+/// Defines a struct containing state to be made available to components.
 #[proc_macro_attribute]
 pub fn state(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let state = parse_macro_input!(item as ParsedState);
@@ -369,6 +377,7 @@ impl ToTokens for ParsedHooks {
     }
 }
 
+/// Defines a struct containing hooks to be made available to components.
 #[proc_macro_attribute]
 pub fn hooks(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let hooks = parse_macro_input!(item as ParsedHooks);
@@ -451,6 +460,7 @@ impl ToTokens for ParsedContext {
     }
 }
 
+/// Defines a struct containing context references to be made available to components.
 #[proc_macro_attribute]
 pub fn context(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let context = parse_macro_input!(item as ParsedContext);
@@ -674,61 +684,170 @@ impl ToTokens for ParsedComponent {
     }
 }
 
+/// Defines a component type.
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let component = parse_macro_input!(item as ParsedComponent);
     quote!(#component).into()
 }
 
-const LAYOUT_STYLE_FIELDS: &[(&str, &str)] = &[
-    ("display", "::iocraft::Display"),
-    ("width", "::iocraft::Size"),
-    ("height", "::iocraft::Size"),
-    ("min_width", "::iocraft::Size"),
-    ("min_height", "::iocraft::Size"),
-    ("max_width", "::iocraft::Size"),
-    ("max_height", "::iocraft::Size"),
-    ("padding", "::iocraft::Padding"),
-    ("padding_top", "::iocraft::Padding"),
-    ("padding_right", "::iocraft::Padding"),
-    ("padding_bottom", "::iocraft::Padding"),
-    ("padding_left", "::iocraft::Padding"),
-    ("margin", "::iocraft::Margin"),
-    ("margin_top", "::iocraft::Margin"),
-    ("margin_right", "::iocraft::Margin"),
-    ("margin_bottom", "::iocraft::Margin"),
-    ("margin_left", "::iocraft::Margin"),
-    ("flex_direction", "::iocraft::FlexDirection"),
-    ("flex_wrap", "::iocraft::FlexWrap"),
-    ("flex_basis", "::iocraft::FlexBasis"),
-    ("flex_grow", "f32"),
-    ("flex_shrink", "Option<f32>"),
-    ("align_items", "Option<::iocraft::AlignItems>"),
-    ("align_content", "Option<::iocraft::AlignContent>"),
-    ("justify_content", "Option<::iocraft::JustifyContent>"),
-];
-
 #[doc(hidden)]
 #[proc_macro_attribute]
 pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let layout_style_fields = [
+        quote! {
+            /// Sets the display mode for the element. Defaults to [`Display::Flex`].
+            ///
+            /// See [the MDN documentation for display](https://developer.mozilla.org/en-US/docs/Web/CSS/display).
+            pub display: ::iocraft::Display
+        },
+        quote! {
+            /// Sets the width of the element.
+            pub width: ::iocraft::Size
+        },
+        quote! {
+            /// Sets the height of the element.
+            pub height: ::iocraft::Size
+        },
+        quote! {
+            /// Sets the minimum width of the element.
+            pub min_width: ::iocraft::Size
+        },
+        quote! {
+            /// Sets the minimum height of the element.
+            pub min_height: ::iocraft::Size
+        },
+        quote! {
+            /// Sets the maximum width of the element.
+            pub max_width: ::iocraft::Size
+        },
+        quote! {
+            /// Sets the maximum height of the element.
+            pub max_height: ::iocraft::Size
+        },
+        quote! {
+            /// Defines the area to reserve around the element's content, but inside the border.
+            ///
+            /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
+            pub padding: ::iocraft::Padding
+        },
+        quote! {
+            /// Defines the area to reserve above the element's content, but inside the border.
+            ///
+            /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
+            pub padding_top: ::iocraft::Padding
+        },
+        quote! {
+            /// Defines the area to reserve to the right of the element's content, but inside the border.
+            ///
+            /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
+            pub padding_right: ::iocraft::Padding
+        },
+        quote! {
+            /// Defines the area to reserve below the element's content, but inside the border.
+            ///
+            /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
+            pub padding_bottom: ::iocraft::Padding
+        },
+        quote! {
+            /// Defines the area to reserve to the left of the element's content, but inside the border.
+            ///
+            /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
+            pub padding_left: ::iocraft::Padding
+        },
+        quote! {
+            /// Defines the area to reserve around the element's content, but outside the border.
+            ///
+            /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
+            pub margin: ::iocraft::Margin
+        },
+        quote! {
+            /// Defines the area to reserve above the element's content, but outside the border.
+            ///
+            /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
+            pub margin_top: ::iocraft::Margin
+        },
+        quote! {
+            /// Defines the area to reserve to the right of the element's content, but outside the border.
+            ///
+            /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
+            pub margin_right: ::iocraft::Margin
+        },
+        quote! {
+            /// Defines the area to reserve below the element's content, but outside the border.
+            ///
+            /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
+            pub margin_bottom: ::iocraft::Margin
+        },
+        quote! {
+            /// Defines the area to reserve to the left of the element's content, but outside the border.
+            ///
+            /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
+            pub margin_left: ::iocraft::Margin
+        },
+        quote! {
+            /// Defines how items are placed along the main axis of a flex container.
+            ///
+            /// See [the MDN documentation for flex-direction](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-direction).
+            pub flex_direction: ::iocraft::FlexDirection
+        },
+        quote! {
+            /// Defines whether items are forced onto one line or can wrap into multiple lines.
+            ///
+            /// See [the MDN documentation for flex-wrap](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-wrap).
+            pub flex_wrap: ::iocraft::FlexWrap
+        },
+        quote! {
+            /// Sets the initial main size of a flex item.
+            ///
+            /// See [the MDN documentation for flex-basis](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-basis).
+            pub flex_basis: ::iocraft::FlexBasis
+        },
+        quote! {
+            /// Sets the flex grow factor, which specifies how much free space should be assigned
+            /// to the item's main size.
+            ///
+            /// See [the MDN documentation for flex-grow](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-grow).
+            pub flex_grow: f32
+        },
+        quote! {
+            /// Sets the flex shrink factor, which specifies how the item should shrink when the
+            /// container doesn't have enough room for all flex items.
+            ///
+            /// See [the MDN documentation for flex-shrink](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-shrink).
+            pub flex_shrink: Option<f32>
+        },
+        quote! {
+            /// Controls the alignment of items along the cross axis of a flex container.
+            ///
+            /// See [the MDN documentation for align-items](https://developer.mozilla.org/en-US/docs/Web/CSS/align-items).
+            pub align_items: Option<::iocraft::AlignItems>
+        },
+        quote! {
+            /// Controls the distribution of space between and around items along a flex container's cross axis.
+            ///
+            /// See [the MDN documentation for align-content](https://developer.mozilla.org/en-US/docs/Web/CSS/align-content).
+            pub align_content: Option<::iocraft::AlignContent>
+        },
+        quote! {
+            /// Controls the distribution of space between and around items along a flex container's main axis.
+            ///
+            /// See [the MDN documentation for justify-content](https://developer.mozilla.org/en-US/docs/Web/CSS/justify-content).
+            pub justify_content: Option<::iocraft::JustifyContent>
+        },
+    ]
+    .map(|tokens| syn::Field::parse_named.parse2(tokens).unwrap());
+
     let mut ast = parse_macro_input!(item as DeriveInput);
     match &mut ast.data {
         syn::Data::Struct(ref mut struct_data) => {
             if let syn::Fields::Named(fields) = &mut struct_data.fields {
-                for (field_name, field_type) in LAYOUT_STYLE_FIELDS {
-                    let field_name = Ident::new(field_name, Span::call_site());
-                    let field_type = syn::parse_str::<Type>(field_type).unwrap();
-                    fields.named.push(
-                        syn::Field::parse_named
-                            .parse2(quote! { pub #field_name: #field_type })
-                            .unwrap(),
-                    );
-                }
+                fields.named.extend(layout_style_fields.iter().cloned());
             }
 
             let struct_name = &ast.ident;
-            let field_assignments = LAYOUT_STYLE_FIELDS.iter().map(|(field_name, _)| {
-                let field_name = Ident::new(field_name, Span::call_site());
+            let field_assignments = layout_style_fields.iter().map(|field| {
+                let field_name = &field.ident;
                 quote! { #field_name: self.#field_name }
             });
 
@@ -760,6 +879,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                 #ast
 
                 impl #generics #struct_name #bracketed_generic_names #where_clause {
+                    /// Returns the layout style based on the layout-related fields of this struct.
                     pub fn layout_style(&self) -> ::iocraft::LayoutStyle {
                         ::iocraft::LayoutStyle{
                             #(#field_assignments,)*

@@ -41,14 +41,20 @@ pub enum Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    /// Creates a new context from an owned value. Children will be able to get mutable or
+    /// immutable references to the context.
     pub fn owned<T: Any>(context: T) -> Self {
         Context::Owned(Box::new(context))
     }
 
+    /// Creates a new context from a mutable reference. Children will be able to get mutable or
+    /// immutable references to the context.
     pub fn from_mut<T: Any>(context: &'a mut T) -> Self {
         Context::Mut(context)
     }
 
+    /// Creates a new context from an immutable reference. Children will not be able to get a
+    /// mutable reference to the context.
     pub fn from_ref<T: Any>(context: &'a T) -> Self {
         Context::Ref(context)
     }
