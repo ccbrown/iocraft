@@ -353,6 +353,12 @@ impl ToTokens for ParsedHooks {
                 self.#field_name.post_component_update(updater);
             }
         });
+        let pre_component_renders = hooks.fields.iter().map(|field| {
+            let field_name = &field.ident;
+            quote! {
+                self.#field_name.pre_component_render(renderer);
+            }
+        });
 
         tokens.extend(quote! {
             #[derive(Default)]
@@ -371,6 +377,10 @@ impl ToTokens for ParsedHooks {
 
                 fn post_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
                     #(#post_component_updates)*
+                }
+
+                fn pre_component_render(&mut self, renderer: &mut ::iocraft::ComponentRenderer) {
+                    #(#pre_component_renders)*
                 }
             }
         });
@@ -606,6 +616,10 @@ impl ToTokens for ParsedComponent {
             .hooks_type
             .as_ref()
             .map(|_| quote! { self.hooks.post_component_update(updater); });
+        let hooks_pre_component_render = self
+            .hooks_type
+            .as_ref()
+            .map(|_| quote! { self.hooks.pre_component_render(renderer); });
 
         let props_type_name = self
             .props_type
@@ -666,6 +680,10 @@ impl ToTokens for ParsedComponent {
                         updater.update_children([&mut e], None);
                     }
                     #hooks_post_component_update
+                }
+
+                fn render(&mut self, renderer: &mut ::iocraft::ComponentRenderer) {
+                    #hooks_pre_component_render
                 }
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {

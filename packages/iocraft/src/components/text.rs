@@ -45,7 +45,7 @@ impl Component for Text {
         }));
     }
 
-    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+    fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
         renderer.canvas().set_text(0, 0, &self.content, self.style);
     }
 }

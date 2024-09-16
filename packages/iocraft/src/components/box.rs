@@ -210,7 +210,7 @@ impl Component for Box {
         updater.update_children(props.children.iter_mut(), None);
     }
 
-    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+    fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
         let layout = renderer.layout();
 
         let mut canvas = renderer.canvas();

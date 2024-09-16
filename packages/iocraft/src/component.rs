@@ -80,7 +80,7 @@ pub trait Component: Any + Unpin {
     fn update(&mut self, _props: &mut Self::Props<'_>, _updater: &mut ComponentUpdater) {}
 
     /// Invoked to render the component.
-    fn render(&self, _renderer: &mut ComponentRenderer<'_>) {}
+    fn render(&mut self, _renderer: &mut ComponentRenderer<'_>) {}
 
     /// Invoked to determine whether a change has occurred that would require the component to be
     /// updated and re-rendered.
@@ -96,7 +96,7 @@ impl<C: Component> ElementType for C {
 #[doc(hidden)]
 pub trait AnyComponent: Any + Unpin {
     fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater);
-    fn render(&self, renderer: &mut ComponentRenderer<'_>);
+    fn render(&mut self, renderer: &mut ComponentRenderer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
@@ -105,7 +105,7 @@ impl<C: Any + Component> AnyComponent for C {
         Component::update(self, unsafe { props.downcast_mut_unchecked() }, updater);
     }
 
-    fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+    fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
         Component::render(self, renderer);
     }
 
@@ -155,7 +155,7 @@ impl InstantiatedComponent {
             .update_component(&mut self.component, props, &mut updater);
     }
 
-    pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
+    pub fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
         self.component.render(renderer);
         self.children.render(renderer);
     }
@@ -182,8 +182,8 @@ pub(crate) struct Components {
 }
 
 impl Components {
-    pub fn render(&self, renderer: &mut ComponentRenderer<'_>) {
-        for (_, component) in self.components.iter() {
+    pub fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
+        for (_, component) in self.components.iter_mut() {
             renderer.for_child_node(component.node_id, |renderer| {
                 component.render(renderer);
             });

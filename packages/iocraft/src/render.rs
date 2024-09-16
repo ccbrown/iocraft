@@ -188,6 +188,16 @@ impl<'a> ComponentRenderer<'a> {
             .expect("we should be able to get the layout")
     }
 
+    /// Gets the size of the component.
+    pub fn size(&self) -> Size<u16> {
+        self.node_size
+    }
+
+    /// Gets the position of the component relative to the top left of the canvas.
+    pub fn canvas_position(&self) -> Point<u16> {
+        self.node_position
+    }
+
     /// Gets the region of the canvas that the component should be rendered to.
     pub fn canvas(&mut self) -> CanvasSubviewMut {
         self.context.canvas.subview_mut(
@@ -351,6 +361,8 @@ impl<'a> Tree<'a> {
             } else {
                 queue!(dest, cursor::RestorePosition)?;
             }
+            dest.flush()?;
+            let canvas_location = cursor::position()?;
             // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
             // only write the diff
             output.canvas.write_ansi(stdout())?;
@@ -364,7 +376,7 @@ impl<'a> Tree<'a> {
             }
             select(
                 self.root_component.wait().boxed_local(),
-                terminal.wait().boxed_local(),
+                terminal.wait(canvas_location).boxed_local(),
             )
             .await;
             if terminal.received_ctrl_c() {

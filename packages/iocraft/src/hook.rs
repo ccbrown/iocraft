@@ -1,4 +1,4 @@
-use crate::ComponentUpdater;
+use crate::{ComponentRenderer, ComponentUpdater};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -21,4 +21,7 @@ pub trait Hook: Default {
 
     /// Called after the component is updated.
     fn post_component_update(&mut self, _updater: &mut ComponentUpdater) {}
+
+    /// Called before the component is rendered.
+    fn pre_component_render(&mut self, _renderer: &mut ComponentRenderer) {}
 }
