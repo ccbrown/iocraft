@@ -62,7 +62,7 @@ impl<T: Copy> Signal<T> {
 
 impl<T> Signal<T> {
     /// Sets the value of the signal.
-    pub fn set(&mut self, value: T) {
+    pub fn set(&self, value: T) {
         self.inner.set(value);
     }
 }

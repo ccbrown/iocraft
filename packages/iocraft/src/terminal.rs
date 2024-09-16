@@ -1,7 +1,7 @@
 use crossterm::{
     cursor,
-    event::{Event, EventStream},
-    queue, terminal,
+    event::{self, Event, EventStream},
+    execute, queue, terminal,
 };
 use futures::{
     future::pending,
@@ -28,9 +28,6 @@ pub struct KeyEvent {
 
     /// Whether the key was pressed or released.
     pub kind: KeyEventKind,
-
-    /// Additional flags used to disambiguate key events.
-    pub state: KeyEventState,
 }
 
 /// An event fired by the terminal.
@@ -98,6 +95,7 @@ impl Terminal {
                     let event = event.ok().and_then(|event| match event {
                         Event::Key(event) => {
                             if event.code == KeyCode::Char('c')
+                                && event.kind == KeyEventKind::Press
                                 && event.modifiers == KeyModifiers::CONTROL
                             {
                                 self.received_ctrl_c = true;
@@ -106,7 +104,6 @@ impl Terminal {
                                 code: event.code,
                                 modifiers: event.modifiers,
                                 kind: event.kind,
-                                state: event.state,
                             }))
                         }
                         _ => None,
@@ -136,6 +133,12 @@ impl Terminal {
 
     pub fn events(&mut self) -> io::Result<TerminalEvents> {
         if !self.raw_mode_enabled {
+            execute!(
+                stdout(),
+                event::PushKeyboardEnhancementFlags(
+                    event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                )
+            )?;
             self.set_raw_mode_enabled(true)?;
             self.event_stream = Some(EventStream::new());
         }
@@ -152,6 +155,7 @@ impl Terminal {
             if raw_mode_enabled {
                 terminal::enable_raw_mode()?;
             } else {
+                execute!(stdout(), event::PopKeyboardEnhancementFlags)?;
                 terminal::disable_raw_mode()?;
             }
             self.raw_mode_enabled = raw_mode_enabled;
@@ -162,7 +166,7 @@ impl Terminal {
 
 impl Drop for Terminal {
     fn drop(&mut self) {
-        let _ = queue!(stdout(), cursor::Show);
+        let _ = execute!(stdout(), cursor::Show);
         let _ = self.set_raw_mode_enabled(false);
     }
 }

@@ -32,14 +32,16 @@ fn Example(
         let y = state.y.clone();
         let should_exit = state.should_exit.clone();
         move |event| match event {
-            TerminalEvent::Key(KeyEvent { code, .. }) => match code {
-                KeyCode::Char('q') => should_exit.set(true),
-                KeyCode::Up => y.set((y.get() as i32 - 1).max(0) as _),
-                KeyCode::Down => y.set((y.get() + 1).min(AREA_HEIGHT - 1)),
-                KeyCode::Left => x.set((x.get() as i32 - 1).max(0) as _),
-                KeyCode::Right => x.set((x.get() + 1).min(AREA_WIDTH - 1 - FACE.len() as u32)),
-                _ => {}
-            },
+            TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {
+                match code {
+                    KeyCode::Char('q') => should_exit.set(true),
+                    KeyCode::Up => y.set((y.get() as i32 - 1).max(0) as _),
+                    KeyCode::Down => y.set((y.get() + 1).min(AREA_HEIGHT - 1)),
+                    KeyCode::Left => x.set((x.get() as i32 - 1).max(0) as _),
+                    KeyCode::Right => x.set((x.get() + 1).min(AREA_WIDTH - 1 - FACE.len() as u32)),
+                    _ => {}
+                }
+            }
             _ => {}
         }
     });
