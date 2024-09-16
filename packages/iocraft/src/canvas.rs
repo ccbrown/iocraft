@@ -7,6 +7,7 @@ use std::{
     fmt::{self, Display},
     io::{self, Write},
 };
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Clone)]
 struct Character {
@@ -74,15 +75,17 @@ impl Canvas {
         }
     }
 
-    fn set_text_chars<I>(&mut self, x: usize, y: usize, chars: I, style: CanvasTextStyle)
+    fn set_text_row_chars<I>(&mut self, mut x: usize, y: usize, chars: I, style: CanvasTextStyle)
     where
         I: IntoIterator<Item = char>,
     {
         let row = &mut self.cells[y];
-        for (i, c) in chars.into_iter().enumerate() {
-            if x + i < row.len() {
-                row[x + i].character = Some(Character { value: c, style });
+        for c in chars.into_iter() {
+            if x >= row.len() {
+                break;
             }
+            row[x].character = Some(Character { value: c, style });
+            x += c.width().unwrap_or(0);
         }
     }
 
@@ -115,7 +118,11 @@ impl Canvas {
 
         for row in &self.cells {
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
-            for cell in row.iter().take(last_non_empty.map_or(0, |i| i + 1)) {
+            let row = &row[..last_non_empty.map_or(0, |i| i + 1)];
+            let mut col = 0;
+            while col < row.len() {
+                let cell = &row[col];
+
                 if ansi {
                     // For certain changes, we need to reset all attributes.
                     let mut needs_reset = false;
@@ -162,8 +169,10 @@ impl Canvas {
 
                 if let Some(c) = &cell.character {
                     write!(w, "{}", c.value)?;
+                    col += c.value.width().unwrap_or(0);
                 } else {
                     w.write_all(b" ")?;
+                    col += 1;
                 }
             }
             if ansi {
@@ -236,14 +245,7 @@ impl<'a> CanvasSubviewMut<'a> {
     }
 
     /// Writes text to the region.
-    pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
-        if self.clip && y < 0 || y >= self.height as isize {
-            return;
-        }
-        let y = self.y as isize + y;
-        if y < 0 {
-            return;
-        }
+    pub fn set_text(&mut self, x: isize, mut y: isize, text: &str, style: CanvasTextStyle) {
         let mut x = self.x as isize + x;
         let min_x = if self.clip { self.x as isize } else { 0 };
         let mut to_skip = 0;
@@ -256,12 +258,20 @@ impl<'a> CanvasSubviewMut<'a> {
         } else {
             self.canvas.width as isize - 1
         };
-        let space = max_x - x + 1;
-        self.canvas.set_text_chars(
-            x as usize,
-            y as usize,
-            text.chars().skip(to_skip as _).take(space as _),
-            style,
-        );
+        let horizontal_space = max_x - x + 1;
+        for line in text.lines() {
+            if !self.clip || (y >= 0 && y < self.height as isize) {
+                let y = self.y as isize + y;
+                if y >= 0 && y < self.canvas.height() as _ {
+                    self.canvas.set_text_row_chars(
+                        x as usize,
+                        y as usize,
+                        line.chars().skip(to_skip as _).take(horizontal_space as _),
+                        style,
+                    );
+                }
+            }
+            y += 1;
+        }
     }
 }

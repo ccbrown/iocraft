@@ -1,4 +1,5 @@
 use iocraft::prelude::*;
+use unicode_width::UnicodeWidthStr;
 
 #[context]
 struct ExampleContext<'a> {
@@ -19,7 +20,7 @@ struct ExampleHooks {
 
 const AREA_WIDTH: u32 = 80;
 const AREA_HEIGHT: u32 = 11;
-const FACE: &str = "^_^";
+const FACE: &str = "👾";
 
 #[component]
 fn Example(
@@ -38,7 +39,7 @@ fn Example(
                     KeyCode::Up => y.set((y.get() as i32 - 1).max(0) as _),
                     KeyCode::Down => y.set((y.get() + 1).min(AREA_HEIGHT - 1)),
                     KeyCode::Left => x.set((x.get() as i32 - 1).max(0) as _),
-                    KeyCode::Right => x.set((x.get() + 1).min(AREA_WIDTH - 1 - FACE.len() as u32)),
+                    KeyCode::Right => x.set((x.get() + 1).min(AREA_WIDTH - FACE.width() as u32)),
                     _ => {}
                 }
             }
@@ -56,7 +57,7 @@ fn Example(
             padding: 2,
             align_items: AlignItems::Center
         ) {
-            Text(content: "Use arrow keys to move the face. Press \"q\" to exit.")
+            Text(content: "Use arrow keys to move. Press \"q\" to exit.")
             Box(
                 border_style: BorderStyle::Round,
                 border_color: Color::Green,

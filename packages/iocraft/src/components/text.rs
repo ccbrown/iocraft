@@ -2,6 +2,7 @@ use crate::{
     CanvasTextStyle, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Weight,
 };
 use taffy::Size;
+use unicode_width::UnicodeWidthStr;
 
 /// The props which can be passed to the [`Text`] component.
 #[derive(Default, Covariant)]
@@ -36,8 +37,12 @@ impl Component for Text {
             weight: props.weight,
         };
         self.content = props.content.clone();
-        let width = self.content.len() as f32;
-        updater.set_measure_func(Box::new(move |_, _, _| Size { width, height: 1.0 }));
+        let width = self.content.width() as f32;
+        let lines = self.content.lines().count().max(1);
+        updater.set_measure_func(Box::new(move |_, _, _| Size {
+            width,
+            height: lines as _,
+        }));
     }
 
     fn render(&self, renderer: &mut ComponentRenderer<'_>) {
@@ -54,5 +59,12 @@ mod tests {
         assert_eq!(element!(Text).to_string(), "\n");
 
         assert_eq!(element!(Text(content: "foo")).to_string(), "foo\n");
+
+        assert_eq!(
+            element!(Text(content: "foo\nbar")).to_string(),
+            "foo\nbar\n"
+        );
+
+        assert_eq!(element!(Text(content: "😀")).to_string(), "😀\n");
     }
 }

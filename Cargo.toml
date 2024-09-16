@@ -16,3 +16,6 @@ license = "MIT OR Apache-2.0"
 iocraft = { path = "packages/iocraft" }
 futures = "0.3.30"
 smol = "2.0.1"
+
+[dependencies]
+unicode-width = "0.1.13"

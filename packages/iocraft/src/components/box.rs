@@ -389,5 +389,19 @@ mod tests {
                 └──────────────────┘
             "},
         );
+
+        assert_eq!(
+            element! {
+                Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                    Text(content: "✅")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────┐
+                │  ✅  │
+                └──────┘
+            "},
+        );
     }
 }
