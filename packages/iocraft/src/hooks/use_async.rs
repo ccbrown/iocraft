@@ -6,34 +6,35 @@ use std::{
     task::{Context, Poll},
 };
 
-/// `UseFuture` is a hook that allows you to spawn a future which is bound to the lifetime of the
-/// component. When the component is unmounted, the future will be dropped.
+/// `UseAsync` is a hook that allows you to spawn async tasks bound to the lifetime of the
+/// component. When the component is unmounted, the tasks will be dropped.
 #[derive(Default)]
-pub struct UseFuture {
-    f: Option<BoxFuture<'static, ()>>,
+pub struct UseAsync {
+    once_fut: Option<BoxFuture<'static, ()>>,
 }
 
-impl Hook for UseFuture {
+impl Hook for UseAsync {
     fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        match self.f.as_mut() {
+        match self.once_fut.as_mut() {
             Some(f) => f.as_mut().poll(cx),
             None => Poll::Pending,
         }
     }
 }
 
-impl UseFuture {
+impl UseAsync {
     /// Spawns a future which is bound to the lifetime of the component. When the component is
     /// unmounted, the future will be dropped.
     ///
-    /// The future will be spawned only once. After that, calling this function has no effect.
-    pub fn use_future<F, T>(&mut self, f: F)
+    /// The given function will only be invoked once. After that, calling this function has no
+    /// effect.
+    pub fn spawn_once<F, T>(&mut self, f: F)
     where
         F: FnOnce() -> T,
         T: Future<Output = ()> + Send + 'static,
     {
-        if self.f.is_none() {
-            self.f = Some(Box::pin(f()));
+        if self.once_fut.is_none() {
+            self.once_fut = Some(Box::pin(f()));
         }
     }
 }

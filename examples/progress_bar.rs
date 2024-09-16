@@ -13,7 +13,7 @@ struct ProgressBarState {
 
 #[hooks]
 struct ProgressBarHooks {
-    run_loop: UseFuture,
+    run_loop: UseAsync,
 }
 
 #[component]
@@ -22,7 +22,7 @@ fn ProgressBar(
     hooks: &mut ProgressBarHooks,
     context: ProgressBarContext,
 ) -> impl Into<AnyElement<'static>> {
-    hooks.run_loop.use_future({
+    hooks.run_loop.spawn_once({
         let progress = state.progress.clone();
         || async move {
             loop {

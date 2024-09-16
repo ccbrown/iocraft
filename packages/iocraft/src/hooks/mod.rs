@@ -1,5 +1,5 @@
-mod use_future;
-pub use use_future::*;
+mod use_async;
+pub use use_async::*;
 mod use_input;
 pub use use_input::*;
 mod use_output;
