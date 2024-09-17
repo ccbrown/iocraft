@@ -76,11 +76,11 @@ impl Text {
     ) -> String {
         match text_wrap {
             TextWrap::Wrap => match known_width {
-                Some(w) => textwrap::fill(&content, w as usize),
+                Some(w) => textwrap::fill(content, w as usize),
                 None => match available_width {
-                    AvailableSpace::Definite(w) => textwrap::fill(&content, w as usize),
+                    AvailableSpace::Definite(w) => textwrap::fill(content, w as usize),
                     AvailableSpace::MaxContent => content.to_string(),
-                    AvailableSpace::MinContent => textwrap::fill(&content, 1),
+                    AvailableSpace::MinContent => textwrap::fill(content, 1),
                 },
             },
             TextWrap::NoWrap => content.to_string(),

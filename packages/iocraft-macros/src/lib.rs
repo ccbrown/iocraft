@@ -434,12 +434,12 @@ impl ToTokens for ParsedContext {
             #context
 
             const _: () = {
-                struct ContextRefs #generics {
+                pub struct ContextRefs #generics {
                     #(#ref_fields,)*
                 }
 
                 impl<'iocraft_lta> ContextRefs<'iocraft_lta> {
-                    fn refs_from_component_updater<#lifetime: 'iocraft_lta>(updater: &#lifetime ComponentUpdater) -> ContextRefs<#lifetime> {
+                    fn refs_from_component_updater<#lifetime: 'iocraft_lta>(updater: &#lifetime ::iocraft::ComponentUpdater) -> ContextRefs<#lifetime> {
                         ContextRefs {
                             #(#ref_field_assignments,)*
                         }
@@ -457,7 +457,7 @@ impl ToTokens for ParsedContext {
                 impl<'a> ::iocraft::ContextImplExt<'a> for #name<'a> {
                     type Refs<'b: 'a> = ContextRefs<'b>;
 
-                    fn refs_from_component_updater<'b: 'a>(updater: &'b ComponentUpdater) -> Self::Refs<'b> {
+                    fn refs_from_component_updater<'b: 'a>(updater: &'b ::iocraft::ComponentUpdater) -> Self::Refs<'b> {
                         ContextRefs::refs_from_component_updater(updater)
                     }
 

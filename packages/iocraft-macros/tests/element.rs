@@ -45,7 +45,7 @@ fn full_qualified_type() {
         }
     }
     let _: Element<MyComponent> = element!(foo::bar::MyComponent);
-    let _: Element<::iocraft::Box> = element!(::iocraft::Box);
+    let _: Element<::iocraft::components::Box> = element!(::iocraft::components::Box);
 }
 
 #[test]
