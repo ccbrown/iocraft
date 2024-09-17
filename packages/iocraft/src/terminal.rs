@@ -15,7 +15,7 @@ use std::{
 };
 
 // Re-exports for basic types.
-pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers, MouseEventKind};
+pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
 /// An event fired when a key is pressed.
 #[derive(Clone, Debug)]
@@ -30,36 +30,12 @@ pub struct KeyEvent {
     pub kind: KeyEventKind,
 }
 
-/// An event fired when a mouse action occurs.
-#[derive(Clone, Debug)]
-pub struct MouseEvent {
-    /// Indicates the kind of mouse event that occurred.
-    pub kind: MouseEventKind,
-
-    /// The modifiers that were active when the key was pressed.
-    pub modifiers: KeyModifiers,
-
-    /// The row of the terminal where the event occurred.
-    pub row: u16,
-
-    /// The column of the terminal where the event occurred.
-    pub column: u16,
-
-    /// The row of the terminal where the event occurred, relative to the canvas.
-    pub canvas_row: i16,
-
-    /// The column of the terminal where the event occurred, relative to the canvas.
-    pub canvas_column: i16,
-}
-
 /// An event fired by the terminal.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
     /// A key event, fired when a key is pressed.
     Key(KeyEvent),
-    /// A mouse event, fired when a mouse action occurs.
-    Mouse(MouseEvent),
 }
 
 struct TerminalEventsInner {
@@ -112,7 +88,7 @@ impl Terminal {
         self.received_ctrl_c
     }
 
-    pub async fn wait(&mut self, origin: (u16, u16)) {
+    pub async fn wait(&mut self) {
         match &mut self.event_stream {
             Some(event_stream) => {
                 while let Some(event) = event_stream.next().await {
@@ -130,14 +106,6 @@ impl Terminal {
                                 kind: event.kind,
                             }))
                         }
-                        Event::Mouse(event) => Some(TerminalEvent::Mouse(MouseEvent {
-                            kind: event.kind,
-                            modifiers: event.modifiers,
-                            row: event.row,
-                            column: event.column,
-                            canvas_row: event.row as i16 - origin.0 as i16,
-                            canvas_column: event.column as i16 - origin.1 as i16,
-                        })),
                         _ => None,
                     });
                     if self.received_ctrl_c {
@@ -167,7 +135,6 @@ impl Terminal {
         if !self.raw_mode_enabled {
             execute!(
                 stdout(),
-                event::EnableMouseCapture,
                 event::PushKeyboardEnhancementFlags(
                     event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                 )
@@ -188,11 +155,7 @@ impl Terminal {
             if raw_mode_enabled {
                 terminal::enable_raw_mode()?;
             } else {
-                execute!(
-                    stdout(),
-                    event::DisableMouseCapture,
-                    event::PopKeyboardEnhancementFlags
-                )?;
+                execute!(stdout(), event::PopKeyboardEnhancementFlags)?;
                 terminal::disable_raw_mode()?;
             }
             self.raw_mode_enabled = raw_mode_enabled;

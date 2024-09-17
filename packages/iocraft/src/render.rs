@@ -6,7 +6,7 @@ use crate::{
     props::AnyProps,
     terminal::{Terminal, TerminalEvents},
 };
-use crossterm::{cursor, queue, terminal};
+use crossterm::{cursor, execute, queue, terminal};
 use futures::future::{select, FutureExt};
 use std::{
     any::Any,
@@ -20,6 +20,7 @@ use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
     layout_engine: &'a mut LayoutEngine,
+    lines_to_rewind_to_clear: usize,
     did_clear_terminal_output: bool,
 }
 
@@ -68,7 +69,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
         if !self.context.did_clear_terminal_output {
             queue!(
                 stdout(),
-                cursor::RestorePosition,
+                cursor::MoveToPreviousLine(self.context.lines_to_rewind_to_clear as _),
                 terminal::Clear(terminal::ClearType::FromCursorDown)
             )
             .unwrap();
@@ -279,12 +280,14 @@ impl<'a> Tree<'a> {
         &mut self,
         max_width: Option<usize>,
         terminal: Option<&mut Terminal>,
+        lines_to_rewind_to_clear: usize,
     ) -> RenderOutput {
         let did_clear_terminal_output = {
             let mut context = UpdateContext {
                 terminal,
                 layout_engine: &mut self.layout_engine,
                 did_clear_terminal_output: false,
+                lines_to_rewind_to_clear,
             };
             let mut component_context_stack = ContextStack::root(&mut self.system_context);
             self.root_component.update(
@@ -350,23 +353,28 @@ impl<'a> Tree<'a> {
     async fn terminal_render_loop(&mut self) -> io::Result<()> {
         let mut dest = stdout();
         let mut terminal = Terminal::new()?;
-        queue!(dest, cursor::SavePosition)?;
+        let mut lines_to_rewind_to_clear = 0;
         loop {
             let (width, _) = terminal::size()?;
             queue!(dest, terminal::BeginSynchronizedUpdate,)?;
             dest.flush()?;
-            let output = self.render(Some(width as _), Some(&mut terminal));
-            if output.did_clear_terminal_output {
-                queue!(dest, cursor::SavePosition)?;
-            } else {
-                queue!(dest, cursor::RestorePosition)?;
+            let output = self.render(
+                Some(width as _),
+                Some(&mut terminal),
+                lines_to_rewind_to_clear,
+            );
+            if !output.did_clear_terminal_output {
+                queue!(
+                    dest,
+                    cursor::MoveToPreviousLine(lines_to_rewind_to_clear as _),
+                )?;
             }
             dest.flush()?;
-            let canvas_location = cursor::position()?;
             // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
             // only write the diff
             output.canvas.write_ansi(stdout())?;
-            queue!(
+            lines_to_rewind_to_clear = output.canvas.height();
+            execute!(
                 dest,
                 terminal::Clear(terminal::ClearType::FromCursorDown,),
                 terminal::EndSynchronizedUpdate
@@ -376,7 +384,7 @@ impl<'a> Tree<'a> {
             }
             select(
                 self.root_component.wait().boxed_local(),
-                terminal.wait(canvas_location).boxed_local(),
+                terminal.wait().boxed_local(),
             )
             .await;
             if terminal.received_ctrl_c() {
@@ -391,7 +399,7 @@ impl<'a> Tree<'a> {
 pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canvas {
     let h = e.helper();
     let mut tree = Tree::new(e.props_mut(), h);
-    tree.render(max_width, None).canvas
+    tree.render(max_width, None, 0).canvas
 }
 
 pub(crate) async fn terminal_render_loop<E: ElementExt>(mut e: E) -> io::Result<()> {
