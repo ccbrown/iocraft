@@ -26,6 +26,16 @@ pub enum TextAlign {
     Center,
 }
 
+/// The text decoration of a [`Text`] component.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum TextDecoration {
+    /// No text decoration. This is the default.
+    #[default]
+    None,
+    /// The text is underlined.
+    Underline,
+}
+
 /// The props which can be passed to the [`Text`] component.
 #[derive(Default, Covariant)]
 pub struct TextProps {
@@ -43,6 +53,9 @@ pub struct TextProps {
 
     /// The text alignment.
     pub align: TextAlign,
+
+    /// The text decoration.
+    pub decoration: TextDecoration,
 }
 
 /// `Text` is a component that renders a text string.
@@ -111,6 +124,7 @@ impl Component for Text {
         self.style = CanvasTextStyle {
             color: props.color,
             weight: props.weight,
+            underline: props.decoration == TextDecoration::Underline,
         };
         self.content = props.content.clone();
         self.wrap = props.wrap;

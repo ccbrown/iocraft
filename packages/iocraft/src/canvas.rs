@@ -23,6 +23,9 @@ pub struct CanvasTextStyle {
 
     /// The weight of the text.
     pub weight: Weight,
+
+    /// Whether the text is underlined.
+    pub underline: bool,
 }
 
 #[derive(Clone, Default)]
@@ -130,6 +133,11 @@ impl Canvas {
                         if c.style.weight != text_style.weight && c.style.weight == Weight::Normal {
                             needs_reset = true;
                         }
+                        if !c.style.underline && text_style.underline {
+                            needs_reset = true;
+                        }
+                    } else if text_style.underline {
+                        needs_reset = true;
                     }
                     if needs_reset {
                         write!(w, csi!("0m"))?;
@@ -161,6 +169,10 @@ impl Canvas {
                                 Weight::Normal => {}
                                 Weight::Light => write!(w, csi!("{}m"), Attribute::Dim.sgr())?,
                             }
+                        }
+
+                        if c.style.underline && !text_style.underline {
+                            write!(w, csi!("{}m"), Attribute::Underlined.sgr())?;
                         }
 
                         text_style = c.style;

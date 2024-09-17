@@ -34,22 +34,22 @@ fn UsersTable<'a>(props: &UsersTableProps<'a>) -> impl Into<AnyElement<'a>> {
             border_color: Color::Cyan,
         ) {
             Box(border_style: BorderStyle::Single, border_edges: Edges::Bottom, border_color: Color::Grey) {
-                Box(width: 10pct) {
-                    Text(content: "Id", weight: Weight::Bold)
+                Box(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
+                    Text(content: "Id", weight: Weight::Bold, decoration: TextDecoration::Underline)
                 }
 
                 Box(width: 40pct) {
-                    Text(content: "Name", weight: Weight::Bold)
+                    Text(content: "Name", weight: Weight::Bold, decoration: TextDecoration::Underline)
                 }
 
                 Box(width: 50pct) {
-                    Text(content: "Email", weight: Weight::Bold)
+                    Text(content: "Email", weight: Weight::Bold, decoration: TextDecoration::Underline)
                 }
             }
 
             #(props.users.map(|users| users.iter().enumerate().map(|(i, user)| element! {
                 Box(background_color: if i % 2 == 0 { None } else { Some(Color::DarkGrey) }) {
-                    Box(width: 10pct) {
+                    Box(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
                         Text(content: user.id.to_string())
                     }
 
