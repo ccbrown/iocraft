@@ -14,6 +14,18 @@ pub enum TextWrap {
     NoWrap,
 }
 
+/// The text alignment of a [`Text`] component.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum TextAlign {
+    /// Text is aligned to the left. This is the default.
+    #[default]
+    Left,
+    /// Text is aligned to the right.
+    Right,
+    /// Text is aligned to the center.
+    Center,
+}
+
 /// The props which can be passed to the [`Text`] component.
 #[derive(Default, Covariant)]
 pub struct TextProps {
@@ -28,6 +40,9 @@ pub struct TextProps {
 
     /// The text wrapping behavior.
     pub wrap: TextWrap,
+
+    /// The text alignment.
+    pub align: TextAlign,
 }
 
 /// `Text` is a component that renders a text string.
@@ -36,6 +51,7 @@ pub struct Text {
     style: CanvasTextStyle,
     content: String,
     wrap: TextWrap,
+    align: TextAlign,
 }
 
 impl Text {
@@ -57,6 +73,31 @@ impl Text {
             TextWrap::NoWrap => content.to_string(),
         }
     }
+
+    fn align(content: String, align: TextAlign, width: usize) -> String {
+        match align {
+            TextAlign::Left => content,
+            TextAlign::Right => content
+                .lines()
+                .map(|line| {
+                    let padding = width - line.width();
+                    format!("{:width$}{}", "", line, width = padding)
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            TextAlign::Center => {
+                let padding = width / 2;
+                content
+                    .lines()
+                    .map(|line| {
+                        let padding = padding - line.width() / 2;
+                        format!("{:width$}{}", "", line, width = padding)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+    }
 }
 
 impl Component for Text {
@@ -73,6 +114,7 @@ impl Component for Text {
         };
         self.content = props.content.clone();
         self.wrap = props.wrap;
+        self.align = props.align;
 
         {
             let content = self.content.clone();
@@ -95,12 +137,14 @@ impl Component for Text {
     }
 
     fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
+        let width = renderer.layout().size.width;
         let content = Self::wrap(
             &self.content,
             self.wrap,
             None,
-            AvailableSpace::Definite(renderer.layout().size.width),
+            AvailableSpace::Definite(width),
         );
+        let content = Self::align(content, self.align, width as _);
         renderer.canvas().set_text(0, 0, &content, self.style);
     }
 }
@@ -130,6 +174,26 @@ mod tests {
             }
             .to_string(),
             "this is a\nwrapping test\n"
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 15) {
+                    Text(content: "this is an alignment test", align: TextAlign::Right)
+                }
+            }
+            .to_string(),
+            "     this is an\n alignment test\n"
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 15) {
+                    Text(content: "this is an alignment test", align: TextAlign::Center)
+                }
+            }
+            .to_string(),
+            "  this is an\nalignment test\n"
         );
     }
 }
