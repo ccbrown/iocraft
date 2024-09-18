@@ -1,4 +1,4 @@
-name: Commits
+name: Commit
 on: [pull_request, push]
 jobs:
   Checks:
