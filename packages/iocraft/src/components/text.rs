@@ -1,5 +1,5 @@
 use crate::{
-    CanvasTextStyle, Color, Component, ComponentRenderer, ComponentUpdater, Covariant, Weight,
+    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -150,8 +150,8 @@ impl Component for Text {
         }
     }
 
-    fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
-        let width = renderer.layout().size.width;
+    fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+        let width = drawer.layout().size.width;
         let content = Self::wrap(
             &self.content,
             self.wrap,
@@ -159,7 +159,7 @@ impl Component for Text {
             AvailableSpace::Definite(width),
         );
         let content = Self::align(content, self.align, width as _);
-        renderer.canvas().set_text(0, 0, &content, self.style);
+        drawer.canvas().set_text(0, 0, &content, self.style);
     }
 }
 

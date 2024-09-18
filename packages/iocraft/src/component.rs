@@ -2,7 +2,7 @@ use crate::{
     context::ContextStack,
     element::{ElementKey, ElementType},
     props::{AnyProps, Covariant},
-    render::{ComponentRenderer, ComponentUpdater, UpdateContext},
+    render::{ComponentDrawer, ComponentUpdater, UpdateContext},
 };
 use futures::future::poll_fn;
 use std::{
@@ -79,11 +79,11 @@ pub trait Component: Any + Unpin {
     /// Invoked whenever the properties of the component or layout may have changed.
     fn update(&mut self, _props: &mut Self::Props<'_>, _updater: &mut ComponentUpdater) {}
 
-    /// Invoked to render the component.
-    fn render(&mut self, _renderer: &mut ComponentRenderer<'_>) {}
+    /// Invoked to draw the component.
+    fn draw(&mut self, _drawer: &mut ComponentDrawer<'_>) {}
 
     /// Invoked to determine whether a change has occurred that would require the component to be
-    /// updated and re-rendered.
+    /// updated and redrawn.
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
         Poll::Pending
     }
@@ -96,7 +96,7 @@ impl<C: Component> ElementType for C {
 #[doc(hidden)]
 pub trait AnyComponent: Any + Unpin {
     fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater);
-    fn render(&mut self, renderer: &mut ComponentRenderer<'_>);
+    fn draw(&mut self, drawer: &mut ComponentDrawer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
@@ -105,8 +105,8 @@ impl<C: Any + Component> AnyComponent for C {
         Component::update(self, unsafe { props.downcast_mut_unchecked() }, updater);
     }
 
-    fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
-        Component::render(self, renderer);
+    fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+        Component::draw(self, drawer);
     }
 
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
@@ -155,9 +155,9 @@ impl InstantiatedComponent {
             .update_component(&mut self.component, props, &mut updater);
     }
 
-    pub fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
-        self.component.render(renderer);
-        self.children.render(renderer);
+    pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+        self.component.draw(drawer);
+        self.children.draw(drawer);
     }
 
     pub async fn wait(&mut self) {
@@ -182,10 +182,10 @@ pub(crate) struct Components {
 }
 
 impl Components {
-    pub fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
+    pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
         for (_, component) in self.components.iter_mut() {
-            renderer.for_child_node(component.node_id, |renderer| {
-                component.render(renderer);
+            drawer.for_child_node(component.node_id, |drawer| {
+                component.draw(drawer);
             });
         }
     }

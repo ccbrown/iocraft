@@ -52,7 +52,7 @@ pub struct UseStdoutHandle {
 }
 
 impl UseStdoutHandle {
-    /// Queues a message to be written asynchronously to stdout, about the rendered component
+    /// Queues a message to be written asynchronously to stdout, above the rendered component
     /// output.
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
@@ -70,7 +70,7 @@ pub struct UseStderrHandle {
 }
 
 impl UseStderrHandle {
-    /// Queues a message to be written asynchronously to stderr, about the rendered component
+    /// Queues a message to be written asynchronously to stderr, above the rendered component
     /// output.
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();

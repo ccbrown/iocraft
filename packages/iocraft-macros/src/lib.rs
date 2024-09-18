@@ -353,10 +353,10 @@ impl ToTokens for ParsedHooks {
                 self.#field_name.post_component_update(updater);
             }
         });
-        let pre_component_renders = hooks.fields.iter().map(|field| {
+        let pre_component_draws = hooks.fields.iter().map(|field| {
             let field_name = &field.ident;
             quote! {
-                self.#field_name.pre_component_render(renderer);
+                self.#field_name.pre_component_draw(drawer);
             }
         });
 
@@ -382,9 +382,9 @@ impl ToTokens for ParsedHooks {
                     #(#post_component_updates)*
                 }
 
-                fn pre_component_render(&mut self, renderer: &mut ::iocraft::ComponentRenderer) {
+                fn pre_component_draw(&mut self, drawer: &mut ::iocraft::ComponentDrawer) {
                     use ::iocraft::Hook;
-                    #(#pre_component_renders)*
+                    #(#pre_component_draws)*
                 }
             }
         });
@@ -620,10 +620,10 @@ impl ToTokens for ParsedComponent {
             .hooks_type
             .as_ref()
             .map(|_| quote! { self.hooks.post_component_update(updater); });
-        let hooks_pre_component_render = self
+        let hooks_pre_component_draw = self
             .hooks_type
             .as_ref()
-            .map(|_| quote! { self.hooks.pre_component_render(renderer); });
+            .map(|_| quote! { self.hooks.pre_component_draw(drawer); });
 
         let props_type_name = self
             .props_type
@@ -686,8 +686,8 @@ impl ToTokens for ParsedComponent {
                     #hooks_post_component_update
                 }
 
-                fn render(&mut self, renderer: &mut ::iocraft::ComponentRenderer) {
-                    #hooks_pre_component_render
+                fn draw(&mut self, drawer: &mut ::iocraft::ComponentDrawer) {
+                    #hooks_pre_component_draw
                 }
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {

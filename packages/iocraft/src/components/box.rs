@@ -1,5 +1,5 @@
 use crate::{
-    AnyElement, CanvasTextStyle, Color, Component, ComponentRenderer, ComponentUpdater, Covariant,
+    AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant,
     Edges,
 };
 use iocraft_macros::with_layout_style_props;
@@ -210,10 +210,10 @@ impl Component for Box {
         updater.update_children(props.children.iter_mut(), None);
     }
 
-    fn render(&mut self, renderer: &mut ComponentRenderer<'_>) {
-        let layout = renderer.layout();
+    fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+        let layout = drawer.layout();
 
-        let mut canvas = renderer.canvas();
+        let mut canvas = drawer.canvas();
 
         if let Some(color) = self.background_color {
             canvas.set_background_color(

@@ -165,21 +165,21 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     }
 }
 
-struct RenderContext<'a> {
+struct DrawContext<'a> {
     layout_engine: &'a LayoutEngine,
     canvas: &'a mut Canvas,
 }
 
 /// Provides information and operations that low level component implementations may need to
-/// utilize during the render phase.
-pub struct ComponentRenderer<'a> {
+/// utilize during the draw phase.
+pub struct ComponentDrawer<'a> {
     node_id: NodeId,
     node_position: Point<u16>,
     node_size: Size<u16>,
-    context: RenderContext<'a>,
+    context: DrawContext<'a>,
 }
 
-impl<'a> ComponentRenderer<'a> {
+impl<'a> ComponentDrawer<'a> {
     /// Gets the calculated layout of the current node.
     pub fn layout(&self) -> Layout {
         *self
@@ -199,7 +199,7 @@ impl<'a> ComponentRenderer<'a> {
         self.node_position
     }
 
-    /// Gets the region of the canvas that the component should be rendered to.
+    /// Gets the region of the canvas that the component should be drawn to.
     pub fn canvas(&mut self) -> CanvasSubviewMut {
         self.context.canvas.subview_mut(
             self.node_position.x as usize,
@@ -210,7 +210,7 @@ impl<'a> ComponentRenderer<'a> {
         )
     }
 
-    /// Prepares to begin rendering a node by moving to the node's position and invoking the given
+    /// Prepares to begin drawing a node by moving to the node's position and invoking the given
     /// closure.
     pub(crate) fn for_child_node<F>(&mut self, node_id: NodeId, f: F)
     where
@@ -328,7 +328,7 @@ impl<'a> Tree<'a> {
             .layout_engine
             .layout(self.root_component.node_id())
             .expect("we should be able to get the root layout");
-        let mut renderer = ComponentRenderer {
+        let mut drawer = ComponentDrawer {
             node_id: self.root_component.node_id(),
             node_position: Point {
                 x: root_layout.location.x as _,
@@ -338,12 +338,12 @@ impl<'a> Tree<'a> {
                 width: root_layout.size.width as _,
                 height: root_layout.size.height as _,
             },
-            context: RenderContext {
+            context: DrawContext {
                 layout_engine: &self.layout_engine,
                 canvas: &mut canvas,
             },
         };
-        self.root_component.render(&mut renderer);
+        self.root_component.draw(&mut drawer);
         RenderOutput {
             canvas,
             did_clear_terminal_output,
