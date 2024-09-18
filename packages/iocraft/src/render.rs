@@ -14,7 +14,6 @@ use std::{
     collections::HashMap,
     io::{self, stdout, Write},
     mem,
-    os::fd::AsRawFd,
 };
 use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
 
@@ -353,7 +352,7 @@ impl<'a> Tree<'a> {
 
     async fn terminal_render_loop<W>(&mut self, mut w: W) -> io::Result<()>
     where
-        W: Write + AsRawFd,
+        W: Write,
     {
         let mut terminal = Terminal::new()?;
         let mut lines_to_rewind_to_clear = 0;
@@ -405,7 +404,7 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
 pub(crate) async fn terminal_render_loop<E, W>(mut e: E, dest: W) -> io::Result<()>
 where
     E: ElementExt,
-    W: Write + AsRawFd,
+    W: Write,
 {
     let h = e.helper();
     let mut tree = Tree::new(e.props_mut(), h);
@@ -417,8 +416,6 @@ mod tests {
     use crate::{hooks::UseAsync, prelude::*};
     use macro_rules_attribute::apply;
     use smol_macros::test;
-    use std::fs::{read_to_string, File};
-    use tempfile::tempdir;
 
     #[state]
     struct MyComponentState {
@@ -459,12 +456,11 @@ mod tests {
 
     #[apply(test!)]
     async fn test_terminal_render_loop() {
-        let dir = tempdir().unwrap();
-        let f_path = dir.path().join("output.txt");
-        terminal_render_loop(element!(MyComponent), File::create(&f_path).unwrap())
+        let mut buf = Vec::new();
+        terminal_render_loop(element!(MyComponent), &mut buf)
             .await
             .unwrap();
-        let output = read_to_string(&f_path).unwrap();
+        let output = String::from_utf8_lossy(&buf);
         assert!(output.contains("count: 0"));
         assert!(output.contains("count: 1"));
     }
