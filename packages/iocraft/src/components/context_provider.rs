@@ -34,10 +34,13 @@ mod tests {
     use crate::prelude::*;
 
     struct StringContext(String);
+    struct OtherContext;
 
     #[context]
     struct MyComponentContext<'a> {
         string: &'a StringContext,
+        _other: Option<&'a OtherContext>,
+        _system: &'a mut SystemContext,
     }
 
     #[component]
@@ -49,10 +52,16 @@ mod tests {
 
     #[test]
     fn test_context_provider() {
+        let context_by_ref = StringContext("x".into());
+        let mut context_by_mut_ref = StringContext("y".into());
         assert_eq!(
             element! {
-                ContextProvider(value: Context::owned(StringContext("foo".to_string()))) {
-                    MyComponent
+                ContextProvider(value: Context::from_ref(&context_by_ref)) {
+                    ContextProvider(value: Context::from_mut(&mut context_by_mut_ref)) {
+                        ContextProvider(value: Context::owned(StringContext("foo".into()))) {
+                            MyComponent
+                        }
+                    }
                 }
             }
             .to_string(),

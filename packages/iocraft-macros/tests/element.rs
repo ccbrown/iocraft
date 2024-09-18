@@ -93,6 +93,17 @@ fn code_interpolation_none() {
 }
 
 #[test]
+fn code_interpolation_any() {
+    let e = element! {
+        MyContainer {
+            MyContainer
+            #(element!(MyContainer).into_any())
+        }
+    };
+    assert_eq!(e.props.children.len(), 1);
+}
+
+#[test]
 fn code_interpolation_single_child() {
     let e = element! {
         MyContainer {
