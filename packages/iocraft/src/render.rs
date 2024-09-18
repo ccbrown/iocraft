@@ -357,14 +357,10 @@ impl<'a> Tree<'a> {
         let mut terminal = Terminal::new()?;
         let mut lines_to_rewind_to_clear = 0;
         loop {
-            let (width, _) = terminal::size()?;
+            let width = terminal::size().map(|(w, _)| w as usize).ok();
             queue!(w, terminal::BeginSynchronizedUpdate,)?;
             w.flush()?;
-            let output = self.render(
-                Some(width as _),
-                Some(&mut terminal),
-                lines_to_rewind_to_clear,
-            );
+            let output = self.render(width, Some(&mut terminal), lines_to_rewind_to_clear);
             if !output.did_clear_terminal_output && lines_to_rewind_to_clear > 0 {
                 queue!(w, cursor::MoveToPreviousLine(lines_to_rewind_to_clear as _),)?;
             }
