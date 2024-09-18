@@ -350,32 +350,27 @@ impl<'a> Tree<'a> {
         }
     }
 
-    async fn terminal_render_loop(&mut self) -> io::Result<()> {
-        let mut dest = stdout();
+    async fn terminal_render_loop<W>(&mut self, mut w: W) -> io::Result<()>
+    where
+        W: Write,
+    {
         let mut terminal = Terminal::new()?;
         let mut lines_to_rewind_to_clear = 0;
         loop {
-            let (width, _) = terminal::size()?;
-            queue!(dest, terminal::BeginSynchronizedUpdate,)?;
-            dest.flush()?;
-            let output = self.render(
-                Some(width as _),
-                Some(&mut terminal),
-                lines_to_rewind_to_clear,
-            );
-            if !output.did_clear_terminal_output {
-                queue!(
-                    dest,
-                    cursor::MoveToPreviousLine(lines_to_rewind_to_clear as _),
-                )?;
+            let width = terminal::size().map(|(w, _)| w as usize).ok();
+            queue!(w, terminal::BeginSynchronizedUpdate,)?;
+            w.flush()?;
+            let output = self.render(width, Some(&mut terminal), lines_to_rewind_to_clear);
+            if !output.did_clear_terminal_output && lines_to_rewind_to_clear > 0 {
+                queue!(w, cursor::MoveToPreviousLine(lines_to_rewind_to_clear as _),)?;
             }
-            dest.flush()?;
+            w.flush()?;
             // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
             // only write the diff
-            output.canvas.write_ansi(stdout())?;
+            output.canvas.write_ansi(&mut w)?;
             lines_to_rewind_to_clear = output.canvas.height();
             execute!(
-                dest,
+                w,
                 terminal::Clear(terminal::ClearType::FromCursorDown,),
                 terminal::EndSynchronizedUpdate
             )?;
@@ -402,8 +397,67 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
     tree.render(max_width, None, 0).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E: ElementExt>(mut e: E) -> io::Result<()> {
+pub(crate) async fn terminal_render_loop<E, W>(mut e: E, dest: W) -> io::Result<()>
+where
+    E: ElementExt,
+    W: Write,
+{
     let h = e.helper();
     let mut tree = Tree::new(e.props_mut(), h);
-    tree.terminal_render_loop().await
+    tree.terminal_render_loop(dest).await
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{hooks::UseAsync, prelude::*};
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
+
+    #[state]
+    struct MyComponentState {
+        counter: Signal<i32>,
+    }
+
+    #[hooks]
+    struct MyComponentHooks {
+        use_async: UseAsync,
+    }
+
+    #[context]
+    struct MyComponentContext<'a> {
+        system: &'a mut SystemContext,
+    }
+
+    #[component]
+    fn MyComponent(
+        state: &MyComponentState,
+        hooks: &mut MyComponentHooks,
+        context: MyComponentContext,
+    ) -> impl Into<AnyElement<'static>> {
+        hooks.use_async.spawn_once({
+            let counter = state.counter.clone();
+            || async move {
+                counter.set(counter.get() + 1);
+            }
+        });
+
+        if state.counter == 1 {
+            context.system.exit();
+        }
+
+        element! {
+            Text(content: format!("count: {}", state.counter))
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_terminal_render_loop() {
+        let mut buf = Vec::new();
+        terminal_render_loop(element!(MyComponent), &mut buf)
+            .await
+            .unwrap();
+        let output = String::from_utf8_lossy(&buf);
+        assert!(output.contains("count: 0"));
+        assert!(output.contains("count: 1"));
+    }
 }

@@ -19,6 +19,15 @@ install_crate = "clippy"
 command = "cargo"
 args = ["clippy", "--", "-D", "warnings"]
 
+[tasks.coverage-report]
+description = "Shows you a coverage report"
+workspace = false
+command = "cargo"
+args = [
+    "llvm-cov",
+    "--workspace",
+]
+
 [tasks.codecov-coverage]
 description = "Generate Codecov coverage report"
 workspace = false

@@ -164,3 +164,56 @@ impl<T: cmp::PartialOrd<T>> cmp::PartialOrd<Signal<T>> for Signal<T> {
 }
 
 impl<T: cmp::Eq> cmp::Eq for Signal<T> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::task::noop_waker;
+    use std::pin::Pin;
+
+    #[test]
+    fn test_signal() {
+        let mut owner = SignalOwner::new();
+        assert_eq!(
+            Pin::new(&mut owner).poll_change(&mut Context::from_waker(&noop_waker())),
+            Poll::Pending
+        );
+
+        let mut signal = owner.new_signal(42);
+        assert_eq!(signal.get(), 42);
+
+        signal.set(43);
+        assert_eq!(signal, 43);
+        assert_eq!(
+            Pin::new(&mut owner).poll_change(&mut Context::from_waker(&noop_waker())),
+            Poll::Ready(())
+        );
+        assert_eq!(
+            Pin::new(&mut owner).poll_change(&mut Context::from_waker(&noop_waker())),
+            Poll::Pending
+        );
+
+        assert_eq!(signal.to_string(), "43");
+
+        assert_eq!(signal.clone() + 1, 44);
+        signal += 1;
+        assert_eq!(signal, 44);
+
+        assert_eq!(signal.clone() - 1, 43);
+        signal -= 1;
+        assert_eq!(signal, 43);
+
+        assert_eq!(signal.clone() * 2, 86);
+        signal *= 2;
+        assert_eq!(signal, 86);
+
+        assert_eq!(signal.clone() / 2, 43);
+        signal /= 2;
+        assert_eq!(signal, 43);
+
+        assert!(signal > 42);
+        assert!(signal >= 43);
+        assert!(signal < 44);
+        assert!(signal <= owner.new_signal(100));
+    }
+}

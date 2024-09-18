@@ -170,3 +170,19 @@ impl Drop for Terminal {
         let _ = execute!(stdout(), cursor::Show);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_terminal() {
+        // There's unfortunately not much here we can really test, but we'll do our best.
+        // TODO: Is there a library we can use to emulate terminal input/output?
+        let mut terminal = Terminal::new().unwrap();
+        assert!(!terminal.is_raw_mode_enabled());
+        assert!(!terminal.received_ctrl_c());
+        terminal.set_raw_mode_enabled(false).unwrap();
+        assert!(!terminal.is_raw_mode_enabled());
+    }
+}

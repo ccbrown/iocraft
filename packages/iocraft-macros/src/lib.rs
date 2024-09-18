@@ -364,22 +364,26 @@ impl ToTokens for ParsedHooks {
             #[derive(Default)]
             #hooks
 
-            impl #name {
+            impl ::iocraft::Hook for #name {
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context) -> std::task::Poll<()> {
+                    use ::iocraft::Hook;
                     #(#status_vars)*
                     #(#returns)*
                     std::task::Poll::Pending
                 }
 
                 fn pre_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
+                    use ::iocraft::Hook;
                     #(#pre_component_updates)*
                 }
 
                 fn post_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
+                    use ::iocraft::Hook;
                     #(#post_component_updates)*
                 }
 
                 fn pre_component_render(&mut self, renderer: &mut ::iocraft::ComponentRenderer) {
+                    use ::iocraft::Hook;
                     #(#pre_component_renders)*
                 }
             }
@@ -508,7 +512,7 @@ impl Parse for ParsedComponent {
                 FnArg::Typed(arg) => {
                     let name = arg.pat.to_token_stream().to_string();
                     match name.as_str() {
-                        "props" => {
+                        "props" | "_props" => {
                             if props_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `props` argument"));
                             }
@@ -520,7 +524,7 @@ impl Parse for ParsedComponent {
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `props` type")),
                             }
                         }
-                        "state" => {
+                        "state" | "_state" => {
                             if state_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `state` argument"));
                             }
@@ -532,7 +536,7 @@ impl Parse for ParsedComponent {
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `state` type")),
                             }
                         }
-                        "hooks" => {
+                        "hooks" | "_hooks" => {
                             if hooks_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `hooks` argument"));
                             }
@@ -544,7 +548,7 @@ impl Parse for ParsedComponent {
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
                             }
                         }
-                        "context" => {
+                        "context" | "_context" => {
                             if context_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `context` argument"));
                             }
@@ -637,7 +641,7 @@ impl ToTokens for ParsedComponent {
             .args
             .iter()
             .map(|arg| match arg {
-                ComponentImplementationArg::State => quote!(&self.state),
+                ComponentImplementationArg::State => quote!(&mut self.state),
                 ComponentImplementationArg::Hooks => quote!(&mut self.hooks),
                 ComponentImplementationArg::Props => quote!(props),
                 ComponentImplementationArg::Context => {
