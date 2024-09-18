@@ -1,0 +1,40 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
+[tasks.check-format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--check"]
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+
+[tasks.test]
+command = "cargo"
+args = ["test"]
+
+[tasks.clippy]
+install_crate = "clippy"
+command = "cargo"
+args = ["clippy", "--", "-D", "warnings"]
+
+[tasks.codecov-coverage]
+description = "Generate Codecov coverage report"
+workspace = false
+command = "cargo"
+args = [
+    "llvm-cov",
+    "--workspace",
+    "--codecov",
+    "--output-path",
+    "target/codecov.json",
+]
+
+[tasks.checks]
+dependencies = [
+    "check-format",
+    "build",
+    "test",
+    "clippy",
+]
