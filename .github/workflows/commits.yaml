@@ -1,5 +1,5 @@
-name: Pull Request
-on: [pull_request]
+name: Commits
+on: [pull_request, push]
 jobs:
   Checks:
     runs-on: ubuntu-latest
