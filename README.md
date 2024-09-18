@@ -1,4 +1,5 @@
-# iocraft
+# iocraft ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ccbrown/iocraft/commit.yaml) ![Codecov](https://img.shields.io/codecov/c/github/ccbrown/iocraft)
+
 
 ## License
 
