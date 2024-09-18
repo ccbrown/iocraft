@@ -38,7 +38,7 @@ fn minimal() {
 }
 
 #[test]
-fn full_qualified_type() {
+fn fully_qualified_type() {
     pub mod foo {
         pub mod bar {
             pub type MyComponent = crate::MyComponent;

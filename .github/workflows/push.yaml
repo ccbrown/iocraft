@@ -8,10 +8,15 @@ jobs:
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: 1.80.1
-        components: clippy
-    - name: Build
-      run: cargo build --all --examples
-    - name: Test
-      run: cargo test --all
-    - name: Clippy
-      run: cargo clippy --all -- -D warnings
+        components: clippy rustfmt
+    - uses: taiki-e/install-action@cargo-make
+    - uses: taiki-e/install-action@cargo-llvm-cov
+    - name: Checks
+      run: cargo make checks
+    - name: Coverage
+      run: cargo make codecov-coverage
+    - uses: codecov/codecov-action@v4
+      with:
+        fail_ci_if_error: true
+        files: target/codecov.json
+        use_oidc: true
