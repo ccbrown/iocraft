@@ -1,6 +1,5 @@
 use iocraft::prelude::*;
 
-#[derive(Default)]
 struct NumberOfTheDay(i32);
 
 #[context]

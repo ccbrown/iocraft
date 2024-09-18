@@ -119,11 +119,11 @@ where
     }
 }
 
-impl<'a, T> From<&'a mut Element<'a, T>> for AnyElement<'a>
+impl<'a, 'b: 'a, T> From<&'a mut Element<'b, T>> for AnyElement<'a>
 where
     T: Component,
 {
-    fn from(e: &'a mut Element<'a, T>) -> Self {
+    fn from(e: &'a mut Element<'b, T>) -> Self {
         Self {
             key: e.key.clone(),
             props: AnyProps::borrowed(&mut e.props),
@@ -216,7 +216,7 @@ impl<'a> ElementExt for AnyElement<'a> {
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self).await
+        terminal_render_loop(self, stdout()).await
     }
 }
 
@@ -239,7 +239,7 @@ impl<'a> ElementExt for &mut AnyElement<'a> {
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self).await
+        terminal_render_loop(&mut **self, stdout()).await
     }
 }
 
@@ -265,7 +265,7 @@ where
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self).await
+        terminal_render_loop(self, stdout()).await
     }
 }
 
@@ -291,6 +291,31 @@ where
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self).await
+        terminal_render_loop(&mut **self, stdout()).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_element() {
+        let mut box_element = element!(Box);
+        box_element.print();
+        box_element.eprint();
+        (&mut box_element).print();
+        (&mut box_element).eprint();
+
+        let mut any_element: AnyElement<'static> = box_element.into_any();
+        any_element.print();
+        any_element.eprint();
+        (&mut any_element).print();
+        (&mut any_element).eprint();
+
+        let mut box_element = element!(Box);
+        let mut any_element_ref: AnyElement = (&mut box_element).into();
+        any_element_ref.print();
+        any_element_ref.eprint();
     }
 }

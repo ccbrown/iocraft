@@ -120,3 +120,32 @@ impl UseOutput {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::task::noop_waker;
+
+    #[test]
+    fn test_use_output() {
+        let mut use_output = UseOutput::default();
+        assert_eq!(
+            Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
+            Poll::Pending
+        );
+
+        let stdout = use_output.use_stdout();
+        stdout.println("Hello, world!");
+        assert_eq!(
+            Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
+            Poll::Ready(())
+        );
+
+        let stderr = use_output.use_stderr();
+        stderr.println("Hello, error!");
+        assert_eq!(
+            Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
+            Poll::Ready(())
+        );
+    }
+}

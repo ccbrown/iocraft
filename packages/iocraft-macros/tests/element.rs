@@ -1,4 +1,6 @@
-use iocraft::{element, AnyElement, Component, Covariant, Element};
+#![allow(dead_code)]
+
+use iocraft::{element, AnyElement, Component, Covariant, Element, Percent};
 
 #[derive(Default)]
 struct MyComponent;
@@ -6,6 +8,7 @@ struct MyComponent;
 #[derive(Covariant, Default)]
 struct MyComponentProps {
     foo: String,
+    percent: Percent,
     children: Vec<Element<'static, MyComponent>>,
 }
 
@@ -73,6 +76,39 @@ fn any_children() {
         MyContainer {
             MyContainer
             MyComponent(foo: "bar")
+        }
+    };
+    assert_eq!(e.props.children.len(), 2);
+}
+
+#[test]
+fn code_interpolation_none() {
+    let e = element! {
+        MyContainer {
+            MyContainer
+            #(None::<AnyElement<'static>>)
+        }
+    };
+    assert_eq!(e.props.children.len(), 1);
+}
+
+#[test]
+fn code_interpolation_single_child() {
+    let e = element! {
+        MyContainer {
+            MyContainer
+            #(element!(MyComponent))
+        }
+    };
+    assert_eq!(e.props.children.len(), 2);
+}
+
+#[test]
+fn percent() {
+    let e = element! {
+        MyContainer {
+            MyComponent(percent: 50pct)
+            MyComponent(percent: 50.0pct)
         }
     };
     assert_eq!(e.props.children.len(), 2);

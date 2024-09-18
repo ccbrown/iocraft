@@ -28,3 +28,35 @@ impl Component for ContextProvider {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    struct StringContext(String);
+
+    #[context]
+    struct MyComponentContext<'a> {
+        string: &'a StringContext,
+    }
+
+    #[component]
+    fn MyComponent(context: MyComponentContext) -> impl Into<AnyElement<'static>> {
+        element! {
+            Text(content: &context.string.0)
+        }
+    }
+
+    #[test]
+    fn test_context_provider() {
+        assert_eq!(
+            element! {
+                ContextProvider(value: Context::owned(StringContext("foo".to_string()))) {
+                    MyComponent
+                }
+            }
+            .to_string(),
+            "foo\n"
+        );
+    }
+}

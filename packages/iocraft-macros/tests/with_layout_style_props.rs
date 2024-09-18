@@ -1,8 +1,8 @@
 use iocraft::Display;
-use iocraft_macros::with_layout_style_props;
+use iocraft_macros::{props, with_layout_style_props};
 
 #[with_layout_style_props]
-#[derive(Default)]
+#[props]
 struct MyProps {
     foo: String,
 }

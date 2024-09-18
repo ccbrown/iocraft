@@ -287,3 +287,47 @@ impl<'a> CanvasSubviewMut<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+
+    #[test]
+    fn test_canvas_background_color() {
+        let mut canvas = Canvas::new(6, 3);
+        assert_eq!(canvas.width(), 6);
+        assert_eq!(canvas.height(), 3);
+
+        canvas
+            .subview_mut(2, 0, 3, 2, true)
+            .set_background_color(0, 0, 5, 5, Color::Red);
+
+        let mut actual = Vec::new();
+        canvas.write_ansi(&mut actual).unwrap();
+
+        let mut expected = Vec::new();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "  ").unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "   ").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, "  ").unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "   ").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
+        write!(expected, csi!("0m")).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+}
