@@ -1,5 +1,9 @@
 name: Commit
-on: [pull_request, push]
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
 jobs:
   Checks:
     runs-on: ubuntu-latest
