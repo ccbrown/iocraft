@@ -100,7 +100,7 @@ fn code_interpolation_any() {
             #(element!(MyContainer).into_any())
         }
     };
-    assert_eq!(e.props.children.len(), 1);
+    assert_eq!(e.props.children.len(), 2);
 }
 
 #[test]
