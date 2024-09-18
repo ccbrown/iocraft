@@ -302,14 +302,18 @@ mod tests {
     #[test]
     fn test_element() {
         let mut box_element = element!(Box);
+        box_element.key();
         box_element.print();
         box_element.eprint();
+        (&mut box_element).key();
         (&mut box_element).print();
         (&mut box_element).eprint();
 
         let mut any_element: AnyElement<'static> = box_element.into_any();
+        any_element.key();
         any_element.print();
         any_element.eprint();
+        (&mut any_element).key();
         (&mut any_element).print();
         (&mut any_element).eprint();
 

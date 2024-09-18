@@ -107,7 +107,7 @@ impl ToTokens for ParsedElement {
             {
                 type Props<'a> = <#ty as ::iocraft::ElementType>::Props<'a>;
                 let mut _iocraft_element = ::iocraft::Element::<#ty>{
-                    key: ::iocraft::ElementKey::new(),
+                    key: core::default::Default::default(),
                     props: Props{
                         #(#props,)*
                         ..core::default::Default::default()
