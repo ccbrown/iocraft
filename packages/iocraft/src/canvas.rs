@@ -9,7 +9,7 @@ use std::{
 };
 use unicode_width::UnicodeWidthChar;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 struct Character {
     value: char,
     style: CanvasTextStyle,
@@ -28,7 +28,7 @@ pub struct CanvasTextStyle {
     pub underline: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 struct Cell {
     background_color: Option<Color>,
     character: Option<Character>,
@@ -43,6 +43,7 @@ impl Cell {
 /// Canvas is a low-level abstraction for rendering output. Most users of the library will not need
 /// to use it directly. However, it is used by low level component implementations and can be used
 /// to store and copy their output.
+#[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
     cells: Vec<Vec<Cell>>,

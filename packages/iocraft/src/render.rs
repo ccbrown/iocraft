@@ -354,18 +354,19 @@ impl<'a> Tree<'a> {
         W: Write,
     {
         let mut terminal = Terminal::new()?;
-        let mut lines_to_rewind_to_clear = 0;
+        let mut prev_canvas: Option<Canvas> = None;
         loop {
             let width = terminal.width().ok().map(|w| w as usize);
             execute!(w, terminal::BeginSynchronizedUpdate,)?;
+            let lines_to_rewind_to_clear = prev_canvas.as_ref().map_or(0, |c| c.height());
             let output = self.render(width, Some(&mut terminal), lines_to_rewind_to_clear);
-            if !output.did_clear_terminal_output && lines_to_rewind_to_clear > 0 {
-                terminal.rewind_lines(lines_to_rewind_to_clear as _)?;
+            if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas) {
+                if !output.did_clear_terminal_output {
+                    terminal.rewind_lines(lines_to_rewind_to_clear as _)?;
+                }
+                output.canvas.write_ansi(&mut w)?;
             }
-            // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
-            // only write the diff
-            output.canvas.write_ansi(&mut w)?;
-            lines_to_rewind_to_clear = output.canvas.height();
+            prev_canvas = Some(output.canvas);
             execute!(w, terminal::EndSynchronizedUpdate)?;
             if self.system_context.should_exit() || terminal.received_ctrl_c() {
                 break;

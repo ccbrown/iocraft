@@ -181,7 +181,11 @@ impl Terminal {
     }
 
     pub fn rewind_lines(&mut self, lines: u16) -> io::Result<()> {
-        self.inner.rewind_lines(lines)
+        if lines > 0 {
+            self.inner.rewind_lines(lines)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn received_ctrl_c(&self) -> bool {
