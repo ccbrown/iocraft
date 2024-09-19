@@ -6,13 +6,13 @@ use crate::{
     props::AnyProps,
     terminal::{Terminal, TerminalEvents},
 };
-use crossterm::{cursor, execute, queue, terminal};
+use crossterm::{execute, terminal};
 use futures::future::{select, FutureExt};
 use std::{
     any::Any,
     cell::{Ref, RefMut},
     collections::HashMap,
-    io::{self, stdout, Write},
+    io::{self, Write},
     mem,
 };
 use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
@@ -67,12 +67,11 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     /// output above the component.
     pub fn clear_terminal_output(&mut self) {
         if !self.context.did_clear_terminal_output {
-            queue!(
-                stdout(),
-                cursor::MoveToPreviousLine(self.context.lines_to_rewind_to_clear as _),
-                terminal::Clear(terminal::ClearType::FromCursorDown)
-            )
-            .unwrap();
+            if let Some(terminal) = self.context.terminal.as_mut() {
+                terminal
+                    .rewind_lines(self.context.lines_to_rewind_to_clear as _)
+                    .unwrap();
+            }
             self.context.did_clear_terminal_output = true;
         }
     }
@@ -357,23 +356,17 @@ impl<'a> Tree<'a> {
         let mut terminal = Terminal::new()?;
         let mut lines_to_rewind_to_clear = 0;
         loop {
-            let width = terminal::size().map(|(w, _)| w as usize).ok();
-            queue!(w, terminal::BeginSynchronizedUpdate,)?;
-            w.flush()?;
+            let width = terminal.width().ok().map(|w| w as usize);
+            execute!(w, terminal::BeginSynchronizedUpdate,)?;
             let output = self.render(width, Some(&mut terminal), lines_to_rewind_to_clear);
             if !output.did_clear_terminal_output && lines_to_rewind_to_clear > 0 {
-                queue!(w, cursor::MoveToPreviousLine(lines_to_rewind_to_clear as _),)?;
+                terminal.rewind_lines(lines_to_rewind_to_clear as _)?;
             }
-            w.flush()?;
             // TODO: if we wanted to be efficient and the terminal wasn't cleared, we could
             // only write the diff
             output.canvas.write_ansi(&mut w)?;
             lines_to_rewind_to_clear = output.canvas.height();
-            execute!(
-                w,
-                terminal::Clear(terminal::ClearType::FromCursorDown,),
-                terminal::EndSynchronizedUpdate
-            )?;
+            execute!(w, terminal::EndSynchronizedUpdate)?;
             if self.system_context.should_exit() || terminal.received_ctrl_c() {
                 break;
             }
