@@ -25,17 +25,16 @@ const FACE: &str = "👾";
 #[component]
 fn Example(
     context: ExampleContext,
-    state: &ExampleState,
+    state: ExampleState,
     hooks: &mut ExampleHooks,
 ) -> impl Into<AnyElement<'static>> {
     hooks.input.use_terminal_events({
-        let x = state.x.clone();
-        let y = state.y.clone();
-        let should_exit = state.should_exit.clone();
+        let x = state.x;
+        let y = state.y;
         move |event| match event {
             TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {
                 match code {
-                    KeyCode::Char('q') => should_exit.set(true),
+                    KeyCode::Char('q') => state.should_exit.set(true),
                     KeyCode::Up => y.set((y.get() as i32 - 1).max(0) as _),
                     KeyCode::Down => y.set((y.get() + 1).min(AREA_HEIGHT - 1)),
                     KeyCode::Left => x.set((x.get() as i32 - 1).max(0) as _),

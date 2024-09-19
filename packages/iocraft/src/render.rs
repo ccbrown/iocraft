@@ -430,15 +430,12 @@ mod tests {
 
     #[component]
     fn MyComponent(
-        state: &MyComponentState,
+        mut state: MyComponentState,
         hooks: &mut MyComponentHooks,
         context: MyComponentContext,
     ) -> impl Into<AnyElement<'static>> {
-        hooks.use_async.spawn_once({
-            let counter = state.counter.clone();
-            || async move {
-                counter.set(counter.get() + 1);
-            }
+        hooks.use_async.spawn_once(move || async move {
+            state.counter += 1;
         });
 
         if state.counter == 1 {

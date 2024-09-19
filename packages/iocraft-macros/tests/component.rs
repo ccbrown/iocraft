@@ -14,7 +14,17 @@ struct MyState {
 }
 
 #[component]
-fn MyComponentWithState(_state: &MyState) -> impl Into<AnyElement<'static>> {
+fn MyComponentWithStateCopy(_state: MyState) -> impl Into<AnyElement<'static>> {
+    element!(Box)
+}
+
+#[component]
+fn MyComponentWithMutStateCopy(mut _state: MyState) -> impl Into<AnyElement<'static>> {
+    element!(Box)
+}
+
+#[component]
+fn MyComponentWithStateRef(_state: &MyState) -> impl Into<AnyElement<'static>> {
     element!(Box)
 }
 

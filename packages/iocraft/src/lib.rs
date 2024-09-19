@@ -16,6 +16,7 @@ mod canvas;
 mod component;
 mod context;
 mod element;
+mod handler;
 mod hook;
 mod props;
 mod render;
@@ -28,6 +29,7 @@ mod flattened_exports {
     pub use crate::component::*;
     pub use crate::context::*;
     pub use crate::element::*;
+    pub use crate::handler::*;
     pub use crate::hook::*;
     pub use crate::props::*;
     pub use crate::render::*;

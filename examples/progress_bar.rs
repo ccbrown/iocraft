@@ -18,17 +18,14 @@ struct ProgressBarHooks {
 
 #[component]
 fn ProgressBar(
-    state: &ProgressBarState,
+    state: ProgressBarState,
     hooks: &mut ProgressBarHooks,
     context: ProgressBarContext,
 ) -> impl Into<AnyElement<'static>> {
-    hooks.run_loop.spawn_once({
-        let progress = state.progress.clone();
-        || async move {
-            loop {
-                smol::Timer::after(Duration::from_millis(100)).await;
-                progress.set((progress.get() + 2.0).min(100.0));
-            }
+    hooks.run_loop.spawn_once(move || async move {
+        loop {
+            smol::Timer::after(Duration::from_millis(100)).await;
+            state.progress.set((state.progress.get() + 2.0).min(100.0));
         }
     });
 

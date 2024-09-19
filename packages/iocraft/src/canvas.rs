@@ -188,6 +188,11 @@ impl Canvas {
                 }
             }
             if ansi {
+                // if the background color is set, we need to reset it
+                if background_color.is_some() {
+                    write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
+                    background_color = None;
+                }
                 // clear until end of line
                 write!(w, csi!("K"))?;
                 // add a carriage return in case we're in raw mode
@@ -311,17 +316,23 @@ mod tests {
         write!(expected, "  ").unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "   ").unwrap();
-        write!(expected, csi!("K")).unwrap();
-        write!(expected, "\r\n").unwrap();
         write!(
             expected,
             csi!("{}m"),
             Colored::BackgroundColor(Color::Reset)
         )
         .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
         write!(expected, "  ").unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "   ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, "\r\n").unwrap();
         write!(expected, csi!("K")).unwrap();

@@ -11,10 +11,10 @@ taffy = { version = "0.5.2", default-features = false, features = ["flexbox", "t
 iocraft-macros = { path = "../iocraft-macros" }
 uuid = { version = "1.10.0", features = ["v4"] }
 derive_more = { version = "1.0.0", features = ["debug", "display"] }
-futures-signals = { version = "0.3.34", default-features = false }
 bitflags = "2.6.0"
 unicode-width = "0.1.13"
 textwrap = "0.16.1"
+generational-box = "0.5.6"
 
 [dev-dependencies]
 indoc = "2"

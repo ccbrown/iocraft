@@ -13,7 +13,7 @@ use syn::{
     spanned::Spanned,
     token::{Brace, Comma, Paren},
     DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Ident, ItemFn, ItemStruct, Lifetime,
-    Lit, Result, Token, Type, TypePath,
+    Lit, Pat, Result, Token, Type, TypePath,
 };
 
 enum ParsedElementChild {
@@ -293,6 +293,7 @@ impl ToTokens for ParsedState {
         });
 
         tokens.extend(quote! {
+            #[derive(Clone, Copy)]
             #state
 
             impl #name {
@@ -481,20 +482,13 @@ pub fn context(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#context).into()
 }
 
-enum ComponentImplementationArg {
-    State,
-    Hooks,
-    Props,
-    Context,
-}
-
 struct ParsedComponent {
     f: ItemFn,
     props_type: Option<Box<Type>>,
     state_type: Option<Box<Type>>,
     hooks_type: Option<Box<Type>>,
     context_type: Option<Box<Type>>,
-    args: Vec<ComponentImplementationArg>,
+    impl_args: Vec<proc_macro2::TokenStream>,
 }
 
 impl Parse for ParsedComponent {
@@ -505,12 +499,16 @@ impl Parse for ParsedComponent {
         let mut state_type = None;
         let mut hooks_type = None;
         let mut context_type = None;
-        let mut args = Vec::new();
+        let mut impl_args = Vec::new();
 
         for arg in &f.sig.inputs {
             match arg {
                 FnArg::Typed(arg) => {
-                    let name = arg.pat.to_token_stream().to_string();
+                    let name = match &*arg.pat {
+                        Pat::Ident(arg) => arg.ident.to_string(),
+                        _ => return Err(Error::new(arg.pat.span(), "invalid argument")),
+                    };
+
                     match name.as_str() {
                         "props" | "_props" => {
                             if props_type.is_some() {
@@ -519,7 +517,7 @@ impl Parse for ParsedComponent {
                             match &*arg.ty {
                                 Type::Reference(r) => {
                                     props_type = Some(r.elem.clone());
-                                    args.push(ComponentImplementationArg::Props);
+                                    impl_args.push(quote!(props));
                                 }
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `props` type")),
                             }
@@ -530,8 +528,12 @@ impl Parse for ParsedComponent {
                             }
                             match &*arg.ty {
                                 Type::Reference(r) => {
+                                    impl_args.push(quote!(&mut self.state));
                                     state_type = Some(r.elem.clone());
-                                    args.push(ComponentImplementationArg::State);
+                                }
+                                Type::Path(_) => {
+                                    impl_args.push(quote!(self.state.clone()));
+                                    state_type = Some(arg.ty.clone());
                                 }
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `state` type")),
                             }
@@ -543,7 +545,7 @@ impl Parse for ParsedComponent {
                             match &*arg.ty {
                                 Type::Reference(r) => {
                                     hooks_type = Some(r.elem.clone());
-                                    args.push(ComponentImplementationArg::Hooks);
+                                    impl_args.push(quote!(&mut self.hooks));
                                 }
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
                             }
@@ -555,7 +557,10 @@ impl Parse for ParsedComponent {
                             match &*arg.ty {
                                 Type::Path(_) => {
                                     context_type = Some(arg.ty.clone());
-                                    args.push(ComponentImplementationArg::Context);
+                                    impl_args.push({
+                                        let type_name = &arg.ty;
+                                        quote!(#type_name::borrow_refs(&mut context_refs))
+                                    });
                                 }
                                 _ => {
                                     return Err(Error::new(arg.ty.span(), "invalid `context` type"))
@@ -575,7 +580,7 @@ impl Parse for ParsedComponent {
             state_type,
             hooks_type,
             context_type,
-            args,
+            impl_args,
         })
     }
 }
@@ -588,6 +593,7 @@ impl ToTokens for ParsedComponent {
         let block = &self.f.block;
         let output = &self.f.sig.output;
         let generics = &self.f.sig.generics;
+        let impl_args = &self.impl_args;
 
         let state_decl = self.state_type.as_ref().map(|ty| quote!(state: #ty,));
         let state_init = self
@@ -636,20 +642,6 @@ impl ToTokens for ParsedComponent {
                 let mut context_refs = #ty::refs_from_component_updater(updater);
             }
         });
-
-        let impl_args = self
-            .args
-            .iter()
-            .map(|arg| match arg {
-                ComponentImplementationArg::State => quote!(&mut self.state),
-                ComponentImplementationArg::Hooks => quote!(&mut self.hooks),
-                ComponentImplementationArg::Props => quote!(props),
-                ComponentImplementationArg::Context => {
-                    let type_name = self.context_type.as_ref().unwrap();
-                    quote!(#type_name::borrow_refs(&mut context_refs))
-                }
-            })
-            .collect::<Vec<_>>();
 
         tokens.extend(quote! {
             #vis struct #name {

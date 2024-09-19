@@ -124,3 +124,14 @@ fn percent() {
     };
     assert_eq!(e.props.children.len(), 2);
 }
+
+#[test]
+fn comment() {
+    let e = element! {
+        MyContainer {
+            // This is a comment!
+            MyContainer
+        }
+    };
+    assert_eq!(e.props.children.len(), 1);
+}
