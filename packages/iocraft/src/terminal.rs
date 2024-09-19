@@ -8,6 +8,7 @@ use futures::{
     stream::{Stream, StreamExt},
 };
 use std::{
+    collections::VecDeque,
     io::{self, stdout},
     pin::Pin,
     sync::{Arc, Mutex, Weak},
@@ -39,7 +40,7 @@ pub enum TerminalEvent {
 }
 
 struct TerminalEventsInner {
-    pending: Vec<TerminalEvent>,
+    pending: VecDeque<TerminalEvent>,
     waker: Option<Waker>,
 }
 
@@ -53,7 +54,7 @@ impl Stream for TerminalEvents {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let mut inner = self.inner.lock().unwrap();
-        if let Some(event) = inner.pending.pop() {
+        if let Some(event) = inner.pending.pop_front() {
             Poll::Ready(Some(event))
         } else {
             inner.waker = Some(cx.waker().clone());
@@ -115,7 +116,7 @@ impl Terminal {
                         self.subscribers.retain(|subscriber| {
                             if let Some(subscriber) = subscriber.upgrade() {
                                 let mut subscriber = subscriber.lock().unwrap();
-                                subscriber.pending.push(event.clone());
+                                subscriber.pending.push_back(event.clone());
                                 if let Some(waker) = subscriber.waker.take() {
                                     waker.wake();
                                 }
@@ -143,7 +144,7 @@ impl Terminal {
             self.event_stream = Some(EventStream::new());
         }
         let inner = Arc::new(Mutex::new(TerminalEventsInner {
-            pending: Vec::new(),
+            pending: VecDeque::new(),
             waker: None,
         }));
         self.subscribers.push(Arc::downgrade(&inner));

@@ -280,10 +280,28 @@ impl<'a> CanvasSubviewMut<'a> {
             if !self.clip || (y >= 0 && y < self.height as isize) {
                 let y = self.y as isize + y;
                 if y >= 0 && y < self.canvas.height() as _ {
+                    let mut skipped_width = 0;
+                    let mut taken_width = 0;
                     self.canvas.set_text_row_chars(
                         x as usize,
                         y as usize,
-                        line.chars().skip(to_skip as _).take(horizontal_space as _),
+                        line.chars()
+                            .skip_while(|c| {
+                                if skipped_width < to_skip {
+                                    skipped_width += c.width().unwrap_or(0) as isize;
+                                    true
+                                } else {
+                                    false
+                                }
+                            })
+                            .take_while(|c| {
+                                if taken_width < horizontal_space {
+                                    taken_width += c.width().unwrap_or(0) as isize;
+                                    true
+                                } else {
+                                    false
+                                }
+                            }),
                         style,
                     );
                 }
