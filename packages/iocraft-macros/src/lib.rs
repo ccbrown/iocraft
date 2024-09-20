@@ -314,91 +314,6 @@ pub fn state(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#state).into()
 }
 
-struct ParsedHooks {
-    hooks: ItemStruct,
-}
-
-impl Parse for ParsedHooks {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let hooks: ItemStruct = input.parse()?;
-        Ok(Self { hooks })
-    }
-}
-
-impl ToTokens for ParsedHooks {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let hooks = &self.hooks;
-        let name = &hooks.ident;
-
-        let status_vars = hooks.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            quote! { let #field_name = std::pin::Pin::new(&mut self.#field_name).poll_change(cx); }
-        });
-        let returns = hooks.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            quote! {
-                if #field_name.is_ready() {
-                    return std::task::Poll::Ready(());
-                }
-            }
-        });
-        let pre_component_updates = hooks.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            quote! {
-                self.#field_name.pre_component_update(updater);
-            }
-        });
-        let post_component_updates = hooks.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            quote! {
-                self.#field_name.post_component_update(updater);
-            }
-        });
-        let pre_component_draws = hooks.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            quote! {
-                self.#field_name.pre_component_draw(drawer);
-            }
-        });
-
-        tokens.extend(quote! {
-            #[derive(Default)]
-            #hooks
-
-            impl ::iocraft::Hook for #name {
-                fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context) -> std::task::Poll<()> {
-                    use ::iocraft::Hook;
-                    #(#status_vars)*
-                    #(#returns)*
-                    std::task::Poll::Pending
-                }
-
-                fn pre_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
-                    use ::iocraft::Hook;
-                    #(#pre_component_updates)*
-                }
-
-                fn post_component_update(&mut self, updater: &mut ::iocraft::ComponentUpdater) {
-                    use ::iocraft::Hook;
-                    #(#post_component_updates)*
-                }
-
-                fn pre_component_draw(&mut self, drawer: &mut ::iocraft::ComponentDrawer) {
-                    use ::iocraft::Hook;
-                    #(#pre_component_draws)*
-                }
-            }
-        });
-    }
-}
-
-/// Defines a struct containing hooks to be made available to components.
-#[proc_macro_attribute]
-pub fn hooks(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let hooks = parse_macro_input!(item as ParsedHooks);
-    quote!(#hooks).into()
-}
-
 struct ParsedContext {
     context: ItemStruct,
 }
@@ -486,7 +401,6 @@ struct ParsedComponent {
     f: ItemFn,
     props_type: Option<Box<Type>>,
     state_type: Option<Box<Type>>,
-    hooks_type: Option<Box<Type>>,
     context_type: Option<Box<Type>>,
     impl_args: Vec<proc_macro2::TokenStream>,
 }
@@ -497,7 +411,6 @@ impl Parse for ParsedComponent {
 
         let mut props_type = None;
         let mut state_type = None;
-        let mut hooks_type = None;
         let mut context_type = None;
         let mut impl_args = Vec::new();
 
@@ -522,6 +435,15 @@ impl Parse for ParsedComponent {
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `props` type")),
                             }
                         }
+                        "hooks" | "_hooks" => match &*arg.ty {
+                            Type::Reference(_) => {
+                                impl_args.push(quote!(&mut hooks));
+                            }
+                            Type::Path(_) => {
+                                impl_args.push(quote!(hooks));
+                            }
+                            _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
+                        },
                         "state" | "_state" => {
                             if state_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `state` argument"));
@@ -536,18 +458,6 @@ impl Parse for ParsedComponent {
                                     state_type = Some(arg.ty.clone());
                                 }
                                 _ => return Err(Error::new(arg.ty.span(), "invalid `state` type")),
-                            }
-                        }
-                        "hooks" | "_hooks" => {
-                            if hooks_type.is_some() {
-                                return Err(Error::new(arg.span(), "duplicate `hooks` argument"));
-                            }
-                            match &*arg.ty {
-                                Type::Reference(r) => {
-                                    hooks_type = Some(r.elem.clone());
-                                    impl_args.push(quote!(&mut self.hooks));
-                                }
-                                _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
                             }
                         }
                         "context" | "_context" => {
@@ -578,7 +488,6 @@ impl Parse for ParsedComponent {
             f,
             props_type,
             state_type,
-            hooks_type,
             context_type,
             impl_args,
         })
@@ -601,36 +510,6 @@ impl ToTokens for ParsedComponent {
             .as_ref()
             .map(|ty| quote!(state: #ty::new(&mut signal_owner),));
 
-        let hooks_decl = self.hooks_type.as_ref().map(|ty| quote!(hooks: #ty,));
-        let hooks_init = self
-            .hooks_type
-            .as_ref()
-            .map(|ty| quote!(hooks: #ty::default(),));
-        let hooks_status_check = self.hooks_type.as_ref().map(|_| {
-            quote! {
-                let hooks_status = std::pin::Pin::new(&mut self.hooks).poll_change(cx);
-            }
-        });
-        let hooks_status_return = self.hooks_type.as_ref().map(|_| {
-            quote! {
-                if hooks_status.is_ready() {
-                    return std::task::Poll::Ready(());
-                }
-            }
-        });
-        let hooks_pre_component_update = self
-            .hooks_type
-            .as_ref()
-            .map(|_| quote! { self.hooks.pre_component_update(updater); });
-        let hooks_post_component_update = self
-            .hooks_type
-            .as_ref()
-            .map(|_| quote! { self.hooks.post_component_update(updater); });
-        let hooks_pre_component_draw = self
-            .hooks_type
-            .as_ref()
-            .map(|_| quote! { self.hooks.pre_component_draw(drawer); });
-
         let props_type_name = self
             .props_type
             .as_ref()
@@ -646,8 +525,9 @@ impl ToTokens for ParsedComponent {
         tokens.extend(quote! {
             #vis struct #name {
                 signal_owner: ::iocraft::SignalOwner,
+                hooks: Vec<std::boxed::Box<dyn ::iocraft::AnyHook>>,
+                first_update: bool,
                 #state_decl
-                #hooks_decl
             }
 
             impl #name {
@@ -661,37 +541,43 @@ impl ToTokens for ParsedComponent {
                     let mut signal_owner = ::iocraft::SignalOwner::new();
                     Self {
                         #state_init
-                        #hooks_init
+                        hooks: Vec::new(),
+                        first_update: true,
                         signal_owner,
                     }
                 }
 
                 fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater) {
-                    #hooks_pre_component_update
+                    use ::iocraft::Hook;
+                    self.hooks.pre_component_update(updater);
                     {
+                        let hooks = ::iocraft::Hooks::new(&mut self.hooks, self.first_update);
                         let mut e = {
                             #context_refs
                             Self::implementation(#(#impl_args),*).into()
                         };
                         updater.update_children([&mut e], None);
                     }
-                    #hooks_post_component_update
+                    self.hooks.post_component_update(updater);
+                    self.first_update = false;
                 }
 
                 fn draw(&mut self, drawer: &mut ::iocraft::ComponentDrawer) {
-                    #hooks_pre_component_draw
+                    use ::iocraft::Hook;
+                    self.hooks.pre_component_draw(drawer);
                 }
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+                    use ::iocraft::Hook;
+
                     let signals_status = std::pin::Pin::new(&mut self.signal_owner).poll_change(cx);
-                    #hooks_status_check
+                    let hooks_status = std::pin::Pin::new(&mut self.hooks).poll_change(cx);
 
-                    if signals_status.is_ready() {
-                        return std::task::Poll::Ready(());
+                    if signals_status.is_ready() || hooks_status.is_ready() {
+                        std::task::Poll::Ready(())
+                    } else {
+                        std::task::Poll::Pending
                     }
-                    #hooks_status_return
-
-                    std::task::Poll::Pending
                 }
             }
         });

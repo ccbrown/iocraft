@@ -13,11 +13,6 @@ struct ExampleState {
     y: Signal<u32>,
 }
 
-#[hooks]
-struct ExampleHooks {
-    input: UseInput,
-}
-
 const AREA_WIDTH: u32 = 80;
 const AREA_HEIGHT: u32 = 11;
 const FACE: &str = "👾";
@@ -26,9 +21,9 @@ const FACE: &str = "👾";
 fn Example(
     context: ExampleContext,
     state: ExampleState,
-    hooks: &mut ExampleHooks,
+    mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
-    hooks.input.use_terminal_events({
+    hooks.use_terminal_events({
         let x = state.x;
         let y = state.y;
         move |event| match event {

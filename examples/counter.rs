@@ -6,14 +6,9 @@ struct CounterState {
     count: Signal<i32>,
 }
 
-#[hooks]
-struct CounterHooks {
-    run_loop: UseAsync,
-}
-
 #[component]
-fn Counter(mut state: CounterState, hooks: &mut CounterHooks) -> impl Into<AnyElement<'static>> {
-    hooks.run_loop.spawn_once(move || async move {
+fn Counter(mut state: CounterState, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    hooks.use_future(async move {
         loop {
             smol::Timer::after(Duration::from_millis(100)).await;
             state.count += 1;

@@ -1,9 +1,23 @@
-use crate::{ComponentUpdater, Hook};
+use crate::{ComponentUpdater, Hook, Hooks};
 use std::{
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll, Waker},
 };
+
+/// `UseOutput` is a hook that allows you to write to stdout and stderr from a component. The
+/// output will be appended to stdout or stderr, above the rendered component output.
+pub trait UseOutput {
+    /// Gets handles which can be used to write to stdout and stderr.
+    fn use_output(&mut self) -> (UseStdoutHandle, UseStderrHandle);
+}
+
+impl UseOutput for Hooks<'_> {
+    fn use_output(&mut self) -> (UseStdoutHandle, UseStderrHandle) {
+        let output = self.use_hook(UseOutputImpl::default);
+        (output.use_stdout(), output.use_stderr())
+    }
+}
 
 enum Message {
     Stdout(String),
@@ -81,14 +95,12 @@ impl UseStderrHandle {
     }
 }
 
-/// `UseOutput` is a hook that allows you to write to stdout and stderr from a component. The
-/// output will be appended to stdout or stderr, above the rendered component output.
 #[derive(Default)]
-pub struct UseOutput {
+struct UseOutputImpl {
     state: Arc<Mutex<UseOutputState>>,
 }
 
-impl Hook for UseOutput {
+impl Hook for UseOutputImpl {
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         let mut state = self.state.lock().unwrap();
         if state.queue.is_empty() {
@@ -105,15 +117,13 @@ impl Hook for UseOutput {
     }
 }
 
-impl UseOutput {
-    /// Gets a handle which can be used to write to stdout.
+impl UseOutputImpl {
     pub fn use_stdout(&mut self) -> UseStdoutHandle {
         UseStdoutHandle {
             state: self.state.clone(),
         }
     }
 
-    /// Gets a handle which can be used to write to stderr.
     pub fn use_stderr(&mut self) -> UseStderrHandle {
         UseStderrHandle {
             state: self.state.clone(),
@@ -128,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_use_output() {
-        let mut use_output = UseOutput::default();
+        let mut use_output = UseOutputImpl::default();
         assert_eq!(
             Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
             Poll::Pending

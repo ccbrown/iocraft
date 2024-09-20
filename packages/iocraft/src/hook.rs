@@ -1,5 +1,6 @@
 use crate::{ComponentDrawer, ComponentUpdater};
 use std::{
+    any::Any,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -9,7 +10,7 @@ use std::{
 ///
 /// Hooks are created by implementing this trait. All methods have default implementations, so
 /// you only need to implement the ones you care about.
-pub trait Hook: Default {
+pub trait Hook: Unpin {
     /// Called to determine if the hook has caused a change which requires its component to be
     /// redrawn.
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<()> {
@@ -24,4 +25,90 @@ pub trait Hook: Default {
 
     /// Called before the component is drawn.
     fn pre_component_draw(&mut self, _drawer: &mut ComponentDrawer) {}
+}
+
+#[doc(hidden)]
+pub trait AnyHook: Hook {
+    fn any_self_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T: Hook + 'static> AnyHook for T {
+    fn any_self_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl Hook for Vec<Box<dyn AnyHook>> {
+    fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        let mut is_ready = false;
+        for hook in self.iter_mut() {
+            if let Poll::Ready(()) = Pin::new(&mut **hook).poll_change(cx) {
+                is_ready = true;
+            }
+        }
+
+        if is_ready {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+
+    fn pre_component_update(&mut self, updater: &mut ComponentUpdater) {
+        for hook in self.iter_mut() {
+            hook.pre_component_update(updater);
+        }
+    }
+
+    fn post_component_update(&mut self, updater: &mut ComponentUpdater) {
+        for hook in self.iter_mut() {
+            hook.post_component_update(updater);
+        }
+    }
+
+    fn pre_component_draw(&mut self, drawer: &mut ComponentDrawer) {
+        for hook in self.iter_mut() {
+            hook.pre_component_draw(drawer);
+        }
+    }
+}
+
+/// A collection of hooks attached to a component.
+///
+/// Custom hooks can be defined by creating a trait with additional methods and implementing it for
+/// `Hooks<'_>`.
+pub struct Hooks<'a> {
+    hooks: &'a mut Vec<Box<dyn AnyHook>>,
+    first_update: bool,
+    hook_index: usize,
+}
+
+impl<'a> Hooks<'a> {
+    #[doc(hidden)]
+    pub fn new(hooks: &'a mut Vec<Box<dyn AnyHook>>, first_update: bool) -> Self {
+        Self {
+            hooks,
+            first_update,
+            hook_index: 0,
+        }
+    }
+
+    /// If this is the component's first render, this function adds a new hook to the component and
+    /// returns it.
+    ///
+    /// If it is a subsequent render, this function does nothing and returns the hook that was
+    /// added during the first render.
+    pub fn use_hook<H, F>(&mut self, f: F) -> &mut H
+    where
+        F: FnOnce() -> H,
+        H: Hook + Unpin + 'static,
+    {
+        if self.first_update {
+            self.hooks.push(Box::new(f()));
+        }
+
+        let idx = self.hook_index;
+        self.hook_index += 1;
+        self.hooks.get_mut(idx).and_then(|hook| hook.any_self_mut().downcast_mut::<H>()).expect("Unexpected hook type! Most likely you've violated the rules of hooks and called this hook in a different order than the previous render.")
+    }
 }

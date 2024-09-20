@@ -42,11 +42,6 @@ struct FormContext<'a> {
     system: &'a mut SystemContext,
 }
 
-#[hooks]
-struct FormHooks {
-    input: UseInput,
-}
-
 #[state]
 struct FormState {
     first_name: Signal<String>,
@@ -65,10 +60,10 @@ struct FormProps<'a> {
 fn Form<'a>(
     props: &mut FormProps<'a>,
     state: FormState,
-    hooks: &mut FormHooks,
+    mut hooks: Hooks,
     context: FormContext,
 ) -> impl Into<AnyElement<'static>> {
-    hooks.input.use_terminal_events(move |event| match event {
+    hooks.use_terminal_events(move |event| match event {
         TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {
             match code {
                 KeyCode::Enter => state.should_submit.set(true),

@@ -403,18 +403,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{hooks::UseAsync, prelude::*};
+    use crate::{hooks::UseFuture, prelude::*};
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
     #[state]
     struct MyComponentState {
         counter: Signal<i32>,
-    }
-
-    #[hooks]
-    struct MyComponentHooks {
-        use_async: UseAsync,
     }
 
     #[context]
@@ -425,10 +420,10 @@ mod tests {
     #[component]
     fn MyComponent(
         mut state: MyComponentState,
-        hooks: &mut MyComponentHooks,
+        mut hooks: Hooks,
         context: MyComponentContext,
     ) -> impl Into<AnyElement<'static>> {
-        hooks.use_async.spawn_once(move || async move {
+        hooks.use_future(async move {
             state.counter += 1;
         });
 

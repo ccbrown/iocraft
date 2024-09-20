@@ -11,18 +11,13 @@ struct ProgressBarState {
     progress: Signal<f32>,
 }
 
-#[hooks]
-struct ProgressBarHooks {
-    run_loop: UseAsync,
-}
-
 #[component]
 fn ProgressBar(
     state: ProgressBarState,
-    hooks: &mut ProgressBarHooks,
+    mut hooks: Hooks,
     context: ProgressBarContext,
 ) -> impl Into<AnyElement<'static>> {
-    hooks.run_loop.spawn_once(move || async move {
+    hooks.use_future(async move {
         loop {
             smol::Timer::after(Duration::from_millis(100)).await;
             state.progress.set((state.progress.get() + 2.0).min(100.0));
