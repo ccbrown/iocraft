@@ -1,5 +1,5 @@
 use crate::{
-    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant, Weight,
+    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant, Hooks, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -120,7 +120,12 @@ impl Component for Text {
         Self::default()
     }
 
-    fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
+    fn update(
+        &mut self,
+        props: &mut Self::Props<'_>,
+        _hooks: Hooks,
+        updater: &mut ComponentUpdater,
+    ) {
         self.style = CanvasTextStyle {
             color: props.color,
             weight: props.weight,

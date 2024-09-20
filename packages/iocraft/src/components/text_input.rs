@@ -1,6 +1,6 @@
 use crate::{
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant, Handler,
-    KeyCode, KeyEvent, KeyEventKind, TerminalEvent, TerminalEvents,
+    Hooks, KeyCode, KeyEvent, KeyEventKind, TerminalEvent, TerminalEvents,
 };
 use futures::stream::Stream;
 use std::{
@@ -42,7 +42,12 @@ impl Component for TextInput {
         Self::default()
     }
 
-    fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
+    fn update(
+        &mut self,
+        props: &mut Self::Props<'_>,
+        _hooks: Hooks,
+        updater: &mut ComponentUpdater,
+    ) {
         if self.events.is_none() {
             self.events = updater.terminal_events();
         }

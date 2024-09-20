@@ -456,10 +456,7 @@ impl ToTokens for ParsedComponent {
         });
 
         tokens.extend(quote! {
-            #vis struct #name {
-                hooks: Vec<std::boxed::Box<dyn ::iocraft::AnyHook>>,
-                first_update: bool,
-            }
+            #vis struct #name {}
 
             impl #name {
                 fn implementation #generics (#args) #output #block
@@ -469,35 +466,17 @@ impl ToTokens for ParsedComponent {
                 type Props<'a> = #props_type_name;
 
                 fn new(_props: &Self::Props<'_>) -> Self {
-                    Self {
-                        hooks: Vec::new(),
-                        first_update: true,
-                    }
+                    Self {}
                 }
 
-                fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ::iocraft::ComponentUpdater) {
-                    use ::iocraft::Hook;
-                    self.hooks.pre_component_update(updater);
+                fn update(&mut self, props: &mut Self::Props<'_>, hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
                     {
-                        let hooks = ::iocraft::Hooks::new(&mut self.hooks, self.first_update);
                         let mut e = {
                             #context_refs
                             Self::implementation(#(#impl_args),*).into()
                         };
                         updater.update_children([&mut e], None);
                     }
-                    self.hooks.post_component_update(updater);
-                    self.first_update = false;
-                }
-
-                fn draw(&mut self, drawer: &mut ::iocraft::ComponentDrawer) {
-                    use ::iocraft::Hook;
-                    self.hooks.pre_component_draw(drawer);
-                }
-
-                fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
-                    use ::iocraft::Hook;
-                    std::pin::Pin::new(&mut self.hooks).poll_change(cx)
                 }
             }
         });

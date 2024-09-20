@@ -1,6 +1,7 @@
 use crate::{
     context::ContextStack,
     element::{ElementKey, ElementType},
+    hook::{AnyHook, Hook, Hooks},
     props::{AnyProps, Covariant},
     render::{ComponentDrawer, ComponentUpdater, UpdateContext},
 };
@@ -33,6 +34,7 @@ pub trait ComponentHelperExt: Any {
         &self,
         component: &mut Box<dyn AnyComponent>,
         props: AnyProps,
+        hooks: Hooks,
         updater: &mut ComponentUpdater,
     );
     fn component_type_id(&self) -> TypeId;
@@ -48,9 +50,10 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
         &self,
         component: &mut Box<dyn AnyComponent>,
         props: AnyProps,
+        hooks: Hooks,
         updater: &mut ComponentUpdater,
     ) {
-        component.update(props, updater);
+        component.update(props, hooks, updater);
     }
 
     fn component_type_id(&self) -> TypeId {
@@ -77,7 +80,13 @@ pub trait Component: Any + Unpin {
     fn new(props: &Self::Props<'_>) -> Self;
 
     /// Invoked whenever the properties of the component or layout may have changed.
-    fn update(&mut self, _props: &mut Self::Props<'_>, _updater: &mut ComponentUpdater) {}
+    fn update(
+        &mut self,
+        _props: &mut Self::Props<'_>,
+        _hooks: Hooks,
+        _updater: &mut ComponentUpdater,
+    ) {
+    }
 
     /// Invoked to draw the component.
     fn draw(&mut self, _drawer: &mut ComponentDrawer<'_>) {}
@@ -95,14 +104,19 @@ impl<C: Component> ElementType for C {
 
 #[doc(hidden)]
 pub trait AnyComponent: Any + Unpin {
-    fn update(&mut self, props: AnyProps, updater: &mut ComponentUpdater);
+    fn update(&mut self, props: AnyProps, hooks: Hooks, updater: &mut ComponentUpdater);
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
 impl<C: Any + Component> AnyComponent for C {
-    fn update(&mut self, mut props: AnyProps, updater: &mut ComponentUpdater) {
-        Component::update(self, unsafe { props.downcast_mut_unchecked() }, updater);
+    fn update(&mut self, mut props: AnyProps, hooks: Hooks, updater: &mut ComponentUpdater) {
+        Component::update(
+            self,
+            unsafe { props.downcast_mut_unchecked() },
+            hooks,
+            updater,
+        );
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
@@ -119,6 +133,8 @@ pub(crate) struct InstantiatedComponent {
     component: Box<dyn AnyComponent>,
     children: Components,
     helper: Box<dyn ComponentHelperExt>,
+    hooks: Vec<Box<dyn AnyHook>>,
+    first_update: bool,
 }
 
 impl InstantiatedComponent {
@@ -128,6 +144,8 @@ impl InstantiatedComponent {
             component: helper.new_component(props),
             children: Components::default(),
             helper,
+            hooks: Default::default(),
+            first_update: true,
         }
     }
 
@@ -151,13 +169,22 @@ impl InstantiatedComponent {
             context,
             component_context_stack,
         );
-        self.helper
-            .update_component(&mut self.component, props, &mut updater);
+        self.hooks.pre_component_update(&mut updater);
+        self.helper.update_component(
+            &mut self.component,
+            props,
+            Hooks::new(&mut self.hooks, self.first_update),
+            &mut updater,
+        );
+        self.hooks.post_component_update(&mut updater);
+        self.first_update = false;
     }
 
     pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+        self.hooks.pre_component_draw(drawer);
         self.component.draw(drawer);
         self.children.draw(drawer);
+        self.hooks.post_component_draw(drawer);
     }
 
     pub async fn wait(&mut self) {
@@ -168,7 +195,8 @@ impl InstantiatedComponent {
     fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let component_status = Pin::new(&mut *self.component).poll_change(cx);
         let children_status = Pin::new(&mut self.children).poll_change(cx);
-        if component_status.is_ready() || children_status.is_ready() {
+        let hooks_status = Pin::new(&mut self.hooks).poll_change(cx);
+        if component_status.is_ready() || children_status.is_ready() || hooks_status.is_ready() {
             Poll::Ready(())
         } else {
             Poll::Pending

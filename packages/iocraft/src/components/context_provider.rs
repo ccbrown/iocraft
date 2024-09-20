@@ -1,4 +1,4 @@
-use crate::{AnyElement, Component, ComponentUpdater, Context, Covariant};
+use crate::{AnyElement, Component, ComponentUpdater, Context, Covariant, Hooks};
 
 /// The props which can be passed to the [`ContextProvider`] component.
 #[derive(Covariant, Default)]
@@ -21,7 +21,12 @@ impl Component for ContextProvider {
         Self
     }
 
-    fn update(&mut self, props: &mut Self::Props<'_>, updater: &mut ComponentUpdater) {
+    fn update(
+        &mut self,
+        props: &mut Self::Props<'_>,
+        _hooks: Hooks,
+        updater: &mut ComponentUpdater,
+    ) {
         updater.update_children(
             props.children.iter_mut(),
             props.value.as_mut().map(|cx| cx.borrow()),

@@ -25,6 +25,9 @@ pub trait Hook: Unpin {
 
     /// Called before the component is drawn.
     fn pre_component_draw(&mut self, _drawer: &mut ComponentDrawer) {}
+
+    /// Called after the component is drawn.
+    fn post_component_draw(&mut self, _drawer: &mut ComponentDrawer) {}
 }
 
 #[doc(hidden)]
@@ -69,6 +72,12 @@ impl Hook for Vec<Box<dyn AnyHook>> {
     fn pre_component_draw(&mut self, drawer: &mut ComponentDrawer) {
         for hook in self.iter_mut() {
             hook.pre_component_draw(drawer);
+        }
+    }
+
+    fn post_component_draw(&mut self, drawer: &mut ComponentDrawer) {
+        for hook in self.iter_mut() {
+            hook.post_component_draw(drawer);
         }
     }
 }
