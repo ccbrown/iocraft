@@ -456,7 +456,7 @@ impl ToTokens for ParsedComponent {
         });
 
         tokens.extend(quote! {
-            #vis struct #name {}
+            #vis struct #name;
 
             impl #name {
                 fn implementation #generics (#args) #output #block
@@ -466,17 +466,15 @@ impl ToTokens for ParsedComponent {
                 type Props<'a> = #props_type_name;
 
                 fn new(_props: &Self::Props<'_>) -> Self {
-                    Self {}
+                    Self
                 }
 
                 fn update(&mut self, props: &mut Self::Props<'_>, hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
-                    {
-                        let mut e = {
-                            #context_refs
-                            Self::implementation(#(#impl_args),*).into()
-                        };
-                        updater.update_children([&mut e], None);
-                    }
+                    let mut e = {
+                        #context_refs
+                        Self::implementation(#(#impl_args),*).into()
+                    };
+                    updater.update_children([&mut e], None);
                 }
             }
         });
