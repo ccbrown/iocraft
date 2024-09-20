@@ -272,93 +272,9 @@ pub fn props(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#props).into()
 }
 
-struct ParsedContext {
-    context: ItemStruct,
-}
-
-impl Parse for ParsedContext {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let context: ItemStruct = input.parse()?;
-        Ok(Self { context })
-    }
-}
-
-impl ToTokens for ParsedContext {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let context = &self.context;
-        let name = &context.ident;
-        let generics = &context.generics;
-        let lifetime = generics.params.first();
-
-        let ref_fields = context.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            let field_type = &field.ty;
-            quote! { #field_name: <#field_type as ::iocraft::ContextRef<#lifetime>>::RefOwner<#lifetime> }
-        });
-
-        let ref_field_assignments = context.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            let field_type = &field.ty;
-            quote! { #field_name: <#field_type as ::iocraft::ContextRef>::get_from_component_updater(updater) }
-        });
-
-        let ref_field_borrows = context.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            let field_type = &field.ty;
-            quote! { #field_name: <#field_type as ::iocraft::ContextRef>::borrow(&mut refs.#field_name) }
-        });
-
-        tokens.extend(quote! {
-            #context
-
-            const _: () = {
-                pub struct ContextRefs #generics {
-                    #(#ref_fields,)*
-                }
-
-                impl<'iocraft_lta> ContextRefs<'iocraft_lta> {
-                    fn refs_from_component_updater<#lifetime: 'iocraft_lta>(updater: &#lifetime ::iocraft::ComponentUpdater) -> ContextRefs<#lifetime> {
-                        ContextRefs {
-                            #(#ref_field_assignments,)*
-                        }
-                    }
-                }
-
-                impl<#lifetime> ContextRefs #generics {
-                    fn borrow_refs<'iocraft_ltb: #lifetime, 'iocraft_ltc: 'iocraft_ltb>(refs: &'iocraft_ltb mut ContextRefs<'iocraft_ltc>) -> #name<#lifetime> {
-                        #name {
-                            #(#ref_field_borrows,)*
-                        }
-                    }
-                }
-
-                impl<'a> ::iocraft::ContextImplExt<'a> for #name<'a> {
-                    type Refs<'b: 'a> = ContextRefs<'b>;
-
-                    fn refs_from_component_updater<'b: 'a>(updater: &'b ::iocraft::ComponentUpdater) -> Self::Refs<'b> {
-                        ContextRefs::refs_from_component_updater(updater)
-                    }
-
-                    fn borrow_refs<'b: 'a, 'c: 'b>(refs: &'b mut Self::Refs<'c>) -> Self {
-                        ContextRefs::borrow_refs(refs)
-                    }
-                }
-            };
-        });
-    }
-}
-
-/// Defines a struct containing context references to be made available to components.
-#[proc_macro_attribute]
-pub fn context(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let context = parse_macro_input!(item as ParsedContext);
-    quote!(#context).into()
-}
-
 struct ParsedComponent {
     f: ItemFn,
     props_type: Option<Box<Type>>,
-    context_type: Option<Box<Type>>,
     impl_args: Vec<proc_macro2::TokenStream>,
 }
 
@@ -367,7 +283,6 @@ impl Parse for ParsedComponent {
         let f: ItemFn = input.parse()?;
 
         let mut props_type = None;
-        let mut context_type = None;
         let mut impl_args = Vec::new();
 
         for arg in &f.sig.inputs {
@@ -400,23 +315,6 @@ impl Parse for ParsedComponent {
                             }
                             _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
                         },
-                        "context" | "_context" => {
-                            if context_type.is_some() {
-                                return Err(Error::new(arg.span(), "duplicate `context` argument"));
-                            }
-                            match &*arg.ty {
-                                Type::Path(_) => {
-                                    context_type = Some(arg.ty.clone());
-                                    impl_args.push({
-                                        let type_name = &arg.ty;
-                                        quote!(#type_name::borrow_refs(&mut context_refs))
-                                    });
-                                }
-                                _ => {
-                                    return Err(Error::new(arg.ty.span(), "invalid `context` type"))
-                                }
-                            }
-                        }
                         _ => return Err(Error::new(arg.span(), "invalid argument")),
                     }
                 }
@@ -427,7 +325,6 @@ impl Parse for ParsedComponent {
         Ok(Self {
             f,
             props_type,
-            context_type,
             impl_args,
         })
     }
@@ -449,12 +346,6 @@ impl ToTokens for ParsedComponent {
             .map(|ty| quote!(#ty))
             .unwrap_or_else(|| quote!(::iocraft::NoProps));
 
-        let context_refs = self.context_type.as_ref().map(|ty| {
-            quote! {
-                let mut context_refs = #ty::refs_from_component_updater(updater);
-            }
-        });
-
         tokens.extend(quote! {
             #vis struct #name;
 
@@ -469,9 +360,9 @@ impl ToTokens for ParsedComponent {
                     Self
                 }
 
-                fn update(&mut self, props: &mut Self::Props<'_>, hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
+                fn update(&mut self, props: &mut Self::Props<'_>, mut hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
                     let mut e = {
-                        #context_refs
+                        let hooks = hooks.with_context_stack(updater.component_context_stack());
                         Self::implementation(#(#impl_args),*).into()
                     };
                     updater.update_children([&mut e], None);

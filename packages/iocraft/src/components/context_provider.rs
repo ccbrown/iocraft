@@ -39,19 +39,12 @@ mod tests {
     use crate::prelude::*;
 
     struct StringContext(String);
-    struct OtherContext;
-
-    #[context]
-    struct MyComponentContext<'a> {
-        string: &'a StringContext,
-        _other: Option<&'a OtherContext>,
-        _system: &'a mut SystemContext,
-    }
 
     #[component]
-    fn MyComponent(context: MyComponentContext) -> impl Into<AnyElement<'static>> {
+    fn MyComponent(hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let s = hooks.use_context::<StringContext>();
         element! {
-            Text(content: &context.string.0)
+            Text(content: &s.0)
         }
     }
 

@@ -1,17 +1,13 @@
 use iocraft::prelude::*;
 use unicode_width::UnicodeWidthStr;
 
-#[context]
-struct ExampleContext<'a> {
-    system: &'a mut SystemContext,
-}
-
 const AREA_WIDTH: u32 = 80;
 const AREA_HEIGHT: u32 = 11;
 const FACE: &str = "👾";
 
 #[component]
-fn Example(context: ExampleContext, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let mut system = hooks.use_context_mut::<SystemContext>();
     let x = hooks.use_state(|| 0);
     let y = hooks.use_state(|| 0);
     let should_exit = hooks.use_state(|| false);
@@ -33,7 +29,7 @@ fn Example(context: ExampleContext, mut hooks: Hooks) -> impl Into<AnyElement<'s
     });
 
     if should_exit.get() {
-        context.system.exit();
+        system.exit();
     }
 
     element! {

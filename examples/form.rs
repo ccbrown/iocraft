@@ -37,11 +37,6 @@ fn FormField(props: &FormFieldProps) -> impl Into<AnyElement<'static>> {
     }
 }
 
-#[context]
-struct FormContext<'a> {
-    system: &'a mut SystemContext,
-}
-
 #[props]
 struct FormProps<'a> {
     first_name_out: Option<&'a mut String>,
@@ -49,11 +44,9 @@ struct FormProps<'a> {
 }
 
 #[component]
-fn Form<'a>(
-    props: &mut FormProps<'a>,
-    mut hooks: Hooks,
-    context: FormContext,
-) -> impl Into<AnyElement<'static>> {
+fn Form<'a>(props: &mut FormProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let mut system = hooks.use_context_mut::<SystemContext>();
+
     let first_name = hooks.use_state(|| "".to_string());
     let last_name = hooks.use_state(|| "".to_string());
     let focus = hooks.use_state(|| 0);
@@ -77,7 +70,7 @@ fn Form<'a>(
         if let Some(last_name_out) = props.last_name_out.as_mut() {
             **last_name_out = last_name.to_string();
         }
-        context.system.exit();
+        system.exit();
         element!(Box)
     } else {
         element! {

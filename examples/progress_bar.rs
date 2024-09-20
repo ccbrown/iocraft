@@ -1,13 +1,9 @@
 use iocraft::prelude::*;
 use std::time::Duration;
 
-#[context]
-struct ProgressBarContext<'a> {
-    system: &'a mut SystemContext,
-}
-
 #[component]
-fn ProgressBar(mut hooks: Hooks, context: ProgressBarContext) -> impl Into<AnyElement<'static>> {
+fn ProgressBar(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let mut system = hooks.use_context_mut::<SystemContext>();
     let progress = hooks.use_state::<f32, _>(|| 0.0);
 
     hooks.use_future(async move {
@@ -18,7 +14,7 @@ fn ProgressBar(mut hooks: Hooks, context: ProgressBarContext) -> impl Into<AnyEl
     });
 
     if progress >= 100.0 {
-        context.system.exit();
+        system.exit();
     }
 
     element! {

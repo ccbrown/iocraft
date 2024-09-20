@@ -13,7 +13,7 @@ pub trait UseTerminalEvents {
         F: FnMut(TerminalEvent) + Send + 'static;
 }
 
-impl UseTerminalEvents for Hooks<'_> {
+impl UseTerminalEvents for Hooks<'_, '_> {
     fn use_terminal_events<F>(&mut self, f: F)
     where
         F: FnMut(TerminalEvent) + Send + 'static,

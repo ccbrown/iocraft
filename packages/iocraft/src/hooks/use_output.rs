@@ -12,7 +12,7 @@ pub trait UseOutput {
     fn use_output(&mut self) -> (UseStdoutHandle, UseStderrHandle);
 }
 
-impl UseOutput for Hooks<'_> {
+impl UseOutput for Hooks<'_, '_> {
     fn use_output(&mut self) -> (UseStdoutHandle, UseStderrHandle) {
         let output = self.use_hook(UseOutputImpl::default);
         (output.use_stdout(), output.use_stderr())

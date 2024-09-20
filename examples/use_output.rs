@@ -2,7 +2,7 @@ use iocraft::prelude::*;
 use std::time::Duration;
 
 #[component]
-fn Example(mut hooks: Hooks) -> impl Into<AnyElement> {
+fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let (stdout, stderr) = hooks.use_output();
 
     hooks.use_future(async move {

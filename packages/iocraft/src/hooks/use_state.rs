@@ -21,7 +21,7 @@ pub trait UseState {
         F: FnOnce() -> T;
 }
 
-impl UseState for Hooks<'_> {
+impl UseState for Hooks<'_, '_> {
     fn use_state<T, F>(&mut self, initial_value: F) -> State<T>
     where
         T: Unpin + Sync + Send + 'static,

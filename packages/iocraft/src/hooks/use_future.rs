@@ -19,7 +19,7 @@ pub trait UseFuture {
         F: Future<Output = ()> + Send + 'static;
 }
 
-impl UseFuture for Hooks<'_> {
+impl UseFuture for Hooks<'_, '_> {
     fn use_future<F>(&mut self, f: F)
     where
         F: Future<Output = ()> + Send + 'static,

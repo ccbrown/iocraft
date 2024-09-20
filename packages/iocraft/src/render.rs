@@ -76,6 +76,11 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
         }
     }
 
+    #[doc(hidden)]
+    pub fn component_context_stack(&self) -> &ContextStack<'c> {
+        self.component_context_stack
+    }
+
     /// Gets an immutable reference to context of the given type.
     pub fn get_context<T: Any>(&self) -> Option<Ref<T>> {
         self.component_context_stack.get_context()
@@ -407,16 +412,9 @@ mod tests {
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
-    #[context]
-    struct MyComponentContext<'a> {
-        system: &'a mut SystemContext,
-    }
-
     #[component]
-    fn MyComponent(
-        mut hooks: Hooks,
-        context: MyComponentContext,
-    ) -> impl Into<AnyElement<'static>> {
+    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
         let mut counter = hooks.use_state(|| 0);
 
         hooks.use_future(async move {
@@ -424,7 +422,7 @@ mod tests {
         });
 
         if counter == 1 {
-            context.system.exit();
+            system.exit();
         }
 
         element! {

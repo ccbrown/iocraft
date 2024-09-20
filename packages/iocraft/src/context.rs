@@ -1,9 +1,7 @@
-use crate::ComponentUpdater;
 use std::{
     any::Any,
     cell::{Ref, RefCell, RefMut},
     mem,
-    ops::{Deref, DerefMut},
 };
 
 /// The system context, which is always available to all components.
@@ -87,18 +85,19 @@ impl<'a> Context<'a> {
     }
 }
 
-pub(crate) struct ContextStack<'a> {
+#[doc(hidden)]
+pub struct ContextStack<'a> {
     contexts: Vec<RefCell<Context<'a>>>,
 }
 
 impl<'a> ContextStack<'a> {
-    pub fn root(root_context: &'a mut dyn Any) -> Self {
+    pub(crate) fn root(root_context: &'a mut dyn Any) -> Self {
         Self {
             contexts: vec![RefCell::new(Context::Mut(root_context))],
         }
     }
 
-    pub fn with_context<'b, F>(&'b mut self, context: Option<Context<'b>>, f: F)
+    pub(crate) fn with_context<'b, F>(&'b mut self, context: Option<Context<'b>>, f: F)
     where
         F: FnOnce(&mut ContextStack),
     {
@@ -139,75 +138,5 @@ impl<'a> ContextStack<'a> {
             }
         }
         None
-    }
-}
-
-#[doc(hidden)]
-pub trait ContextImplExt<'a> {
-    type Refs<'b: 'a>;
-
-    fn refs_from_component_updater<'b: 'a>(updater: &'b ComponentUpdater) -> Self::Refs<'b>;
-
-    fn borrow_refs<'b: 'a, 'c: 'b>(refs: &'b mut Self::Refs<'c>) -> Self;
-}
-
-#[doc(hidden)]
-pub trait ContextRef<'a> {
-    type Ref;
-    type RefOwner<'r>;
-
-    fn get_from_component_updater(updater: &'a ComponentUpdater) -> Self::RefOwner<'a>;
-    fn borrow<'r: 'a>(owner: &'a mut Self::RefOwner<'r>) -> Self::Ref;
-}
-
-impl<'a, T: Any> ContextRef<'a> for &'a T {
-    type Ref = &'a T;
-    type RefOwner<'r> = Ref<'r, T>;
-
-    fn get_from_component_updater(updater: &'a ComponentUpdater) -> Self::RefOwner<'a> {
-        updater.get_context::<T>().unwrap()
-    }
-
-    fn borrow<'r: 'a>(owner: &'a mut Self::RefOwner<'r>) -> Self::Ref {
-        &*owner
-    }
-}
-
-impl<'a, T: Any> ContextRef<'a> for &'a mut T {
-    type Ref = &'a mut T;
-    type RefOwner<'r> = RefMut<'r, T>;
-
-    fn get_from_component_updater(updater: &'a ComponentUpdater) -> Self::RefOwner<'a> {
-        updater.get_context_mut::<T>().unwrap()
-    }
-
-    fn borrow<'r: 'a>(owner: &'a mut Self::RefOwner<'r>) -> Self::Ref {
-        &mut *owner
-    }
-}
-
-impl<'a, T: Any> ContextRef<'a> for Option<&'a T> {
-    type Ref = Option<&'a T>;
-    type RefOwner<'r> = Option<Ref<'r, T>>;
-
-    fn get_from_component_updater(updater: &'a ComponentUpdater) -> Self::RefOwner<'a> {
-        updater.get_context::<T>()
-    }
-
-    fn borrow<'r: 'a>(owner: &'a mut Self::RefOwner<'r>) -> Self::Ref {
-        owner.as_ref().map(|r| r.deref())
-    }
-}
-
-impl<'a, T: Any> ContextRef<'a> for Option<&'a mut T> {
-    type Ref = Option<&'a mut T>;
-    type RefOwner<'r> = Option<RefMut<'r, T>>;
-
-    fn get_from_component_updater(updater: &'a ComponentUpdater) -> Self::RefOwner<'a> {
-        updater.get_context_mut::<T>()
-    }
-
-    fn borrow<'r: 'a>(owner: &'a mut Self::RefOwner<'r>) -> Self::Ref {
-        owner.as_mut().map(|r| r.deref_mut())
     }
 }
