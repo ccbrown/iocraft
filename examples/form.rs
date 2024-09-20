@@ -3,7 +3,7 @@ use iocraft::prelude::*;
 #[props]
 struct FormFieldProps {
     label: String,
-    value: Option<Signal<String>>,
+    value: Option<State<String>>,
     has_focus: bool,
 }
 
@@ -42,14 +42,6 @@ struct FormContext<'a> {
     system: &'a mut SystemContext,
 }
 
-#[state]
-struct FormState {
-    first_name: Signal<String>,
-    last_name: Signal<String>,
-    focus: Signal<i32>,
-    should_submit: Signal<bool>,
-}
-
 #[props]
 struct FormProps<'a> {
     first_name_out: Option<&'a mut String>,
@@ -59,29 +51,31 @@ struct FormProps<'a> {
 #[component]
 fn Form<'a>(
     props: &mut FormProps<'a>,
-    state: FormState,
     mut hooks: Hooks,
     context: FormContext,
 ) -> impl Into<AnyElement<'static>> {
+    let first_name = hooks.use_state(|| "".to_string());
+    let last_name = hooks.use_state(|| "".to_string());
+    let focus = hooks.use_state(|| 0);
+    let should_submit = hooks.use_state(|| false);
+
     hooks.use_terminal_events(move |event| match event {
         TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {
             match code {
-                KeyCode::Enter => state.should_submit.set(true),
-                KeyCode::Tab | KeyCode::Up | KeyCode::Down => {
-                    state.focus.set((state.focus + 1) % 2)
-                }
+                KeyCode::Enter => should_submit.set(true),
+                KeyCode::Tab | KeyCode::Up | KeyCode::Down => focus.set((focus + 1) % 2),
                 _ => {}
             }
         }
         _ => {}
     });
 
-    if state.should_submit.get() {
+    if should_submit.get() {
         if let Some(first_name_out) = props.first_name_out.as_mut() {
-            **first_name_out = state.first_name.to_string();
+            **first_name_out = first_name.to_string();
         }
         if let Some(last_name_out) = props.last_name_out.as_mut() {
-            **last_name_out = state.last_name.to_string();
+            **last_name_out = last_name.to_string();
         }
         context.system.exit();
         element!(Box)
@@ -93,15 +87,15 @@ fn Form<'a>(
                 margin: 2,
             ) {
                 Box(
-                    padding_bottom: if state.focus == 0 { 1 } else { 2 },
+                    padding_bottom: if focus == 0 { 1 } else { 2 },
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,
                 ) {
                     Text(content: "What's your name?", color: Color::White, weight: Weight::Bold)
                     Text(content: "Press tab to cycle through fields.\nPress enter to submit.", color: Color::Grey, align: TextAlign::Center)
                 }
-                FormField(label: "First Name", value: state.first_name, has_focus: state.focus == 0)
-                FormField(label: "Last Name", value: state.last_name, has_focus: state.focus == 1)
+                FormField(label: "First Name", value: first_name, has_focus: focus == 0)
+                FormField(label: "Last Name", value: last_name, has_focus: focus == 1)
             }
         }
     }

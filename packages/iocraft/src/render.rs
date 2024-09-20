@@ -407,11 +407,6 @@ mod tests {
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
-    #[state]
-    struct MyComponentState {
-        counter: Signal<i32>,
-    }
-
     #[context]
     struct MyComponentContext<'a> {
         system: &'a mut SystemContext,
@@ -419,20 +414,21 @@ mod tests {
 
     #[component]
     fn MyComponent(
-        mut state: MyComponentState,
         mut hooks: Hooks,
         context: MyComponentContext,
     ) -> impl Into<AnyElement<'static>> {
+        let mut counter = hooks.use_state(|| 0);
+
         hooks.use_future(async move {
-            state.counter += 1;
+            counter += 1;
         });
 
-        if state.counter == 1 {
+        if counter == 1 {
             context.system.exit();
         }
 
         element! {
-            Text(content: format!("count: {}", state.counter))
+            Text(content: format!("count: {}", counter))
         }
     }
 

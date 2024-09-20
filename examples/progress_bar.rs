@@ -6,35 +6,28 @@ struct ProgressBarContext<'a> {
     system: &'a mut SystemContext,
 }
 
-#[state]
-struct ProgressBarState {
-    progress: Signal<f32>,
-}
-
 #[component]
-fn ProgressBar(
-    state: ProgressBarState,
-    mut hooks: Hooks,
-    context: ProgressBarContext,
-) -> impl Into<AnyElement<'static>> {
+fn ProgressBar(mut hooks: Hooks, context: ProgressBarContext) -> impl Into<AnyElement<'static>> {
+    let progress = hooks.use_state::<f32, _>(|| 0.0);
+
     hooks.use_future(async move {
         loop {
             smol::Timer::after(Duration::from_millis(100)).await;
-            state.progress.set((state.progress.get() + 2.0).min(100.0));
+            progress.set((progress.get() + 2.0).min(100.0));
         }
     });
 
-    if state.progress >= 100.0 {
+    if progress >= 100.0 {
         context.system.exit();
     }
 
     element! {
         Box {
             Box(border_style: BorderStyle::Round, border_color: Color::Blue, width: 60) {
-                Box(width: Percent(state.progress.get()), height: 1, background_color: Color::Green)
+                Box(width: Percent(progress.get()), height: 1, background_color: Color::Green)
             }
             Box(padding: 1) {
-                Text(content: format!("{:.0}%", state.progress))
+                Text(content: format!("{:.0}%", progress))
             }
         }
     }

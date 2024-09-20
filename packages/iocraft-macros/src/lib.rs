@@ -272,48 +272,6 @@ pub fn props(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#props).into()
 }
 
-struct ParsedState {
-    state: ItemStruct,
-}
-
-impl Parse for ParsedState {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let state: ItemStruct = input.parse()?;
-        Ok(Self { state })
-    }
-}
-
-impl ToTokens for ParsedState {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let state = &self.state;
-        let name = &state.ident;
-        let field_assignments = state.fields.iter().map(|field| {
-            let field_name = &field.ident;
-            quote! { #field_name: owner.new_signal_with_default() }
-        });
-
-        tokens.extend(quote! {
-            #[derive(Clone, Copy)]
-            #state
-
-            impl #name {
-                fn new(owner: &mut ::iocraft::SignalOwner) -> Self {
-                    Self {
-                        #(#field_assignments,)*
-                    }
-                }
-            }
-        });
-    }
-}
-
-/// Defines a struct containing state to be made available to components.
-#[proc_macro_attribute]
-pub fn state(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let state = parse_macro_input!(item as ParsedState);
-    quote!(#state).into()
-}
-
 struct ParsedContext {
     context: ItemStruct,
 }
@@ -400,7 +358,6 @@ pub fn context(_attr: TokenStream, item: TokenStream) -> TokenStream {
 struct ParsedComponent {
     f: ItemFn,
     props_type: Option<Box<Type>>,
-    state_type: Option<Box<Type>>,
     context_type: Option<Box<Type>>,
     impl_args: Vec<proc_macro2::TokenStream>,
 }
@@ -410,7 +367,6 @@ impl Parse for ParsedComponent {
         let f: ItemFn = input.parse()?;
 
         let mut props_type = None;
-        let mut state_type = None;
         let mut context_type = None;
         let mut impl_args = Vec::new();
 
@@ -444,22 +400,6 @@ impl Parse for ParsedComponent {
                             }
                             _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
                         },
-                        "state" | "_state" => {
-                            if state_type.is_some() {
-                                return Err(Error::new(arg.span(), "duplicate `state` argument"));
-                            }
-                            match &*arg.ty {
-                                Type::Reference(r) => {
-                                    impl_args.push(quote!(&mut self.state));
-                                    state_type = Some(r.elem.clone());
-                                }
-                                Type::Path(_) => {
-                                    impl_args.push(quote!(self.state.clone()));
-                                    state_type = Some(arg.ty.clone());
-                                }
-                                _ => return Err(Error::new(arg.ty.span(), "invalid `state` type")),
-                            }
-                        }
                         "context" | "_context" => {
                             if context_type.is_some() {
                                 return Err(Error::new(arg.span(), "duplicate `context` argument"));
@@ -487,7 +427,6 @@ impl Parse for ParsedComponent {
         Ok(Self {
             f,
             props_type,
-            state_type,
             context_type,
             impl_args,
         })
@@ -504,12 +443,6 @@ impl ToTokens for ParsedComponent {
         let generics = &self.f.sig.generics;
         let impl_args = &self.impl_args;
 
-        let state_decl = self.state_type.as_ref().map(|ty| quote!(state: #ty,));
-        let state_init = self
-            .state_type
-            .as_ref()
-            .map(|ty| quote!(state: #ty::new(&mut signal_owner),));
-
         let props_type_name = self
             .props_type
             .as_ref()
@@ -524,10 +457,8 @@ impl ToTokens for ParsedComponent {
 
         tokens.extend(quote! {
             #vis struct #name {
-                signal_owner: ::iocraft::SignalOwner,
                 hooks: Vec<std::boxed::Box<dyn ::iocraft::AnyHook>>,
                 first_update: bool,
-                #state_decl
             }
 
             impl #name {
@@ -538,12 +469,9 @@ impl ToTokens for ParsedComponent {
                 type Props<'a> = #props_type_name;
 
                 fn new(_props: &Self::Props<'_>) -> Self {
-                    let mut signal_owner = ::iocraft::SignalOwner::new();
                     Self {
-                        #state_init
                         hooks: Vec::new(),
                         first_update: true,
-                        signal_owner,
                     }
                 }
 
@@ -569,15 +497,7 @@ impl ToTokens for ParsedComponent {
 
                 fn poll_change(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
                     use ::iocraft::Hook;
-
-                    let signals_status = std::pin::Pin::new(&mut self.signal_owner).poll_change(cx);
-                    let hooks_status = std::pin::Pin::new(&mut self.hooks).poll_change(cx);
-
-                    if signals_status.is_ready() || hooks_status.is_ready() {
-                        std::task::Poll::Ready(())
-                    } else {
-                        std::task::Poll::Pending
-                    }
+                    std::pin::Pin::new(&mut self.hooks).poll_change(cx)
                 }
             }
         });

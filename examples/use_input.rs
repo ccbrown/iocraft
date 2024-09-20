@@ -6,30 +6,21 @@ struct ExampleContext<'a> {
     system: &'a mut SystemContext,
 }
 
-#[state]
-struct ExampleState {
-    should_exit: Signal<bool>,
-    x: Signal<u32>,
-    y: Signal<u32>,
-}
-
 const AREA_WIDTH: u32 = 80;
 const AREA_HEIGHT: u32 = 11;
 const FACE: &str = "👾";
 
 #[component]
-fn Example(
-    context: ExampleContext,
-    state: ExampleState,
-    mut hooks: Hooks,
-) -> impl Into<AnyElement<'static>> {
+fn Example(context: ExampleContext, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let x = hooks.use_state(|| 0);
+    let y = hooks.use_state(|| 0);
+    let should_exit = hooks.use_state(|| false);
+
     hooks.use_terminal_events({
-        let x = state.x;
-        let y = state.y;
         move |event| match event {
             TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {
                 match code {
-                    KeyCode::Char('q') => state.should_exit.set(true),
+                    KeyCode::Char('q') => should_exit.set(true),
                     KeyCode::Up => y.set((y.get() as i32 - 1).max(0) as _),
                     KeyCode::Down => y.set((y.get() + 1).min(AREA_HEIGHT - 1)),
                     KeyCode::Left => x.set((x.get() as i32 - 1).max(0) as _),
@@ -41,7 +32,7 @@ fn Example(
         }
     });
 
-    if state.should_exit.get() {
+    if should_exit.get() {
         context.system.exit();
     }
 
@@ -58,7 +49,7 @@ fn Example(
                 height: AREA_HEIGHT + 2,
                 width: AREA_WIDTH + 2,
             ) {
-                #(if state.should_exit.get() {
+                #(if should_exit.get() {
                     element! {
                         Box(
                             width: 100pct,
@@ -72,8 +63,8 @@ fn Example(
                 } else {
                     element! {
                         Box(
-                            padding_left: state.x.get(),
-                            padding_top: state.y.get(),
+                            padding_left: x.get(),
+                            padding_top: y.get(),
                         ) {
                             Text(content: FACE)
                         }

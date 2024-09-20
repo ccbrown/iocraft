@@ -20,7 +20,6 @@ mod handler;
 mod hook;
 mod props;
 mod render;
-mod signal;
 mod style;
 mod terminal;
 
@@ -33,7 +32,6 @@ mod flattened_exports {
     pub use crate::hook::*;
     pub use crate::props::*;
     pub use crate::render::*;
-    pub use crate::signal::*;
     pub use crate::style::*;
     pub use crate::terminal::*;
 
