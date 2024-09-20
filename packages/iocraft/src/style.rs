@@ -13,8 +13,8 @@ pub use taffy::style::{
 };
 
 /// Defines a type that represents a percentage [0.0-100.0] and is convertible to any of the
-/// libary's other percent types. As a shorthand, you can express this in the [`element!`] macro
-/// using the `pct` suffix, e.g. `50pct`.
+/// libary's other percent types. As a shorthand, you can express this in the
+/// [`element!`](crate::element!) macro using the `pct` suffix, e.g. `50pct`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Percent(pub f32);
 

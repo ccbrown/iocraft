@@ -10,15 +10,15 @@ use std::{
 /// component. When the component is unmounted, the tasks will be dropped.
 #[derive(Default)]
 pub struct UseAsync {
-    once_fut: Option<BoxFuture<'static, ()>>,
+    did_spawn_once: bool,
+    futures: Vec<BoxFuture<'static, ()>>,
 }
 
 impl Hook for UseAsync {
     fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        match self.once_fut.as_mut() {
-            Some(f) => f.as_mut().poll(cx),
-            None => Poll::Pending,
-        }
+        self.futures
+            .retain_mut(|f| !matches!(f.as_mut().poll(cx), Poll::Ready(())));
+        Poll::Pending
     }
 }
 
@@ -33,8 +33,21 @@ impl UseAsync {
         F: FnOnce() -> T,
         T: Future<Output = ()> + Send + 'static,
     {
-        if self.once_fut.is_none() {
-            self.once_fut = Some(Box::pin(f()));
+        if !self.did_spawn_once {
+            self.futures.push(Box::pin(f()));
+            self.did_spawn_once = true;
         }
+    }
+
+    /// Spawns a future which is bound to the lifetime of the component. When the component is
+    /// unmounted, the future will be dropped.
+    ///
+    /// The future will be spawned every time this function is called. If you need to run a future
+    /// in the background, use [`spawn_once`](UseAsync::spawn_once) instead.
+    pub fn spawn<F, T>(&mut self, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.futures.push(Box::pin(f));
     }
 }

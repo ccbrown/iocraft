@@ -1,4 +1,4 @@
-/// `Handler` is a type representing an optional event handler, commonly used for properties such as [`BoxProps::on_click`](crate::components::BoxProps::on_click).
+/// `Handler` is a type representing an optional event handler, commonly used for component properties.
 #[derive(Default)]
 pub enum Handler<'a, T> {
     /// No handler is set.
