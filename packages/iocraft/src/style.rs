@@ -53,6 +53,21 @@ impl From<Padding> for LengthPercentage {
 
 macro_rules! impl_from_length {
     ($name:ident) => {
+        impl From<i16> for $name {
+            fn from(l: i16) -> Self {
+                $name::Length(l as _)
+            }
+        }
+        impl From<i32> for $name {
+            fn from(l: i32) -> Self {
+                $name::Length(l as _)
+            }
+        }
+        impl From<u16> for $name {
+            fn from(l: u16) -> Self {
+                $name::Length(l as _)
+            }
+        }
         impl From<u32> for $name {
             fn from(l: u32) -> Self {
                 $name::Length(l)

@@ -354,38 +354,40 @@ impl<'a> Tree<'a> {
         }
     }
 
-    async fn terminal_render_loop<W>(&mut self, mut w: W) -> io::Result<()>
-    where
-        W: Write,
-    {
-        let mut terminal = Terminal::new()?;
+    async fn terminal_render_loop(&mut self, mut term: Terminal) -> io::Result<()> {
         let mut prev_canvas: Option<Canvas> = None;
         loop {
-            let width = terminal.width().ok().map(|w| w as usize);
-            execute!(w, terminal::BeginSynchronizedUpdate,)?;
-            let lines_to_rewind_to_clear = prev_canvas.as_ref().map_or(0, |c| c.height());
-            let output = self.render(width, Some(&mut terminal), lines_to_rewind_to_clear);
+            let width = term.width().ok().map(|w| w as usize);
+            execute!(term, terminal::BeginSynchronizedUpdate,)?;
+            let lines_to_rewind_to_clear = prev_canvas
+                .as_ref()
+                .map_or(0, |c| c.height() - if term.is_fullscreen() { 1 } else { 0 });
+            let output = self.render(width, Some(&mut term), lines_to_rewind_to_clear);
             if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas) {
                 if !output.did_clear_terminal_output {
-                    terminal.rewind_lines(lines_to_rewind_to_clear as _)?;
+                    term.rewind_lines(lines_to_rewind_to_clear as _)?;
                 }
-                output.canvas.write_ansi(&mut w)?;
+                if term.is_fullscreen() {
+                    output.canvas.write_ansi_without_final_newline(&mut term)?;
+                } else {
+                    output.canvas.write_ansi(&mut term)?;
+                }
             }
             prev_canvas = Some(output.canvas);
-            execute!(w, terminal::EndSynchronizedUpdate)?;
-            if self.system_context.should_exit() || terminal.received_ctrl_c() {
+            execute!(term, terminal::EndSynchronizedUpdate)?;
+            if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
             select(
                 self.root_component.wait().boxed_local(),
-                terminal.wait().boxed_local(),
+                term.wait().boxed_local(),
             )
             .await;
-            if terminal.received_ctrl_c() {
+            if term.received_ctrl_c() {
                 break;
             }
         }
-        mem::drop(terminal);
+        write!(term, "\r\n")?;
         Ok(())
     }
 }
@@ -396,48 +398,11 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
     tree.render(max_width, None, 0).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E, W>(mut e: E, dest: W) -> io::Result<()>
+pub(crate) async fn terminal_render_loop<E>(mut e: E, term: Terminal) -> io::Result<()>
 where
     E: ElementExt,
-    W: Write,
 {
     let h = e.helper();
     let mut tree = Tree::new(e.props_mut(), h);
-    tree.terminal_render_loop(dest).await
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{hooks::UseFuture, prelude::*};
-    use macro_rules_attribute::apply;
-    use smol_macros::test;
-
-    #[component]
-    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let mut system = hooks.use_context_mut::<SystemContext>();
-        let mut counter = hooks.use_state(|| 0);
-
-        hooks.use_future(async move {
-            counter += 1;
-        });
-
-        if counter == 1 {
-            system.exit();
-        }
-
-        element! {
-            Text(content: format!("count: {}", counter))
-        }
-    }
-
-    #[apply(test!)]
-    async fn test_terminal_render_loop() {
-        let mut buf = Vec::new();
-        terminal_render_loop(element!(MyComponent), &mut buf)
-            .await
-            .unwrap();
-        let output = String::from_utf8_lossy(&buf);
-        assert!(output.contains("count: 0"));
-        assert!(output.contains("count: 1"));
-    }
+    tree.terminal_render_loop(term).await
 }

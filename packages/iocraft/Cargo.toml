@@ -18,6 +18,3 @@ generational-box = "0.5.6"
 
 [dev-dependencies]
 indoc = "2"
-smol = "2.0.1"
-smol-macros = "0.1.1"
-macro_rules_attribute = "0.2.0"

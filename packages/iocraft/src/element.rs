@@ -1,7 +1,7 @@
 use crate::{
     component::{Component, ComponentHelper, ComponentHelperExt},
     props::AnyProps,
-    render, terminal_render_loop, Canvas,
+    render, terminal_render_loop, Canvas, Terminal,
 };
 use crossterm::{terminal, tty::IsTty};
 use std::{
@@ -195,6 +195,9 @@ pub trait ElementExt: private::Sealed + Sized {
 
     /// Renders the element in a loop, allowing it to be dynamic and interactive.
     fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
+
+    /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
+    fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>>;
 }
 
 impl<'a> ElementExt for AnyElement<'a> {
@@ -216,7 +219,11 @@ impl<'a> ElementExt for AnyElement<'a> {
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, stdout()).await
+        terminal_render_loop(self, Terminal::new()?).await
+    }
+
+    async fn fullscreen(&mut self) -> io::Result<()> {
+        terminal_render_loop(self, Terminal::fullscreen()?).await
     }
 }
 
@@ -239,7 +246,11 @@ impl<'a> ElementExt for &mut AnyElement<'a> {
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, stdout()).await
+        terminal_render_loop(&mut **self, Terminal::new()?).await
+    }
+
+    async fn fullscreen(&mut self) -> io::Result<()> {
+        terminal_render_loop(&mut **self, Terminal::fullscreen()?).await
     }
 }
 
@@ -265,7 +276,11 @@ where
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, stdout()).await
+        terminal_render_loop(self, Terminal::new()?).await
+    }
+
+    async fn fullscreen(&mut self) -> io::Result<()> {
+        terminal_render_loop(self, Terminal::fullscreen()?).await
     }
 }
 
@@ -291,7 +306,11 @@ where
     }
 
     async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, stdout()).await
+        terminal_render_loop(&mut **self, Terminal::new()?).await
+    }
+
+    async fn fullscreen(&mut self) -> io::Result<()> {
+        terminal_render_loop(&mut **self, Terminal::fullscreen()?).await
     }
 }
 

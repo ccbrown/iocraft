@@ -112,7 +112,12 @@ impl Canvas {
         }
     }
 
-    fn write_impl<W: Write>(&self, mut w: W, ansi: bool) -> io::Result<()> {
+    fn write_impl<W: Write>(
+        &self,
+        mut w: W,
+        ansi: bool,
+        omit_final_newline: bool,
+    ) -> io::Result<()> {
         if ansi {
             write!(w, csi!("0m"))?;
         }
@@ -120,7 +125,8 @@ impl Canvas {
         let mut background_color = None;
         let mut text_style = CanvasTextStyle::default();
 
-        for row in &self.cells {
+        for y in 0..self.cells.len() {
+            let row = &self.cells[y];
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
             let row = &row[..last_non_empty.map_or(0, |i| i + 1)];
             let mut col = 0;
@@ -196,10 +202,14 @@ impl Canvas {
                 }
                 // clear until end of line
                 write!(w, csi!("K"))?;
-                // add a carriage return in case we're in raw mode
-                w.write_all(b"\r\n")?;
-            } else {
-                w.write_all(b"\n")?;
+            }
+            if !omit_final_newline || y < self.cells.len() - 1 {
+                if ansi {
+                    // add a carriage return in case we're in raw mode
+                    w.write_all(b"\r\n")?;
+                } else {
+                    w.write_all(b"\n")?;
+                }
             }
         }
         if ansi {
@@ -211,12 +221,16 @@ impl Canvas {
 
     /// Writes the canvas to the given writer with ANSI escape codes.
     pub fn write_ansi<W: Write>(&self, w: W) -> io::Result<()> {
-        self.write_impl(w, true)
+        self.write_impl(w, true, false)
+    }
+
+    pub(crate) fn write_ansi_without_final_newline<W: Write>(&self, w: W) -> io::Result<()> {
+        self.write_impl(w, true, true)
     }
 
     /// Writes the canvas to the given writer as unstyled text, without ANSI escape codes.
     pub fn write<W: Write>(&self, w: W) -> io::Result<()> {
-        self.write_impl(w, false)
+        self.write_impl(w, false, false)
     }
 }
 

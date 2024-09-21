@@ -9,7 +9,7 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdout},
+    io::{self, stdout, Write},
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
@@ -37,6 +37,8 @@ pub struct KeyEvent {
 pub enum TerminalEvent {
     /// A key event, fired when a key is pressed.
     Key(KeyEvent),
+    /// A resize event, fired when the terminal is resized.
+    Resize(u16, u16),
 }
 
 struct TerminalEventsInner {
@@ -63,34 +65,37 @@ impl Stream for TerminalEvents {
     }
 }
 
-trait TerminalImpl {
-    fn new() -> io::Result<Self>
-    where
-        Self: Sized;
-
+trait TerminalImpl: Write {
     fn width(&self) -> io::Result<u16>;
+    fn is_fullscreen(&self) -> bool;
     fn is_raw_mode_enabled(&self) -> bool;
     fn rewind_lines(&mut self, lines: u16) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
 }
 
 struct StdTerminal {
+    dest: io::Stdout,
+    fullscreen: bool,
     raw_mode_enabled: bool,
 }
 
-impl TerminalImpl for StdTerminal {
-    fn new() -> io::Result<Self>
-    where
-        Self: Sized,
-    {
-        queue!(stdout(), cursor::Hide)?;
-        Ok(Self {
-            raw_mode_enabled: false,
-        })
+impl Write for StdTerminal {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.dest.write(buf)
     }
 
+    fn flush(&mut self) -> io::Result<()> {
+        self.dest.flush()
+    }
+}
+
+impl TerminalImpl for StdTerminal {
     fn width(&self) -> io::Result<u16> {
         terminal::size().map(|(w, _)| w)
+    }
+
+    fn is_fullscreen(&self) -> bool {
+        self.fullscreen
     }
 
     fn is_raw_mode_enabled(&self) -> bool {
@@ -99,7 +104,7 @@ impl TerminalImpl for StdTerminal {
 
     fn rewind_lines(&mut self, lines: u16) -> io::Result<()> {
         queue!(
-            stdout(),
+            self.dest,
             cursor::MoveToPreviousLine(lines as _),
             terminal::Clear(terminal::ClearType::FromCursorDown)
         )
@@ -116,6 +121,7 @@ impl TerminalImpl for StdTerminal {
                         modifiers: event.modifiers,
                         kind: event.kind,
                     })),
+                    Ok(Event::Resize(width, height)) => Some(TerminalEvent::Resize(width, height)),
                     _ => None,
                 }
             })
@@ -124,19 +130,41 @@ impl TerminalImpl for StdTerminal {
 }
 
 impl StdTerminal {
+    fn new(fullscreen: bool) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut dest = stdout();
+        queue!(dest, cursor::Hide)?;
+        if fullscreen {
+            queue!(dest, terminal::EnterAlternateScreen)?;
+        }
+        Ok(Self {
+            dest,
+            fullscreen,
+            raw_mode_enabled: false,
+        })
+    }
+
     fn set_raw_mode_enabled(&mut self, raw_mode_enabled: bool) -> io::Result<()> {
         if raw_mode_enabled != self.raw_mode_enabled {
             if raw_mode_enabled {
                 execute!(
-                    stdout(),
+                    self.dest,
                     event::PushKeyboardEnhancementFlags(
                         event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                     )
                 )?;
+                if self.fullscreen {
+                    execute!(self.dest, event::EnableMouseCapture)?;
+                }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
-                execute!(stdout(), event::PopKeyboardEnhancementFlags)?;
+                if self.fullscreen {
+                    execute!(self.dest, event::DisableMouseCapture)?;
+                }
+                execute!(self.dest, event::PopKeyboardEnhancementFlags)?;
             }
             self.raw_mode_enabled = raw_mode_enabled;
         }
@@ -147,7 +175,10 @@ impl StdTerminal {
 impl Drop for StdTerminal {
     fn drop(&mut self) {
         let _ = self.set_raw_mode_enabled(false);
-        let _ = execute!(stdout(), cursor::Show);
+        if self.fullscreen {
+            let _ = queue!(self.dest, terminal::LeaveAlternateScreen);
+        }
+        let _ = execute!(self.dest, cursor::Show);
     }
 }
 
@@ -160,16 +191,24 @@ pub(crate) struct Terminal {
 
 impl Terminal {
     pub fn new() -> io::Result<Self> {
-        Self::new_with_impl::<StdTerminal>()
+        Self::new_with_impl(StdTerminal::new(false)?)
     }
 
-    fn new_with_impl<T: TerminalImpl + 'static>() -> io::Result<Self> {
+    pub fn fullscreen() -> io::Result<Self> {
+        Self::new_with_impl(StdTerminal::new(true)?)
+    }
+
+    fn new_with_impl<T: TerminalImpl + 'static>(inner: T) -> io::Result<Self> {
         Ok(Self {
-            inner: Box::new(T::new()?),
+            inner: Box::new(inner),
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
         })
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        self.inner.is_fullscreen()
     }
 
     pub fn is_raw_mode_enabled(&self) -> bool {
@@ -235,6 +274,16 @@ impl Terminal {
         }));
         self.subscribers.push(Arc::downgrade(&inner));
         Ok(TerminalEvents { inner })
+    }
+}
+
+impl Write for Terminal {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 }
 
