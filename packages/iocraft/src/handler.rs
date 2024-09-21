@@ -36,3 +36,23 @@ impl<'a, T> Handler<'a, T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handler() {
+        let mut handler = Handler::<i32>::None;
+        assert!(handler.is_none());
+        handler.take().invoke(0);
+        handler.invoke(0);
+
+        let mut handler = Handler::from(|value| {
+            assert_eq!(value, 42);
+        });
+        assert!(!handler.is_none());
+        handler.invoke(42);
+        handler.take().invoke(42);
+    }
+}

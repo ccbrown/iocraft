@@ -39,7 +39,6 @@ impl UseOutputState {
         let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
         for msg in self.queue.drain(..) {
             match msg {
-                // add carriage returns in case we're in raw mode
                 Message::Stdout(msg) => {
                     if needs_carriage_returns {
                         print!("{}\r\n", msg)

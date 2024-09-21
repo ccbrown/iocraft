@@ -1,3 +1,4 @@
+use crate::canvas::Canvas;
 use crossterm::{
     cursor,
     event::{self, Event, EventStream},
@@ -66,10 +67,10 @@ impl Stream for TerminalEvents {
 }
 
 trait TerminalImpl: Write {
-    fn width(&self) -> io::Result<u16>;
-    fn is_fullscreen(&self) -> bool;
+    fn width(&self) -> Option<u16>;
     fn is_raw_mode_enabled(&self) -> bool;
-    fn rewind_lines(&mut self, lines: u16) -> io::Result<()>;
+    fn clear_canvas(&mut self) -> io::Result<()>;
+    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
 }
 
@@ -77,6 +78,7 @@ struct StdTerminal {
     dest: io::Stdout,
     fullscreen: bool,
     raw_mode_enabled: bool,
+    prev_canvas_height: u16,
 }
 
 impl Write for StdTerminal {
@@ -90,24 +92,34 @@ impl Write for StdTerminal {
 }
 
 impl TerminalImpl for StdTerminal {
-    fn width(&self) -> io::Result<u16> {
-        terminal::size().map(|(w, _)| w)
-    }
-
-    fn is_fullscreen(&self) -> bool {
-        self.fullscreen
+    fn width(&self) -> Option<u16> {
+        terminal::size().ok().map(|(w, _)| w)
     }
 
     fn is_raw_mode_enabled(&self) -> bool {
         self.raw_mode_enabled
     }
 
-    fn rewind_lines(&mut self, lines: u16) -> io::Result<()> {
+    fn clear_canvas(&mut self) -> io::Result<()> {
+        if self.prev_canvas_height == 0 {
+            return Ok(());
+        }
+        let lines_to_rewind = self.prev_canvas_height - if self.fullscreen { 1 } else { 0 };
         queue!(
             self.dest,
-            cursor::MoveToPreviousLine(lines as _),
+            cursor::MoveToPreviousLine(lines_to_rewind as _),
             terminal::Clear(terminal::ClearType::FromCursorDown)
         )
+    }
+
+    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+        self.prev_canvas_height = canvas.height() as _;
+        if self.fullscreen {
+            canvas.write_ansi_without_final_newline(self)?;
+        } else {
+            canvas.write_ansi(self)?;
+        }
+        Ok(())
     }
 
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
@@ -143,6 +155,7 @@ impl StdTerminal {
             dest,
             fullscreen,
             raw_mode_enabled: false,
+            prev_canvas_height: 0,
         })
     }
 
@@ -182,6 +195,79 @@ impl Drop for StdTerminal {
     }
 }
 
+#[cfg(test)]
+pub struct MockTerminalOutput {
+    state: Arc<Mutex<MockTerminalState>>,
+}
+
+#[cfg(test)]
+impl MockTerminalOutput {
+    pub fn canvases(&self) -> Vec<Canvas> {
+        self.state.lock().unwrap().canvases.clone()
+    }
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct MockTerminalState {
+    canvases: Vec<Canvas>,
+}
+
+#[cfg(test)]
+struct MockTerminal {
+    state: Arc<Mutex<MockTerminalState>>,
+}
+
+#[cfg(test)]
+impl MockTerminal {
+    fn new() -> (Self, MockTerminalOutput) {
+        let output = MockTerminalOutput {
+            state: Default::default(),
+        };
+        (
+            Self {
+                state: output.state.clone(),
+            },
+            output,
+        )
+    }
+}
+
+#[cfg(test)]
+impl Write for MockTerminal {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+impl TerminalImpl for MockTerminal {
+    fn width(&self) -> Option<u16> {
+        None
+    }
+
+    fn is_raw_mode_enabled(&self) -> bool {
+        false
+    }
+
+    fn clear_canvas(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+        self.state.lock().unwrap().canvases.push(canvas.clone());
+        Ok(())
+    }
+
+    fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
+        Ok(futures::stream::empty().boxed())
+    }
+}
+
 pub(crate) struct Terminal {
     inner: Box<dyn TerminalImpl>,
     event_stream: Option<BoxStream<'static, TerminalEvent>>,
@@ -191,40 +277,42 @@ pub(crate) struct Terminal {
 
 impl Terminal {
     pub fn new() -> io::Result<Self> {
-        Self::new_with_impl(StdTerminal::new(false)?)
+        Ok(Self::new_with_impl(StdTerminal::new(false)?))
     }
 
     pub fn fullscreen() -> io::Result<Self> {
-        Self::new_with_impl(StdTerminal::new(true)?)
+        Ok(Self::new_with_impl(StdTerminal::new(true)?))
     }
 
-    fn new_with_impl<T: TerminalImpl + 'static>(inner: T) -> io::Result<Self> {
-        Ok(Self {
+    #[cfg(test)]
+    pub fn mock() -> (Self, MockTerminalOutput) {
+        let (term, output) = MockTerminal::new();
+        (Self::new_with_impl(term), output)
+    }
+
+    fn new_with_impl<T: TerminalImpl + 'static>(inner: T) -> Self {
+        Self {
             inner: Box::new(inner),
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
-        })
-    }
-
-    pub fn is_fullscreen(&self) -> bool {
-        self.inner.is_fullscreen()
+        }
     }
 
     pub fn is_raw_mode_enabled(&self) -> bool {
         self.inner.is_raw_mode_enabled()
     }
 
-    pub fn width(&self) -> io::Result<u16> {
+    pub fn width(&self) -> Option<u16> {
         self.inner.width()
     }
 
-    pub fn rewind_lines(&mut self, lines: u16) -> io::Result<()> {
-        if lines > 0 {
-            self.inner.rewind_lines(lines)
-        } else {
-            Ok(())
-        }
+    pub fn clear_canvas(&mut self) -> io::Result<()> {
+        self.inner.clear_canvas()
+    }
+
+    pub fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+        self.inner.write_canvas(canvas)
     }
 
     pub fn received_ctrl_c(&self) -> bool {

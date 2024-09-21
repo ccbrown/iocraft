@@ -128,3 +128,21 @@ impl Component for TextInput {
         Poll::Pending
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_text_input() {
+        assert_eq!(
+            element! {
+                Box(height: 1, width: 10) {
+                    TextInput(value: "foo")
+                }
+            }
+            .to_string(),
+            "foo\n"
+        );
+    }
+}

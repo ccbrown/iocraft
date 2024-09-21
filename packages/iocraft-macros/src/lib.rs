@@ -303,7 +303,12 @@ impl Parse for ParsedComponent {
                                     props_type = Some(r.elem.clone());
                                     impl_args.push(quote!(props));
                                 }
-                                _ => return Err(Error::new(arg.ty.span(), "invalid `props` type")),
+                                _ => {
+                                    return Err(Error::new(
+                                        arg.ty.span(),
+                                        "invalid `props` type (must be a reference)",
+                                    ))
+                                }
                             }
                         }
                         "hooks" | "_hooks" => match &*arg.ty {
@@ -313,9 +318,19 @@ impl Parse for ParsedComponent {
                             Type::Path(_) => {
                                 impl_args.push(quote!(hooks));
                             }
-                            _ => return Err(Error::new(arg.ty.span(), "invalid `hooks` type")),
+                            _ => {
+                                return Err(Error::new(
+                                    arg.ty.span(),
+                                    "invalid `hooks` type (must be a reference or a value)",
+                                ))
+                            }
                         },
-                        _ => return Err(Error::new(arg.span(), "invalid argument")),
+                        _ => {
+                            return Err(Error::new(
+                                arg.span(),
+                                "unexpected argument (must be named `props` or `hooks`)",
+                            ))
+                        }
                     }
                 }
                 _ => return Err(Error::new(arg.span(), "invalid argument")),
@@ -362,7 +377,7 @@ impl ToTokens for ParsedComponent {
 
                 fn update(&mut self, props: &mut Self::Props<'_>, mut hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
                     let mut e = {
-                        let hooks = hooks.with_context_stack(updater.component_context_stack());
+                        let mut hooks = hooks.with_context_stack(updater.component_context_stack());
                         Self::implementation(#(#impl_args),*).into()
                     };
                     updater.update_children([&mut e], None);

@@ -28,3 +28,8 @@ struct StructWithLifetimeAndConsts<'lt, const N: usize, const M: usize> {
 struct StructWithTypeGeneric<T> {
     foo: T,
 }
+
+#[derive(Covariant)]
+struct StructWithLifetimeAndTypeGeneric<'lt, T> {
+    foo: &'lt T,
+}

@@ -20,7 +20,6 @@ use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
     layout_engine: &'a mut LayoutEngine,
-    lines_to_rewind_to_clear: usize,
     did_clear_terminal_output: bool,
 }
 
@@ -68,9 +67,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     pub fn clear_terminal_output(&mut self) {
         if !self.context.did_clear_terminal_output {
             if let Some(terminal) = self.context.terminal.as_mut() {
-                terminal
-                    .rewind_lines(self.context.lines_to_rewind_to_clear as _)
-                    .unwrap();
+                terminal.clear_canvas().unwrap();
             }
             self.context.did_clear_terminal_output = true;
         }
@@ -284,14 +281,12 @@ impl<'a> Tree<'a> {
         &mut self,
         max_width: Option<usize>,
         terminal: Option<&mut Terminal>,
-        lines_to_rewind_to_clear: usize,
     ) -> RenderOutput {
         let did_clear_terminal_output = {
             let mut context = UpdateContext {
                 terminal,
                 layout_engine: &mut self.layout_engine,
                 did_clear_terminal_output: false,
-                lines_to_rewind_to_clear,
             };
             let mut component_context_stack = ContextStack::root(&mut self.system_context);
             self.root_component.update(
@@ -357,21 +352,14 @@ impl<'a> Tree<'a> {
     async fn terminal_render_loop(&mut self, mut term: Terminal) -> io::Result<()> {
         let mut prev_canvas: Option<Canvas> = None;
         loop {
-            let width = term.width().ok().map(|w| w as usize);
+            let width = term.width().map(|w| w as usize);
             execute!(term, terminal::BeginSynchronizedUpdate,)?;
-            let lines_to_rewind_to_clear = prev_canvas
-                .as_ref()
-                .map_or(0, |c| c.height() - if term.is_fullscreen() { 1 } else { 0 });
-            let output = self.render(width, Some(&mut term), lines_to_rewind_to_clear);
+            let output = self.render(width, Some(&mut term));
             if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas) {
                 if !output.did_clear_terminal_output {
-                    term.rewind_lines(lines_to_rewind_to_clear as _)?;
+                    term.clear_canvas()?;
                 }
-                if term.is_fullscreen() {
-                    output.canvas.write_ansi_without_final_newline(&mut term)?;
-                } else {
-                    output.canvas.write_ansi(&mut term)?;
-                }
+                term.write_canvas(&output.canvas)?;
             }
             prev_canvas = Some(output.canvas);
             execute!(term, terminal::EndSynchronizedUpdate)?;
@@ -395,7 +383,7 @@ impl<'a> Tree<'a> {
 pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canvas {
     let h = e.helper();
     let mut tree = Tree::new(e.props_mut(), h);
-    tree.render(max_width, None, 0).canvas
+    tree.render(max_width, None).canvas
 }
 
 pub(crate) async fn terminal_render_loop<E>(mut e: E, term: Terminal) -> io::Result<()>
@@ -405,4 +393,49 @@ where
     let h = e.helper();
     let mut tree = Tree::new(e.props_mut(), h);
     tree.terminal_render_loop(term).await
+}
+
+#[cfg(test)]
+pub(crate) async fn mock_terminal_render_loop<E>(e: E) -> io::Result<Vec<Canvas>>
+where
+    E: ElementExt,
+{
+    let (term, output) = Terminal::mock();
+    terminal_render_loop(e, term).await?;
+    Ok(output.canvases())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
+
+    #[component]
+    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let mut counter = hooks.use_state(|| 0);
+
+        hooks.use_future(async move {
+            counter += 1;
+        });
+
+        if counter == 1 {
+            system.exit();
+        }
+
+        element! {
+            Text(content: format!("count: {}", counter))
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_terminal_render_loop() {
+        let canvases = mock_terminal_render_loop(element!(MyComponent))
+            .await
+            .unwrap();
+        let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        let expected = vec!["count: 0\n", "count: 1\n"];
+        assert_eq!(actual, expected);
+    }
 }
