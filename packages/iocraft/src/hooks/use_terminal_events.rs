@@ -48,3 +48,36 @@ impl Hook for UseTerminalEventsImpl {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
+
+    #[component]
+    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let should_exit = hooks.use_state(|| false);
+        hooks.use_terminal_events(move |_event| {
+            should_exit.set(true);
+        });
+
+        if should_exit.get() {
+            system.exit();
+            element!(Text(content:"received event")).into_any()
+        } else {
+            element!(Box).into_any()
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_use_terminal_events() {
+        let canvases = mock_terminal_render_loop(element!(MyComponent))
+            .await
+            .unwrap();
+        let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        let expected = vec!["", "received event\n"];
+        assert_eq!(actual, expected);
+    }
+}

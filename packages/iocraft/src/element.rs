@@ -194,9 +194,17 @@ pub trait ElementExt: private::Sealed + Sized {
     }
 
     /// Renders the element in a loop, allowing it to be dynamic and interactive.
+    ///
+    /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
+    /// a file, this will probably not produce the desired result. You can determine whether stdout
+    /// is a TTY with [`stdout_is_tty`](crate::stdout_is_tty).
     fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
 
     /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
+    ///
+    /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
+    /// a file, this will probably not produce the desired result. You can determine whether stdout
+    /// is a TTY with [`stdout_is_tty`](crate::stdout_is_tty).
     fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>>;
 }
 

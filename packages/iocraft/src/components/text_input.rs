@@ -132,17 +132,36 @@ impl Component for TextInput {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
 
-    #[test]
-    fn test_text_input() {
-        assert_eq!(
-            element! {
-                Box(height: 1, width: 10) {
-                    TextInput(value: "foo")
-                }
+    #[component]
+    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let value = hooks.use_state(|| "".to_string());
+
+        if value.read().as_str() == "foo" {
+            system.exit();
+        }
+
+        element! {
+            Box(height: 1, width: 10) {
+                TextInput(
+                    has_focus: true,
+                    value: value.to_string(),
+                    on_change: move |new_value| value.set(new_value),
+                )
             }
-            .to_string(),
-            "foo\n"
-        );
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_text_input() {
+        let canvases = mock_terminal_render_loop(element!(MyComponent))
+            .await
+            .unwrap();
+        let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        let expected = vec!["\n", "foo\n"];
+        assert_eq!(actual, expected);
     }
 }

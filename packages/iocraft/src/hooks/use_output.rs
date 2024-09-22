@@ -58,7 +58,7 @@ impl UseOutputState {
     }
 }
 
-/// A handle to write to stdout, obtained from [`UseOutput::use_stdout`].
+/// A handle to write to stdout, obtained from [`UseOutput::use_output`].
 #[derive(Clone)]
 pub struct UseStdoutHandle {
     state: Arc<Mutex<UseOutputState>>,
@@ -76,7 +76,7 @@ impl UseStdoutHandle {
     }
 }
 
-/// A handle to write to stderr, obtained from [`UseOutput::use_stderr`].
+/// A handle to write to stderr, obtained from [`UseOutput::use_output`].
 #[derive(Clone)]
 pub struct UseStderrHandle {
     state: Arc<Mutex<UseOutputState>>,
@@ -136,7 +136,7 @@ mod tests {
     use futures::task::noop_waker;
 
     #[test]
-    fn test_use_output() {
+    fn test_use_output_polling() {
         let mut use_output = UseOutputImpl::default();
         assert_eq!(
             Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),

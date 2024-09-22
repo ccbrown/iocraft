@@ -374,4 +374,145 @@ mod tests {
 
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn test_canvas_text_styles() {
+        let mut canvas = Canvas::new(100, 1);
+        assert_eq!(canvas.width(), 100);
+        assert_eq!(canvas.height(), 1);
+
+        canvas
+            .subview_mut(0, 0, 1, 1, true)
+            .set_text(0, 0, ".", CanvasTextStyle::default());
+        canvas.subview_mut(1, 0, 1, 1, true).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Red),
+                weight: Weight::Bold,
+                underline: true,
+                ..Default::default()
+            },
+        );
+        canvas.subview_mut(2, 0, 1, 1, true).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Red),
+                weight: Weight::Bold,
+                ..Default::default()
+            },
+        );
+        canvas.subview_mut(3, 0, 1, 1, true).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Red),
+                weight: Weight::Light,
+                ..Default::default()
+            },
+        );
+        canvas.subview_mut(4, 0, 1, 1, true).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Red),
+                ..Default::default()
+            },
+        );
+        canvas.subview_mut(5, 0, 1, 1, true).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Green),
+                ..Default::default()
+            },
+        );
+
+        let mut actual = Vec::new();
+        canvas.write_ansi(&mut actual).unwrap();
+
+        let mut expected = Vec::new();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
+        write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("{}m"), Attribute::Dim.sgr()).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::ForegroundColor(Color::Green)
+        )
+        .unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
+        write!(expected, csi!("0m")).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_canvas_text_clipping() {
+        let mut canvas = Canvas::new(10, 5);
+        assert_eq!(canvas.width(), 10);
+        assert_eq!(canvas.height(), 5);
+
+        canvas.subview_mut(2, 2, 4, 2, true).set_text(
+            -2,
+            -1,
+            "line 1\nline 2\nline 3\nline 4",
+            CanvasTextStyle::default(),
+        );
+
+        let actual = canvas.to_string();
+        assert_eq!(actual, "\n\n  ne 2\n  ne 3\n\n");
+    }
+
+    #[test]
+    fn test_write_ansi_without_final_newline() {
+        let mut canvas = Canvas::new(10, 3);
+
+        canvas
+            .subview_mut(0, 0, 10, 3, true)
+            .set_text(0, 0, "hello!", CanvasTextStyle::default());
+
+        let mut actual = Vec::new();
+        canvas
+            .write_ansi_without_final_newline(&mut actual)
+            .unwrap();
+
+        let mut expected = Vec::new();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "hello!").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "\r\n").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
+
+        assert_eq!(actual, expected);
+    }
 }

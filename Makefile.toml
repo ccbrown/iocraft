@@ -19,6 +19,12 @@ install_crate = "clippy"
 command = "cargo"
 args = ["clippy", "--", "-D", "warnings"]
 
+[tasks.doc]
+install_crate = "doc"
+env = { "RUSTDOCFLAGS" = "-D warnings" }
+command = "cargo"
+args = ["doc", "--no-deps"]
+
 [tasks.coverage-report]
 description = "Shows you a coverage report"
 workspace = false
@@ -46,4 +52,5 @@ dependencies = [
     "build",
     "test",
     "clippy",
+    "doc",
 ]

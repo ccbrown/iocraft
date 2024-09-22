@@ -3,6 +3,7 @@ use crossterm::{
     cursor,
     event::{self, Event, EventStream},
     execute, queue, terminal,
+    tty::IsTty,
 };
 use futures::{
     future::pending,
@@ -264,7 +265,35 @@ impl TerminalImpl for MockTerminal {
     }
 
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
-        Ok(futures::stream::empty().boxed())
+        Ok(futures::stream::iter(vec![
+            TerminalEvent::Key(KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+            }),
+            TerminalEvent::Key(KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Release,
+            }),
+            TerminalEvent::Key(KeyEvent {
+                code: KeyCode::Char('o'),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+            }),
+            TerminalEvent::Key(KeyEvent {
+                code: KeyCode::Char('o'),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Repeat,
+            }),
+            TerminalEvent::Key(KeyEvent {
+                code: KeyCode::Char('o'),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Release,
+            }),
+        ])
+        .chain(futures::stream::pending())
+        .boxed())
     }
 }
 
@@ -375,6 +404,11 @@ impl Write for Terminal {
     }
 }
 
+/// Returns whether the standard output is a TTY terminal.
+pub fn stdout_is_tty() -> bool {
+    stdout().is_tty()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
@@ -383,9 +417,16 @@ mod tests {
     fn test_std_terminal() {
         // There's unfortunately not much here we can really test, but we'll do our best.
         // TODO: Is there a library we can use to emulate terminal input/output?
-        let terminal = Terminal::new().unwrap();
+        let mut terminal = Terminal::new().unwrap();
         assert!(!terminal.is_raw_mode_enabled());
         assert!(!terminal.received_ctrl_c());
         assert!(!terminal.is_raw_mode_enabled());
+        let canvas = Canvas::new(10, 1);
+        terminal.write_canvas(&canvas).unwrap();
+    }
+
+    #[test]
+    fn test_stdout_is_tty() {
+        let _ = stdout_is_tty();
     }
 }
