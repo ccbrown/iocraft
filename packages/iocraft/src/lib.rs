@@ -1,6 +1,48 @@
 //! # iocraft
 //!
-//! `iocraft` is a library for crafting beautiful text output and interfaces for the terminal or logs.
+//! `iocraft` is a library for crafting beautiful text output and interfaces for the terminal or
+//! logs. It allows you to easily build complex layouts and interactive elements using a
+//! declarative API.
+//!
+//! ## Features
+//!
+//! - Define your UI using a clean, highly readable syntax.
+//! - Organize your UI using flexbox layouts powered by [`taffy`](https://docs.rs/taffy/).
+//! - Output colored and styled UIs to the terminal or ASCII output anywhere else.
+//! - Create animated or interactive elements with event handling and hooks.
+//! - Build fullscreen terminal applications with ease.
+//! - Pass [props](macro@props) and [context](crate::components::ContextProvider) by reference to avoid unnecessary cloning.
+//!
+//! ## Getting Started
+//!
+//! If you're familiar with React, you'll feel right at home with `iocraft`. It uses all the same
+//! concepts, but is text-focused and made for Rust.
+//!
+//! Here's your first `iocraft` program:
+//!
+//! ```
+#![doc = include_str!("../../../examples/hello_world.rs")]
+//! ```
+//!
+//! Your UI is composed primarily via the [`element!`] macro, which allows you to declare your UI
+//! elements in a SwiftUI-like syntax.
+//!
+//! `uicraft` provides a few built-in components in the [`components`] module, such as
+//! [`Box`](crate::components::Box), [`Text`](crate::components::Text), and
+//! [`TextInput`](crate::components::TextInput), but you can also create your own using the
+//! [`macro@component`] macro.
+//!
+//! For example, here's a custom component that uses a [hook](crate::hooks) to display a counter
+//! which increments every 100ms:
+//!
+//! ```no_run
+#![doc = include_str!("../../../examples/counter.rs")]
+//! ```
+//!
+//! ## More Examples
+//!
+//! There are many [examples on GitHub](https://github.com/ccbrown/iocraft/tree/main/examples)
+//! which demonstrate various concepts and how to use all of `iocraft`'s features.
 
 #![warn(missing_docs)]
 

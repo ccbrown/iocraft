@@ -1,7 +1,6 @@
 use crate::{ComponentDrawer, ComponentUpdater, ContextStack};
 use std::{
     any::Any,
-    cell::{Ref, RefMut},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -90,7 +89,7 @@ pub struct Hooks<'a, 'b: 'a> {
     hooks: &'a mut Vec<Box<dyn AnyHook>>,
     first_update: bool,
     hook_index: usize,
-    context_stack: Option<&'a ContextStack<'b>>,
+    pub(crate) context_stack: Option<&'a ContextStack<'b>>,
 }
 
 impl<'a, 'b> Hooks<'a, 'b> {
@@ -114,42 +113,6 @@ impl<'a, 'b> Hooks<'a, 'b> {
             hook_index: self.hook_index,
             context_stack: Some(context_stack),
         }
-    }
-
-    /// Returns a reference to the context of the given type.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the context is not available.
-    pub fn use_context<T: Any>(&self) -> Ref<'a, T> {
-        self.context_stack
-            .expect("context not available")
-            .get_context::<T>()
-            .expect("context not found")
-    }
-
-    /// Returns a mutable reference to the context of the given type.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the context is not available or is not mutable.
-    pub fn use_context_mut<T: Any>(&self) -> RefMut<'a, T> {
-        self.context_stack
-            .expect("context not available")
-            .get_context_mut::<T>()
-            .expect("context not found")
-    }
-
-    /// Returns a reference to the context of the given type, if it is available.
-    pub fn try_use_context<T: Any>(&self) -> Option<Ref<'a, T>> {
-        self.context_stack
-            .and_then(|stack| stack.get_context::<T>())
-    }
-
-    /// Returns a mutable reference to the context of the given type, if it is available and mutable.
-    pub fn try_use_context_mut<T: Any>(&self) -> Option<RefMut<'a, T>> {
-        self.context_stack
-            .and_then(|stack| stack.get_context_mut::<T>())
     }
 
     /// If this is the component's first render, this function adds a new hook to the component and
