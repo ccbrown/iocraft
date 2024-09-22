@@ -38,7 +38,7 @@ use std::marker::PhantomData;
 ///
 /// This requires the type to be [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If
 /// implemented for a type that is not actually covariant, then the safety of the program is
-/// compromised. You can use the `#[derive(Props)]` macro to implement this trait safely. If the
+/// compromised. You can use the [`#[derive(Props)]`](derive@crate::Props) macro to implement this trait safely. If the
 /// type is not actually covariant, the derive macro will give you an error at compile-time.
 pub unsafe trait Props {}
 

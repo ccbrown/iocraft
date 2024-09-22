@@ -120,7 +120,8 @@ impl ToTokens for ParsedElement {
     }
 }
 
-/// Used to declare an element and its properties.
+// This is documented in the `iocraft` crate instead so that links to `iocraft` types resolve correctly.
+#[allow(missing_docs)]
 #[proc_macro]
 pub fn element(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
@@ -242,7 +243,7 @@ impl ToTokens for ParsedProps {
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
 #[proc_macro_derive(Props)]
-pub fn derive_covariant_type(item: TokenStream) -> TokenStream {
+pub fn derive_props(item: TokenStream) -> TokenStream {
     let props = parse_macro_input!(item as ParsedProps);
     quote!(#props).into()
 }
@@ -362,7 +363,22 @@ impl ToTokens for ParsedComponent {
     }
 }
 
-/// Defines a component type.
+/// Defines a custom component type.
+///
+/// Custom components are defined by adding this macro to a function that returns an `Element`:
+///
+/// ```no_run
+#[doc = include_str!("../../../examples/counter.rs")]
+/// ```
+///
+/// The function is allowed to take up to two arguments, one named `props`, for the component's
+/// properties and one named `hooks`, for hooks.
+///
+/// Here is an example of a component that takes a reference to a `Vec` of `User` structs via properties:
+///
+/// ```
+#[doc = include_str!("../../../examples/table.rs")]
+/// ```
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let component = parse_macro_input!(item as ParsedComponent);

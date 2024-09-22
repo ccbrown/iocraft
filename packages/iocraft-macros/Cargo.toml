@@ -14,3 +14,4 @@ syn = { version = "2.0.77", features = ["full"] }
 
 [dev-dependencies]
 iocraft = { path = "../iocraft" }
+smol = "2.0.1"

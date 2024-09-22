@@ -69,7 +69,7 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
 /// the component.
 ///
 /// Most users will not need to implement this trait directly. This is only required for new, low
-/// level component type definitions.
+/// level component type definitions. Instead, the [`component`](macro@crate::component) macro should be used.
 pub trait Component: Any + Unpin {
     /// The type of properties that the component accepts.
     type Props<'a>: Props

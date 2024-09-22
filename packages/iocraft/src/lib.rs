@@ -27,7 +27,7 @@
 //! Your UI is composed primarily via the [`element!`] macro, which allows you to declare your UI
 //! elements in a SwiftUI-like syntax.
 //!
-//! `uicraft` provides a few built-in components in the [`components`] module, such as
+//! `iocraft` provides a few built-in components in the [`components`] module, such as
 //! [`Box`](crate::components::Box), [`Text`](crate::components::Text), and
 //! [`TextInput`](crate::components::TextInput), but you can also create your own using the
 //! [`macro@component`] macro.
@@ -77,6 +77,64 @@ mod flattened_exports {
     pub use crate::style::*;
     pub use crate::terminal::*;
 
+    /// Used to declare an element and its properties.
+    ///
+    /// Elements are declared starting with their type. All properties are optional, so the simplest
+    /// use of this macro is just a type name:
+    ///
+    /// ```
+    /// # use iocraft::prelude::*;
+    /// # fn my_element() -> Element<'static, Box> {
+    /// element!(Box)
+    /// # }
+    /// ```
+    ///
+    /// This will evaluate to an [`Element`]`<'static, `[`Box`](crate::components::Box)`>` with no properties set.
+    ///
+    /// To specify properties, you can add them in a parenthesized block after the type name:
+    ///
+    /// ```
+    /// # use iocraft::prelude::*;
+    /// # fn my_element() -> Element<'static, Box> {
+    /// element! {
+    ///     Box(width: 80, height: 24, background_color: Color::Green)
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// If the element has a `children` property, you can pass one or more child elements in braces like so:
+    ///
+    /// ```
+    /// # use iocraft::prelude::*;
+    /// # fn my_element() -> Element<'static, Box> {
+    /// element! {
+    ///     Box {
+    ///         Text(content: "Hello, world!")
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// Lastly, you can use Rust to conditionally add child elements via `#()` blocks that evaluate
+    /// to any iterator type:
+    ///
+    /// ```
+    /// # use iocraft::prelude::*;
+    /// # fn my_element(show_greeting: bool) -> Element<'static, Box> {
+    /// element! {
+    ///     Box {
+    ///         #(if show_greeting {
+    ///             Some(element! {
+    ///                 Text(content: "Hello, world!")
+    ///             })
+    ///         } else {
+    ///             None
+    ///         })
+    ///     }
+    /// }
+    /// # }
+    pub use iocraft_macros::element;
+
     pub use iocraft_macros::*;
 }
 
@@ -85,7 +143,6 @@ pub use flattened_exports::*;
 /// Components for crafting your UI.
 pub mod components;
 
-/// Hooks for adding behavior to your components.
 pub mod hooks;
 
 /// By importing this module, you'll bring all of the crate's commonly used types into scope.
