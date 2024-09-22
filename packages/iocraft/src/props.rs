@@ -27,12 +27,10 @@ use std::marker::PhantomData;
 ///
 /// ```compile_fail
 /// # use iocraft::prelude::*;
-/// # struct MyType<'a> {
-/// #    _foo: &'a str,
-/// # }
+/// # struct MyType<'a>(&'a str);
 /// #[derive(Default, Props)]
-/// struct MyProps<'a, 'b> {
-///    foo: &'a mut MyType<'b>,
+/// struct MyProps<'a> {
+///    foo: &'a mut MyType<'a>,
 /// }
 /// ```
 ///
