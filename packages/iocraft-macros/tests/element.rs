@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use iocraft::{element, AnyElement, Component, Covariant, Element, Percent};
+use iocraft::{element, AnyElement, Component, Element, Percent, Props};
 
 #[derive(Default)]
 struct MyComponent;
 
-#[derive(Covariant, Default)]
+#[derive(Default, Props)]
 struct MyComponentProps {
     foo: String,
     percent: Percent,
@@ -22,7 +22,7 @@ impl Component for MyComponent {
 
 struct MyContainer;
 
-#[derive(Covariant, Default)]
+#[derive(Default, Props)]
 struct MyContainerProps {
     children: Vec<AnyElement<'static>>,
 }

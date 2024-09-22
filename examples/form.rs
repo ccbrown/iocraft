@@ -1,6 +1,6 @@
 use iocraft::prelude::*;
 
-#[props]
+#[derive(Default, Props)]
 struct FormFieldProps {
     label: String,
     value: Option<State<String>>,
@@ -37,7 +37,7 @@ fn FormField(props: &FormFieldProps) -> impl Into<AnyElement<'static>> {
     }
 }
 
-#[props]
+#[derive(Default, Props)]
 struct FormProps<'a> {
     first_name_out: Option<&'a mut String>,
     last_name_out: Option<&'a mut String>,

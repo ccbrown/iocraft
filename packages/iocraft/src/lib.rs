@@ -11,7 +11,7 @@
 //! - Output colored and styled UIs to the terminal or ASCII output anywhere else.
 //! - Create animated or interactive elements with event handling and hooks.
 //! - Build fullscreen terminal applications with ease.
-//! - Pass [props](macro@props) and [context](crate::components::ContextProvider) by reference to avoid unnecessary cloning.
+//! - Pass [props](crate::Props) and [context](crate::components::ContextProvider) by reference to avoid unnecessary cloning.
 //!
 //! ## Getting Started
 //!

@@ -1,6 +1,6 @@
 use crate::{
-    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant, Handler,
-    Hooks, KeyCode, KeyEvent, KeyEventKind, TerminalEvent, TerminalEvents,
+    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Handler, Hooks, KeyCode,
+    KeyEvent, KeyEventKind, Props, TerminalEvent, TerminalEvents,
 };
 use futures::stream::Stream;
 use std::{
@@ -10,7 +10,7 @@ use std::{
 use unicode_width::UnicodeWidthStr;
 
 /// The props which can be passed to the [`TextInput`] component.
-#[derive(Default, Covariant)]
+#[derive(Default, Props)]
 pub struct TextInputProps {
     /// The color to make the text.
     pub color: Option<Color>,

@@ -1,6 +1,6 @@
 use crate::{
-    AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant,
-    Edges, Hooks,
+    AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Edges, Hooks,
+    Props,
 };
 use iocraft_macros::with_layout_style_props;
 use taffy::{LengthPercentage, Rect};
@@ -137,7 +137,7 @@ impl BorderStyle {
 
 /// The props which can be passed to the [`Box`] component.
 #[with_layout_style_props]
-#[derive(Covariant, Default)]
+#[derive(Default, Props)]
 pub struct BoxProps<'a> {
     /// The elements to render inside of the box.
     pub children: Vec<AnyElement<'a>>,

@@ -1,16 +1,51 @@
 use std::marker::PhantomData;
 
-/// This trait marks a type as being covariant.
+/// This trait makes a struct available for use as component properties.
+///
+/// # Examples
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct MyProps {
+///    foo: String,
+/// }
+/// ```
+///
+/// Unowned data is okay too:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct MyProps<'a> {
+///    foo: &'a str,
+/// }
+/// ```
+///
+/// However, a field that would make the struct
+/// [invariant](https://doc.rust-lang.org/nomicon/subtyping.html) is not okay and will not compile:
+///
+/// ```compile_fail
+/// # use iocraft::prelude::*;
+/// # struct MyType<'a> {
+/// #    _foo: &'a str,
+/// # }
+/// #[derive(Default, Props)]
+/// struct MyProps<'a, 'b> {
+///    foo: &'a mut MyType<'b>,
+/// }
+/// ```
 ///
 /// # Safety
 ///
-/// If the type is not actually covariant, then the safety of the program is compromised. You can
-/// use the `#[derive(Covariant)]` macro to implement this trait safely. If the type is not
-/// actually covariant, the derive macro will not compile.
-pub unsafe trait Covariant {}
+/// This requires the type to be [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If
+/// implemented for a type that is not actually covariant, then the safety of the program is
+/// compromised. You can use the `#[derive(Props)]` macro to implement this trait safely. If the
+/// type is not actually covariant, the derive macro will give you an error at compile-time.
+pub unsafe trait Props {}
 
 #[doc(hidden)]
-#[derive(Clone, Copy, iocraft_macros::Covariant, Default)]
+#[derive(Clone, Copy, iocraft_macros::Props, Default)]
 pub struct NoProps;
 
 struct DropRawImpl<T> {
@@ -37,7 +72,7 @@ pub struct AnyProps<'a> {
 }
 
 impl<'a> AnyProps<'a> {
-    pub(crate) fn owned<T: Covariant + 'a>(props: T) -> Self {
+    pub(crate) fn owned<T: Props + 'a>(props: T) -> Self {
         let raw = Box::into_raw(Box::new(props));
         Self {
             raw: raw as *mut (),
@@ -48,7 +83,7 @@ impl<'a> AnyProps<'a> {
         }
     }
 
-    pub(crate) fn borrowed<T: Covariant>(props: &'a mut T) -> Self {
+    pub(crate) fn borrowed<T: Props>(props: &'a mut T) -> Self {
         Self {
             raw: props as *const T as *mut (),
             drop: None,
@@ -56,11 +91,11 @@ impl<'a> AnyProps<'a> {
         }
     }
 
-    pub(crate) unsafe fn downcast_ref_unchecked<T: Covariant>(&self) -> &T {
+    pub(crate) unsafe fn downcast_ref_unchecked<T: Props>(&self) -> &T {
         unsafe { &*(self.raw as *const T) }
     }
 
-    pub(crate) unsafe fn downcast_mut_unchecked<T: Covariant>(&mut self) -> &mut T {
+    pub(crate) unsafe fn downcast_mut_unchecked<T: Props>(&mut self) -> &mut T {
         unsafe { &mut *(self.raw as *mut T) }
     }
 

@@ -127,18 +127,18 @@ pub fn element(input: TokenStream) -> TokenStream {
     quote!(#element).into()
 }
 
-struct ParsedCovariant {
+struct ParsedProps {
     def: ItemStruct,
 }
 
-impl Parse for ParsedCovariant {
+impl Parse for ParsedProps {
     fn parse(input: ParseStream) -> Result<Self> {
         let def: ItemStruct = input.parse()?;
         Ok(Self { def })
     }
 }
 
-impl ToTokens for ParsedCovariant {
+impl ToTokens for ParsedProps {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let def = &self.def;
         let name = &def.ident;
@@ -231,43 +231,18 @@ impl ToTokens for ParsedCovariant {
         }
 
         tokens.extend(quote! {
-            unsafe impl #generics ::iocraft::Covariant for #name #bracketed_generic_names #where_clause {}
+            unsafe impl #generics ::iocraft::Props for #name #bracketed_generic_names #where_clause {}
         });
     }
 }
 
-/// Makes a struct as being covariant. If the struct is not actually covariant, compilation will fail.
-#[proc_macro_derive(Covariant)]
+/// Makes a struct available for use as component properties.
+///
+/// Most importantly, this marks a struct as being
+/// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
+/// covariant, compilation will fail.
+#[proc_macro_derive(Props)]
 pub fn derive_covariant_type(item: TokenStream) -> TokenStream {
-    let props = parse_macro_input!(item as ParsedCovariant);
-    quote!(#props).into()
-}
-
-struct ParsedProps {
-    props: ItemStruct,
-}
-
-impl Parse for ParsedProps {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let props: ItemStruct = input.parse()?;
-        Ok(Self { props })
-    }
-}
-
-impl ToTokens for ParsedProps {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let props = &self.props;
-
-        tokens.extend(quote! {
-            #[derive(Default, ::iocraft::Covariant)]
-            #props
-        });
-    }
-}
-
-/// Defines a struct containing properties to be accepted by components.
-#[proc_macro_attribute]
-pub fn props(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let props = parse_macro_input!(item as ParsedProps);
     quote!(#props).into()
 }

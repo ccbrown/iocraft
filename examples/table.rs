@@ -17,7 +17,7 @@ impl User {
     }
 }
 
-#[props]
+#[derive(Default, Props)]
 struct UsersTableProps<'a> {
     users: Option<&'a Vec<User>>,
 }

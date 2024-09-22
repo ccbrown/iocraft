@@ -2,7 +2,7 @@ use crate::{
     context::ContextStack,
     element::{ElementKey, ElementType},
     hook::{AnyHook, Hook, Hooks},
-    props::{AnyProps, Covariant},
+    props::{AnyProps, Props},
     render::{ComponentDrawer, ComponentUpdater, UpdateContext},
 };
 use futures::future::poll_fn;
@@ -72,7 +72,7 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
 /// level component type definitions.
 pub trait Component: Any + Unpin {
     /// The type of properties that the component accepts.
-    type Props<'a>: Covariant
+    type Props<'a>: Props
     where
         Self: 'a;
 

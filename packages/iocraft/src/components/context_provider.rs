@@ -1,7 +1,7 @@
-use crate::{AnyElement, Component, ComponentUpdater, Context, Covariant, Hooks};
+use crate::{AnyElement, Component, ComponentUpdater, Context, Hooks, Props};
 
 /// The props which can be passed to the [`ContextProvider`] component.
-#[derive(Covariant, Default)]
+#[derive(Default, Props)]
 pub struct ContextProviderProps<'a> {
     /// The children of the component.
     pub children: Vec<AnyElement<'a>>,

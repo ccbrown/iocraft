@@ -1,5 +1,5 @@
 use crate::{
-    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Covariant, Hooks, Weight,
+    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -37,7 +37,7 @@ pub enum TextDecoration {
 }
 
 /// The props which can be passed to the [`Text`] component.
-#[derive(Default, Covariant)]
+#[derive(Default, Props)]
 pub struct TextProps {
     /// The color to make the text.
     pub color: Option<Color>,

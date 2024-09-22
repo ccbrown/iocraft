@@ -1,14 +1,14 @@
 #![allow(dead_code)]
 
 use iocraft::{components::Box, AnyElement, Hooks};
-use iocraft_macros::{component, element, props};
+use iocraft_macros::{component, element, Props};
 
 #[component]
 fn MyComponent() -> impl Into<AnyElement<'static>> {
     element!(Box)
 }
 
-#[props]
+#[derive(Default, Props)]
 struct MyProps {
     foo: String,
 }

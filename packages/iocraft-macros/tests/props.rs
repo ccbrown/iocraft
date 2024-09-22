@@ -1,22 +1,22 @@
 #![allow(dead_code)]
 
-use iocraft_macros::Covariant;
+use iocraft_macros::Props;
 
-#[derive(Covariant)]
+#[derive(Props)]
 struct Unit;
 
-#[derive(Covariant)]
+#[derive(Props)]
 struct BasicStruct {
     foo: i32,
 }
 
-#[derive(Covariant)]
+#[derive(Props)]
 struct StructWithLifetime<'lt> {
     foo: &'lt i32,
     bar: &'lt mut i32,
 }
 
-#[derive(Covariant)]
+#[derive(Props)]
 struct StructWithLifetimeAndConsts<'lt, const N: usize, const M: usize> {
     foo: &'lt i32,
     bar: &'lt mut i32,
@@ -24,12 +24,12 @@ struct StructWithLifetimeAndConsts<'lt, const N: usize, const M: usize> {
     qux: [i32; M],
 }
 
-#[derive(Covariant)]
+#[derive(Props)]
 struct StructWithTypeGeneric<T> {
     foo: T,
 }
 
-#[derive(Covariant)]
+#[derive(Props)]
 struct StructWithLifetimeAndTypeGeneric<'lt, T> {
     foo: &'lt T,
 }
