@@ -1,4 +1,4 @@
-# iocraft [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ccbrown/iocraft/commit.yaml)](https://github.com/ccbrown/iocraft/actions) [![Codecov](https://img.shields.io/codecov/c/github/ccbrown/iocraft)](https://app.codecov.io/github/ccbrown/iocraft)
+# iocraft [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ccbrown/iocraft/commit.yaml)](https://github.com/ccbrown/iocraft/actions) [![docs.rs](https://img.shields.io/docsrs/iocraft)](https://docs.rs/iocraft/) [![Codecov](https://img.shields.io/codecov/c/github/ccbrown/iocraft)](https://app.codecov.io/github/ccbrown/iocraft)
 
 `iocraft` is a library for crafting beautiful text output and interfaces for the terminal or
 logs. It allows you to easily build complex layouts and interactive elements using a
