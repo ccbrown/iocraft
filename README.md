@@ -36,6 +36,8 @@ fn main() {
 }
 ```
 
+<img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/hello-world.png" height=237 />
+
 Your UI is composed primarily via the `element!` macro, which allows you to
 declare your UI elements in a React/SwiftUI-like syntax.
 
@@ -70,11 +72,17 @@ fn main() {
 }
 ```
 
+<img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/counter.svg" />
+
 ## More Examples
 
 There are many [examples on GitHub](https://github.com/ccbrown/iocraft/tree/main/examples) which
 demonstrate various concepts such as tables, progress bars, fullscreen apps,
 forms, and more!
+
+<img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/table.png" height=402 />
+<img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/form.png" height=387 />
+<img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/fullscreen.png" height=462 />
 
 ## Shoutouts
 
