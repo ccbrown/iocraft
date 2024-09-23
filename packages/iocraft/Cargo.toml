@@ -10,7 +10,7 @@ repository = "https://github.com/ccbrown/iocraft"
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 futures = "0.3.30"
 taffy = { version = "0.5.2", default-features = false, features = ["flexbox", "taffy_tree"] }
-iocraft-macros = { version = "0.1.0", path = "../iocraft-macros" }
+iocraft-macros = { version = "0.1.1", path = "../iocraft-macros" }
 bitflags = "2.6.0"
 unicode-width = "0.1.13"
 textwrap = "0.16.1"
