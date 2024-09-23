@@ -2,7 +2,7 @@ use crate::{
     canvas::{Canvas, CanvasSubviewMut},
     component::{ComponentHelperExt, Components, InstantiatedComponent},
     context::{Context, ContextStack, SystemContext},
-    element::ElementExt,
+    element::{ElementExt, ElementKey},
     props::AnyProps,
     terminal::{Terminal, TerminalEvents},
 };
@@ -12,10 +12,10 @@ use std::{
     any::Any,
     cell::{Ref, RefMut},
     collections::HashMap,
-    io::{self, Write},
-    mem,
+    io, mem,
 };
 use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
+use uuid::Uuid;
 
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
@@ -120,6 +120,8 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             .with_context(context, |component_context_stack| {
                 let mut used_components = HashMap::with_capacity(self.children.components.len());
 
+                let mut child_node_ids = Vec::new();
+
                 for mut child in children {
                     let mut component: InstantiatedComponent =
                         match self.children.components.remove(child.key()) {
@@ -127,6 +129,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                                 if component.component().type_id()
                                     == child.helper().component_type_id() =>
                             {
+                                child_node_ids.push(component.node_id());
                                 component
                             }
                             _ => {
@@ -138,22 +141,24 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                                         LayoutEngineNodeContext::default(),
                                     )
                                     .expect("we should be able to add the node");
-                                self.context
-                                    .layout_engine
-                                    .add_child(self.node_id, new_node_id)
-                                    .expect("we should be able to add the child");
+                                child_node_ids.push(new_node_id);
                                 let h = child.helper();
                                 InstantiatedComponent::new(new_node_id, child.props_mut(), h)
                             }
                         };
                     component.update(self.context, component_context_stack, child.props_mut());
-                    if used_components
-                        .insert(child.key().clone(), component)
-                        .is_some()
-                    {
-                        panic!("duplicate key for sibling components: {}", child.key());
+
+                    let mut child_key = child.key().clone();
+                    while used_components.contains_key(&child_key) {
+                        child_key = ElementKey::new(Uuid::new_v4().as_u128());
                     }
+                    used_components.insert(child_key, component);
                 }
+
+                self.context
+                    .layout_engine
+                    .set_children(self.node_id, &child_node_ids)
+                    .expect("we should be able to set the children");
 
                 for (_, component) in self.children.components.drain() {
                     self.context
@@ -375,7 +380,6 @@ impl<'a> Tree<'a> {
                 break;
             }
         }
-        write!(term, "\r\n")?;
         Ok(())
     }
 }
@@ -411,21 +415,45 @@ mod tests {
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
+    #[derive(Default, Props)]
+    struct MyInnerComponentProps {
+        label: String,
+    }
+
+    #[component]
+    fn MyInnerComponent(
+        mut hooks: Hooks,
+        props: &MyInnerComponentProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let mut counter = hooks.use_state(|| 0);
+        counter += 1;
+        element! {
+            Text(content: format!("render count ({}): {}", props.label, counter))
+        }
+    }
+
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let mut counter = hooks.use_state(|| 0);
+        let mut tick = hooks.use_state(|| 0);
 
         hooks.use_future(async move {
-            counter += 1;
+            tick += 1;
         });
 
-        if counter == 1 {
+        if tick == 1 {
             system.exit();
         }
 
         element! {
-            Text(content: format!("count: {}", counter))
+            Box(flex_direction: FlexDirection::Column) {
+                Text(content: format!("tick: {}", tick))
+                MyInnerComponent(label: "a")
+                // without a key, these next elements may not be re-used across renders
+                #((0..2).map(|i| element! { MyInnerComponent(label: format!("b{}", i)) }))
+                // with a key, these next elements will definitely be re-used across renders
+                #((0..2).map(|i| element! { MyInnerComponent(key: i, label: format!("c{}", i)) }))
+            }
         }
     }
 
@@ -435,7 +463,10 @@ mod tests {
             .await
             .unwrap();
         let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
-        let expected = vec!["count: 0\n", "count: 1\n"];
+        let expected = vec![
+            "tick: 0\nrender count (a): 1\nrender count (b0): 1\nrender count (b1): 1\nrender count (c0): 1\nrender count (c1): 1\n",
+            "tick: 1\nrender count (a): 2\nrender count (b0): 2\nrender count (b1): 1\nrender count (c0): 2\nrender count (c1): 2\n",
+        ];
         assert_eq!(actual, expected);
     }
 }

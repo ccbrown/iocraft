@@ -27,6 +27,13 @@
 //!     }
 //! }
 //! ```
+//!
+//! # Rules of Hooks
+//!
+//! Usage of hooks is subject to the same sorts of rules as [React hooks](https://react.dev/reference/rules/rules-of-hooks).
+//!
+//! They must be called in the same order every time, so calling them in any sort of conditional or
+//! loop is not allowed. If you break the rules of hooks, you can expect a panic.
 
 mod use_context;
 pub use use_context::*;

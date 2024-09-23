@@ -135,3 +135,13 @@ fn comment() {
     };
     assert_eq!(e.props.children.len(), 1);
 }
+
+#[test]
+fn key() {
+    let e = element! {
+        MyContainer(key: "foo") {
+            MyContainer
+        }
+    };
+    assert_eq!(e.props.children.len(), 1);
+}

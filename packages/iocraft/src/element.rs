@@ -3,11 +3,15 @@ use crate::{
     props::AnyProps,
     render, terminal_render_loop, Canvas, Terminal,
 };
+use any_key::AnyHash;
 use crossterm::{terminal, tty::IsTty};
 use std::{
+    fmt::Debug,
     future::Future,
+    hash::Hash,
     io::{self, stderr, stdout, Write},
     os::fd::AsRawFd,
+    rc::Rc,
 };
 
 /// Used by the `element!` macro to extend a collection with elements.
@@ -54,19 +58,13 @@ where
 
 /// Used to identify an element within the scope of its parent. This is used to minimize the number
 /// of times components are destroyed and recreated from render-to-render.
-#[derive(Clone, Hash, PartialEq, Eq, Debug, derive_more::Display)]
-pub struct ElementKey(uuid::Uuid);
-
-impl Default for ElementKey {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ElementKey(Rc<Box<dyn AnyHash>>);
 
 impl ElementKey {
-    /// Constructs a new, random element key.
-    pub fn new() -> Self {
-        Self(uuid::Uuid::new_v4())
+    /// Constructs a new key.
+    pub fn new<K: Debug + Hash + Eq + 'static>(key: K) -> Self {
+        Self(Rc::new(Box::new(key)))
     }
 }
 

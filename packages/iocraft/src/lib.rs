@@ -133,6 +133,28 @@ mod flattened_exports {
     ///     }
     /// }
     /// # }
+    /// ```
+    ///
+    /// If you're rendering a dynamic UI, you will want to ensure that when adding multiple
+    /// elements via an iterator a unique key is specified for each one. Otherwise, the elements
+    /// may not correctly maintain their state across renders. This is done using the special `key`
+    /// property, which can be given to any element:
+    ///
+    /// ```
+    /// # use iocraft::prelude::*;
+    /// # struct User { id: i32, name: String }
+    /// # fn my_element(users: Vec<User>) -> Element<'static, Box> {
+    /// element! {
+    ///     Box {
+    ///         #(users.iter().map(|user| element! {
+    ///             Box(key: user.id, flex_direction: FlexDirection::Column) {
+    ///                 Text(content: format!("Hello, {}!", user.name))
+    ///             }
+    ///         }))
+    ///     }
+    /// }
+    /// # }
+    /// ```
     pub use iocraft_macros::element;
 
     pub use iocraft_macros::*;

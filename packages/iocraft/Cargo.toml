@@ -9,12 +9,12 @@ crossterm = { version = "0.28.1", features = ["event-stream"] }
 futures = "0.3.30"
 taffy = { version = "0.5.2", default-features = false, features = ["flexbox", "taffy_tree"] }
 iocraft-macros = { path = "../iocraft-macros" }
-uuid = { version = "1.10.0", features = ["v4"] }
-derive_more = { version = "1.0.0", features = ["debug", "display"] }
 bitflags = "2.6.0"
 unicode-width = "0.1.13"
 textwrap = "0.16.1"
 generational-box = "0.5.6"
+any_key = "0.1.1"
+uuid = { version = "1.10.0", features = ["v4"] }
 
 [dev-dependencies]
 indoc = "2"

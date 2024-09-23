@@ -13,8 +13,9 @@ use syn::{
     spanned::Spanned,
     token::{Brace, Comma, Paren},
     DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Ident, ItemFn, ItemStruct, Lifetime,
-    Lit, Pat, Result, Token, Type, TypePath,
+    Lit, Member, Pat, Result, Token, Type, TypePath,
 };
+use uuid::Uuid;
 
 enum ParsedElementChild {
     Element(ParsedElement),
@@ -72,22 +73,36 @@ impl ToTokens for ParsedElement {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ty = &self.ty;
 
+        let decl_key = Uuid::new_v4().as_u128();
+
+        let key = self
+            .props
+            .iter()
+            .find_map(|FieldValue { member, expr, .. }| match member {
+                Member::Named(ident) if ident == "key" => Some(quote!((#decl_key, #expr))),
+                _ => None,
+            })
+            .unwrap_or_else(|| quote!(#decl_key));
+
         let props = self
             .props
             .iter()
-            .map(|FieldValue { member, expr, .. }| match expr {
-                Expr::Lit(lit) => match &lit.lit {
-                    Lit::Int(lit) if lit.suffix() == "pct" => {
-                        let value = lit.base10_parse::<f32>().unwrap();
-                        quote!(#member: ::iocraft::Percent(#value).into())
-                    }
-                    Lit::Float(lit) if lit.suffix() == "pct" => {
-                        let value = lit.base10_parse::<f32>().unwrap();
-                        quote!(#member: ::iocraft::Percent(#value).into())
-                    }
+            .filter_map(|FieldValue { member, expr, .. }| match member {
+                Member::Named(ident) if ident == "key" => None,
+                _ => Some(match expr {
+                    Expr::Lit(lit) => match &lit.lit {
+                        Lit::Int(lit) if lit.suffix() == "pct" => {
+                            let value = lit.base10_parse::<f32>().unwrap();
+                            quote!(#member: ::iocraft::Percent(#value).into())
+                        }
+                        Lit::Float(lit) if lit.suffix() == "pct" => {
+                            let value = lit.base10_parse::<f32>().unwrap();
+                            quote!(#member: ::iocraft::Percent(#value).into())
+                        }
+                        _ => quote!(#member: (#expr).into()),
+                    },
                     _ => quote!(#member: (#expr).into()),
-                },
-                _ => quote!(#member: (#expr).into()),
+                }),
             })
             .collect::<Vec<_>>();
 
@@ -107,7 +122,7 @@ impl ToTokens for ParsedElement {
             {
                 type Props<'a> = <#ty as ::iocraft::ElementType>::Props<'a>;
                 let mut _iocraft_element = ::iocraft::Element::<#ty>{
-                    key: core::default::Default::default(),
+                    key: ::iocraft::ElementKey::new(#key),
                     props: Props{
                         #(#props,)*
                         ..core::default::Default::default()
