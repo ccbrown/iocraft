@@ -16,3 +16,5 @@ uuid = { version = "1.10.0", features = ["v4"] }
 [dev-dependencies]
 iocraft = { path = "../iocraft" }
 smol = "2.0.1"
+chrono = "0.4.38"
+unicode-width = "0.1.13"
