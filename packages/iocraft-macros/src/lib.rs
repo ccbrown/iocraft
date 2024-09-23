@@ -383,7 +383,7 @@ impl ToTokens for ParsedComponent {
 /// Custom components are defined by adding this macro to a function that returns an `Element`:
 ///
 /// ```no_run
-#[doc = include_str!("../../../examples/counter.rs")]
+#[doc = include_str!("../examples/counter.rs")]
 /// ```
 ///
 /// The function is allowed to take up to two arguments, one named `props`, for the component's
@@ -392,7 +392,7 @@ impl ToTokens for ParsedComponent {
 /// Here is an example of a component that takes a reference to a `Vec` of `User` structs via properties:
 ///
 /// ```
-#[doc = include_str!("../../../examples/table.rs")]
+#[doc = include_str!("../examples/table.rs")]
 /// ```
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {

@@ -21,7 +21,7 @@
 //! Here's your first `iocraft` program:
 //!
 //! ```
-#![doc = include_str!("../../../examples/hello_world.rs")]
+#![doc = include_str!("../examples/hello_world.rs")]
 //! ```
 //!
 //! Your UI is composed primarily via the [`element!`] macro, which allows you to declare your UI
@@ -36,7 +36,7 @@
 //! which increments every 100ms:
 //!
 //! ```no_run
-#![doc = include_str!("../../../examples/counter.rs")]
+#![doc = include_str!("../examples/counter.rs")]
 //! ```
 //!
 //! ## More Examples
