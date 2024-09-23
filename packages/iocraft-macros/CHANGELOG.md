@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.0...iocraft-macros-v0.1.1) - 2024-09-23
+
+### Other
+
+- release ([#9](https://github.com/ccbrown/iocraft/pull/9))
+
 ## [0.1.0](https://github.com/ccbrown/iocraft/releases/tag/iocraft-macros-v0.1.0) - 2024-09-23
 
 ### Fixed
