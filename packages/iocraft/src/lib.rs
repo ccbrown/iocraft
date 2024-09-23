@@ -25,7 +25,7 @@
 //! ```
 //!
 //! Your UI is composed primarily via the [`element!`] macro, which allows you to declare your UI
-//! elements in a SwiftUI-like syntax.
+//! elements in a React/SwiftUI-like syntax.
 //!
 //! `iocraft` provides a few built-in components in the [`components`] module, such as
 //! [`Box`](crate::components::Box), [`Text`](crate::components::Text), and
@@ -42,7 +42,14 @@
 //! ## More Examples
 //!
 //! There are many [examples on GitHub](https://github.com/ccbrown/iocraft/tree/main/examples)
-//! which demonstrate various concepts and how to use all of `iocraft`'s features.
+//! which demonstrate various concepts such as tables, progress bars, full screen apps, forms, and
+//! more!.
+//!
+//! ## Shoutouts
+//!
+//! `iocraft` was inspired by [Dioxus](https://github.com/DioxusLabs/dioxus) and
+//! [Ink](https://github.com/vadimdemedes/ink), which you should also check out, especially if
+//! you're building graphical interfaces or interested in using JavaScript/TypeScript.
 
 #![warn(missing_docs)]
 

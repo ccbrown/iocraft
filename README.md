@@ -37,7 +37,7 @@ fn main() {
 ```
 
 Your UI is composed primarily via the `element!` macro, which allows you to
-declare your UI elements in a SwiftUI-like syntax.
+declare your UI elements in a React/SwiftUI-like syntax.
 
 `iocraft` provides a few built-in components, such as `Box`, `Text`, and
 `TextInput`, but you can also create your own using the `#[component]` macro.
@@ -72,8 +72,16 @@ fn main() {
 
 ## More Examples
 
-There are many [examples here on GitHub](https://github.com/ccbrown/iocraft/tree/main/examples)
-which demonstrate various concepts and how to use all of `iocraft`'s features.
+There are many [examples on GitHub](https://github.com/ccbrown/iocraft/tree/main/examples) which
+demonstrate various concepts such as tables, progress bars, fullscreen apps,
+forms, and more!
+
+## Shoutouts
+
+`iocraft` was inspired by [Dioxus](https://github.com/DioxusLabs/dioxus) and
+[Ink](https://github.com/vadimdemedes/ink), which you should also check out,
+especially if you're building graphical interfaces or interested in using
+JavaScript/TypeScript.
 
 ## License
 

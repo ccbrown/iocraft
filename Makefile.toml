@@ -54,3 +54,16 @@ dependencies = [
     "clippy",
     "doc",
 ]
+
+[tasks.counter-example-svg]
+workspace = false
+command = "svg-term"
+args = [
+    "--out", "examples/images/counter.svg",
+    "--window",
+    "--width", "60",
+    "--height", "4",
+    "--no-cursor",
+    "--command",
+    "echo '\\033[0;37miocraft\\033[0m % \\033[0;32mcargo\\033[0m run -q --example counter' && timeout 10s cargo run -q --example counter",
+]
