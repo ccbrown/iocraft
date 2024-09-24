@@ -91,6 +91,9 @@ forms, and more!
 especially if you're building graphical interfaces or interested in using
 JavaScript/TypeScript.
 
+You may also want to check out [Ratatui](https://github.com/ratatui/ratatui),
+which serves a similar purpose with a less declarative API.
+
 ## License
 
 Licensed under either of

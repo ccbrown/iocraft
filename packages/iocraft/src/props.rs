@@ -51,6 +51,9 @@ use std::marker::PhantomData;
 /// }
 /// ```
 ///
+/// If you are building a component for use in a library, you will typically also want to mark your
+/// props as `#[non_exhaustive]`.
+///
 /// # Safety
 ///
 /// This requires the type to be [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If

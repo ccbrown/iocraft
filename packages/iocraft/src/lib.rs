@@ -50,6 +50,9 @@
 //! `iocraft` was inspired by [Dioxus](https://github.com/DioxusLabs/dioxus) and
 //! [Ink](https://github.com/vadimdemedes/ink), which you should also check out, especially if
 //! you're building graphical interfaces or interested in using JavaScript/TypeScript.
+//!
+//! You may also want to check out [Ratatui](https://github.com/ratatui/ratatui), which serves a
+//! similar purpose with a less declarative API.
 
 #![warn(missing_docs)]
 

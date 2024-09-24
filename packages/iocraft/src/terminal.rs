@@ -211,6 +211,9 @@ impl Stream for MockTerminalOutputStream {
 }
 
 /// Used to provide the configuration for a mock terminal which can be used for testing.
+///
+/// This can be passed to [`ElementExt::mock_terminal_render_loop`](crate::ElementExt::mock_terminal_render_loop) for testing your dynamic components.
+#[non_exhaustive]
 pub struct MockTerminalConfig {
     /// The events to be emitted by the mock terminal.
     pub events: BoxStream<'static, TerminalEvent>,

@@ -16,6 +16,7 @@ struct Character {
 }
 
 /// Describes the style of text to be rendered via a [`Canvas`].
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CanvasTextStyle {
     /// The color of the text.
@@ -40,9 +41,13 @@ impl Cell {
     }
 }
 
-/// Canvas is a low-level abstraction for rendering output. Most users of the library will not need
-/// to use it directly. However, it is used by low level component implementations and can be used
-/// to store and copy their output.
+/// `Canvas` is the medium that output is drawn to before being rendered to the terminal or other
+/// destinations.
+///
+/// Typical use of the library doesn't require direct interaction with this struct. It is primarily useful for two cases:
+///
+/// - When implementing low-level components, you'll need to utilize the `Canvas` drawing methods.
+/// - When implementing unit tests for components, you may want to render to a `Canvas` for inspection.
 #[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
