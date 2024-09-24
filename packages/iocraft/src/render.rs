@@ -4,15 +4,20 @@ use crate::{
     context::{Context, ContextStack, SystemContext},
     element::{ElementExt, ElementKey},
     props::AnyProps,
-    terminal::{Terminal, TerminalEvents},
+    terminal::{MockTerminalConfig, MockTerminalOutputStream, Terminal, TerminalEvents},
 };
 use crossterm::{execute, terminal};
-use futures::future::{select, FutureExt};
+use futures::{
+    future::{select, FutureExt, LocalBoxFuture},
+    stream::{Stream, StreamExt},
+};
 use std::{
     any::Any,
     cell::{Ref, RefMut},
     collections::HashMap,
     io, mem,
+    pin::Pin,
+    task::{self, Poll},
 };
 use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
 use uuid::Uuid;
@@ -399,19 +404,45 @@ where
     tree.terminal_render_loop(term).await
 }
 
-#[cfg(test)]
-pub(crate) async fn mock_terminal_render_loop<E>(e: E) -> io::Result<Vec<Canvas>>
+pub(crate) struct MockTerminalRenderLoop<'a> {
+    output: MockTerminalOutputStream,
+    render_loop: LocalBoxFuture<'a, io::Result<()>>,
+    render_loop_is_done: bool,
+}
+
+impl Stream for MockTerminalRenderLoop<'_> {
+    type Item = Canvas;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.as_mut();
+
+        if !this.render_loop_is_done && this.render_loop.poll_unpin(cx).is_ready() {
+            this.render_loop_is_done = true;
+        }
+
+        this.output.poll_next_unpin(cx)
+    }
+}
+
+pub(crate) fn mock_terminal_render_loop<'a, E>(
+    e: E,
+    config: MockTerminalConfig,
+) -> MockTerminalRenderLoop<'a>
 where
-    E: ElementExt,
+    E: ElementExt + 'a,
 {
-    let (term, output) = Terminal::mock();
-    terminal_render_loop(e, term).await?;
-    Ok(output.canvases())
+    let (term, output) = Terminal::mock(config);
+    MockTerminalRenderLoop {
+        render_loop: terminal_render_loop(e, term).boxed_local(),
+        render_loop_is_done: false,
+        output,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
@@ -459,9 +490,10 @@ mod tests {
 
     #[apply(test!)]
     async fn test_terminal_render_loop() {
-        let canvases = mock_terminal_render_loop(element!(MyComponent))
-            .await
-            .unwrap();
+        let canvases: Vec<_> =
+            mock_terminal_render_loop(element!(MyComponent), MockTerminalConfig::default())
+                .collect()
+                .await;
         let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
         let expected = vec![
             "tick: 0\nrender count (a): 1\nrender count (b0): 1\nrender count (b1): 1\nrender count (c0): 1\nrender count (c1): 1\n",

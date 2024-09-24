@@ -136,6 +136,7 @@ impl BorderStyle {
 }
 
 /// The props which can be passed to the [`Box`] component.
+#[non_exhaustive]
 #[with_layout_style_props]
 #[derive(Default, Props)]
 pub struct BoxProps<'a> {

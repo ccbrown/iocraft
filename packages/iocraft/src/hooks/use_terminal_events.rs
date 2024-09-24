@@ -58,6 +58,7 @@ impl Hook for UseTerminalEventsImpl {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use futures::stream::{self, StreamExt};
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
@@ -79,9 +80,16 @@ mod tests {
 
     #[apply(test!)]
     async fn test_use_terminal_events() {
-        let canvases = mock_terminal_render_loop(element!(MyComponent))
-            .await
-            .unwrap();
+        let canvases: Vec<_> = element!(MyComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::Key(KeyEvent {
+                    code: KeyCode::Char('f'),
+                    modifiers: KeyModifiers::empty(),
+                    kind: KeyEventKind::Press,
+                }),
+            ])))
+            .collect()
+            .await;
         let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
         let expected = vec!["", "received event\n"];
         assert_eq!(actual, expected);

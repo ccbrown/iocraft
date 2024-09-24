@@ -1,6 +1,7 @@
 use crate::{AnyElement, Component, ComponentUpdater, Context, Hooks, Props};
 
 /// The props which can be passed to the [`ContextProvider`] component.
+#[non_exhaustive]
 #[derive(Default, Props)]
 pub struct ContextProviderProps<'a> {
     /// The children of the component.

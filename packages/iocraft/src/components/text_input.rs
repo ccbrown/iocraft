@@ -10,6 +10,7 @@ use std::{
 use unicode_width::UnicodeWidthStr;
 
 /// The props which can be passed to the [`TextInput`] component.
+#[non_exhaustive]
 #[derive(Default, Props)]
 pub struct TextInputProps {
     /// The color to make the text.
@@ -166,6 +167,7 @@ impl Component for TextInput {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
@@ -191,10 +193,39 @@ mod tests {
 
     #[apply(test!)]
     async fn test_text_input() {
-        let canvases = mock_terminal_render_loop(element!(MyComponent))
-            .await
-            .unwrap();
-        let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        let actual = element!(MyComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![
+                    TerminalEvent::Key(KeyEvent {
+                        code: KeyCode::Char('f'),
+                        modifiers: KeyModifiers::empty(),
+                        kind: KeyEventKind::Press,
+                    }),
+                    TerminalEvent::Key(KeyEvent {
+                        code: KeyCode::Char('f'),
+                        modifiers: KeyModifiers::empty(),
+                        kind: KeyEventKind::Release,
+                    }),
+                    TerminalEvent::Key(KeyEvent {
+                        code: KeyCode::Char('o'),
+                        modifiers: KeyModifiers::empty(),
+                        kind: KeyEventKind::Press,
+                    }),
+                    TerminalEvent::Key(KeyEvent {
+                        code: KeyCode::Char('o'),
+                        modifiers: KeyModifiers::empty(),
+                        kind: KeyEventKind::Repeat,
+                    }),
+                    TerminalEvent::Key(KeyEvent {
+                        code: KeyCode::Char('o'),
+                        modifiers: KeyModifiers::empty(),
+                        kind: KeyEventKind::Release,
+                    }),
+                ],
+            )))
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .await;
         let expected = vec!["\n", "foo\n"];
         assert_eq!(actual, expected);
     }

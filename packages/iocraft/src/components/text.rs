@@ -37,6 +37,7 @@ pub enum TextDecoration {
 }
 
 /// The props which can be passed to the [`Text`] component.
+#[non_exhaustive]
 #[derive(Default, Props)]
 pub struct TextProps {
     /// The color to make the text.

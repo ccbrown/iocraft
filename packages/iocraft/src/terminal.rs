@@ -6,12 +6,14 @@ use crossterm::{
     tty::IsTty,
 };
 use futures::{
+    channel::mpsc,
     future::pending,
-    stream::{BoxStream, Stream, StreamExt},
+    stream::{self, BoxStream, Stream, StreamExt},
 };
 use std::{
     collections::VecDeque,
     io::{self, stdout, Write},
+    mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
@@ -196,45 +198,60 @@ impl Drop for StdTerminal {
     }
 }
 
-#[cfg(test)]
-pub struct MockTerminalOutput {
-    state: Arc<Mutex<MockTerminalState>>,
+pub(crate) struct MockTerminalOutputStream {
+    inner: mpsc::UnboundedReceiver<Canvas>,
 }
 
-#[cfg(test)]
-impl MockTerminalOutput {
-    pub fn canvases(&self) -> Vec<Canvas> {
-        self.state.lock().unwrap().canvases.clone()
+impl Stream for MockTerminalOutputStream {
+    type Item = Canvas;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.inner.poll_next_unpin(cx)
     }
 }
 
-#[cfg(test)]
-#[derive(Default)]
-struct MockTerminalState {
-    canvases: Vec<Canvas>,
+/// Used to provide the configuration for a mock terminal which can be used for testing.
+pub struct MockTerminalConfig {
+    /// The events to be emitted by the mock terminal.
+    pub events: BoxStream<'static, TerminalEvent>,
 }
 
-#[cfg(test)]
+impl MockTerminalConfig {
+    /// Creates a new `MockTerminalConfig` with the given event stream.
+    pub fn with_events<T: Stream<Item = TerminalEvent> + Send + 'static>(events: T) -> Self {
+        Self {
+            events: events.boxed(),
+        }
+    }
+}
+
+impl Default for MockTerminalConfig {
+    fn default() -> Self {
+        Self {
+            events: stream::pending().boxed(),
+        }
+    }
+}
+
 struct MockTerminal {
-    state: Arc<Mutex<MockTerminalState>>,
+    config: MockTerminalConfig,
+    output: mpsc::UnboundedSender<Canvas>,
 }
 
-#[cfg(test)]
 impl MockTerminal {
-    fn new() -> (Self, MockTerminalOutput) {
-        let output = MockTerminalOutput {
-            state: Default::default(),
-        };
+    fn new(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
+        let (output_tx, output_rx) = mpsc::unbounded();
+        let output = MockTerminalOutputStream { inner: output_rx };
         (
             Self {
-                state: output.state.clone(),
+                config,
+                output: output_tx,
             },
             output,
         )
     }
 }
 
-#[cfg(test)]
 impl Write for MockTerminal {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         Ok(buf.len())
@@ -245,7 +262,6 @@ impl Write for MockTerminal {
     }
 }
 
-#[cfg(test)]
 impl TerminalImpl for MockTerminal {
     fn width(&self) -> Option<u16> {
         None
@@ -260,40 +276,14 @@ impl TerminalImpl for MockTerminal {
     }
 
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
-        self.state.lock().unwrap().canvases.push(canvas.clone());
+        let _ = self.output.unbounded_send(canvas.clone());
         Ok(())
     }
 
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
-        Ok(futures::stream::iter(vec![
-            TerminalEvent::Key(KeyEvent {
-                code: KeyCode::Char('f'),
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Press,
-            }),
-            TerminalEvent::Key(KeyEvent {
-                code: KeyCode::Char('f'),
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Release,
-            }),
-            TerminalEvent::Key(KeyEvent {
-                code: KeyCode::Char('o'),
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Press,
-            }),
-            TerminalEvent::Key(KeyEvent {
-                code: KeyCode::Char('o'),
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Repeat,
-            }),
-            TerminalEvent::Key(KeyEvent {
-                code: KeyCode::Char('o'),
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Release,
-            }),
-        ])
-        .chain(futures::stream::pending())
-        .boxed())
+        let mut events = stream::pending().boxed();
+        mem::swap(&mut events, &mut self.config.events);
+        Ok(events.chain(stream::pending()).boxed())
     }
 }
 
@@ -313,9 +303,8 @@ impl Terminal {
         Ok(Self::new_with_impl(StdTerminal::new(true)?))
     }
 
-    #[cfg(test)]
-    pub fn mock() -> (Self, MockTerminalOutput) {
-        let (term, output) = MockTerminal::new();
+    pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
+        let (term, output) = MockTerminal::new(config);
         (Self::new_with_impl(term), output)
     }
 

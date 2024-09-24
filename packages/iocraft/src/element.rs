@@ -1,10 +1,12 @@
 use crate::{
     component::{Component, ComponentHelper, ComponentHelperExt},
+    mock_terminal_render_loop,
     props::AnyProps,
-    render, terminal_render_loop, Canvas, Terminal,
+    render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
 use any_key::AnyHash;
 use crossterm::{terminal, tty::IsTty};
+use futures::Stream;
 use std::{
     fmt::Debug,
     future::Future,
@@ -198,6 +200,63 @@ pub trait ElementExt: private::Sealed + Sized {
     /// is a TTY with [`stdout_is_tty`](crate::stdout_is_tty).
     fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
 
+    /// Renders the element in a loop using a mock terminal, allowing you to simulate terminal
+    /// events for testing purposes.
+    ///
+    /// A stream of canvases is returned, allowing you to inspect the output of each render pass.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use iocraft::prelude::*;
+    /// # use futures::stream::StreamExt;
+    /// # #[component]
+    /// # fn MyTextInput() -> impl Into<AnyElement<'static>> {
+    /// #     element!(Box)
+    /// # }
+    /// async fn test_text_input() {
+    ///     let actual = element!(MyTextInput)
+    ///         .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+    ///             vec![
+    ///                 TerminalEvent::Key(KeyEvent {
+    ///                     code: KeyCode::Char('f'),
+    ///                     modifiers: KeyModifiers::empty(),
+    ///                     kind: KeyEventKind::Press,
+    ///                 }),
+    ///                 TerminalEvent::Key(KeyEvent {
+    ///                     code: KeyCode::Char('f'),
+    ///                     modifiers: KeyModifiers::empty(),
+    ///                     kind: KeyEventKind::Release,
+    ///                 }),
+    ///                 TerminalEvent::Key(KeyEvent {
+    ///                     code: KeyCode::Char('o'),
+    ///                     modifiers: KeyModifiers::empty(),
+    ///                     kind: KeyEventKind::Press,
+    ///                 }),
+    ///                 TerminalEvent::Key(KeyEvent {
+    ///                     code: KeyCode::Char('o'),
+    ///                     modifiers: KeyModifiers::empty(),
+    ///                     kind: KeyEventKind::Repeat,
+    ///                 }),
+    ///                 TerminalEvent::Key(KeyEvent {
+    ///                     code: KeyCode::Char('o'),
+    ///                     modifiers: KeyModifiers::empty(),
+    ///                     kind: KeyEventKind::Release,
+    ///                 }),
+    ///             ],
+    ///         )))
+    ///         .map(|c| c.to_string())
+    ///         .collect::<Vec<_>>()
+    ///         .await;
+    ///     let expected = vec!["\n", "foo\n"];
+    ///     assert_eq!(actual, expected);
+    /// }
+    /// ```
+    fn mock_terminal_render_loop(
+        &mut self,
+        config: MockTerminalConfig,
+    ) -> impl Stream<Item = Canvas>;
+
     /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
     ///
     /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
@@ -228,6 +287,13 @@ impl<'a> ElementExt for AnyElement<'a> {
         terminal_render_loop(self, Terminal::new()?).await
     }
 
+    fn mock_terminal_render_loop(
+        &mut self,
+        config: MockTerminalConfig,
+    ) -> impl Stream<Item = Canvas> {
+        mock_terminal_render_loop(self, config)
+    }
+
     async fn fullscreen(&mut self) -> io::Result<()> {
         terminal_render_loop(self, Terminal::fullscreen()?).await
     }
@@ -253,6 +319,13 @@ impl<'a> ElementExt for &mut AnyElement<'a> {
 
     async fn render_loop(&mut self) -> io::Result<()> {
         terminal_render_loop(&mut **self, Terminal::new()?).await
+    }
+
+    fn mock_terminal_render_loop(
+        &mut self,
+        config: MockTerminalConfig,
+    ) -> impl Stream<Item = Canvas> {
+        mock_terminal_render_loop(&mut **self, config)
     }
 
     async fn fullscreen(&mut self) -> io::Result<()> {
@@ -285,6 +358,12 @@ where
         terminal_render_loop(self, Terminal::new()?).await
     }
 
+    fn mock_terminal_render_loop(
+        &mut self,
+        config: MockTerminalConfig,
+    ) -> impl Stream<Item = Canvas> {
+        mock_terminal_render_loop(self, config)
+    }
     async fn fullscreen(&mut self) -> io::Result<()> {
         terminal_render_loop(self, Terminal::fullscreen()?).await
     }
@@ -313,6 +392,13 @@ where
 
     async fn render_loop(&mut self) -> io::Result<()> {
         terminal_render_loop(&mut **self, Terminal::new()?).await
+    }
+
+    fn mock_terminal_render_loop(
+        &mut self,
+        config: MockTerminalConfig,
+    ) -> impl Stream<Item = Canvas> {
+        mock_terminal_render_loop(&mut **self, config)
     }
 
     async fn fullscreen(&mut self) -> io::Result<()> {

@@ -84,7 +84,7 @@ impl ToTokens for ParsedElement {
             })
             .unwrap_or_else(|| quote!(#decl_key));
 
-        let props = self
+        let prop_assignments = self
             .props
             .iter()
             .filter_map(|FieldValue { member, expr, .. }| match member {
@@ -93,15 +93,15 @@ impl ToTokens for ParsedElement {
                     Expr::Lit(lit) => match &lit.lit {
                         Lit::Int(lit) if lit.suffix() == "pct" => {
                             let value = lit.base10_parse::<f32>().unwrap();
-                            quote!(#member: ::iocraft::Percent(#value).into())
+                            quote!(_iocraft_props.#member = ::iocraft::Percent(#value).into())
                         }
                         Lit::Float(lit) if lit.suffix() == "pct" => {
                             let value = lit.base10_parse::<f32>().unwrap();
-                            quote!(#member: ::iocraft::Percent(#value).into())
+                            quote!(_iocraft_props.#member = ::iocraft::Percent(#value).into())
                         }
-                        _ => quote!(#member: (#expr).into()),
+                        _ => quote!(_iocraft_props.#member = (#expr).into()),
                     },
-                    _ => quote!(#member: (#expr).into()),
+                    _ => quote!(_iocraft_props.#member = (#expr).into()),
                 }),
             })
             .collect::<Vec<_>>();
@@ -121,12 +121,11 @@ impl ToTokens for ParsedElement {
         tokens.extend(quote! {
             {
                 type Props<'a> = <#ty as ::iocraft::ElementType>::Props<'a>;
+                let mut _iocraft_props: Props = Default::default();
+                #(#prop_assignments;)*
                 let mut _iocraft_element = ::iocraft::Element::<#ty>{
                     key: ::iocraft::ElementKey::new(#key),
-                    props: Props{
-                        #(#props,)*
-                        ..core::default::Default::default()
-                    },
+                    props: _iocraft_props,
                 };
                 #set_children
                 _iocraft_element
