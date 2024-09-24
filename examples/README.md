@@ -10,7 +10,7 @@ To run any of the examples, use `cargo run --example NAME`. For example, to run 
 |---|:---:|
 |[borders.rs](./borders.rs)<br />Showcases various border styles.|![preview](./images/borders.png)|
 |[context.rs](./context.rs)<br />Demonstrates using a custom context via `ContextProvider` and `use_context`.|![preview](./images/context.png)|
-|[counter.rs](./counter.rs)<br />Renders a dynamic component which spawns a future to increment a counter every 100ms.|![preview](./images/counter.svg)|
+|[counter.rs](./counter.rs)<br />Renders a dynamic component which spawns a future to increment a counter every 100ms.|![preview](./images/counter.png)|
 |[form.rs](./form.rs)<br />Displays a form prompting the user for input into multiple text fields. Uses mutable reference props to surface the user's input to the caller once the form is submitted.|![preview](./images/form.png)|
 |[fullscreen.rs](./fullscreen.rs)<br />Takes over the full terminal, rendering to an alternate buffer and preventing the user from scrolling.|![preview](./images/fullscreen.png)|
 |[hello_world.rs](./hello_world.rs)<br />Hello, world!|![preview](./images/hello-world.png)|
