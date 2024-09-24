@@ -34,6 +34,23 @@ use std::marker::PhantomData;
 /// }
 /// ```
 ///
+/// Properties can be used by custom components like so:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct GreetingProps<'a> {
+///    name: &'a str,
+/// }
+///
+/// #[component]
+/// fn Greeting<'a>(props: &GreetingProps<'a>) -> impl Into<AnyElement<'a>> {
+///    element! {
+///        Text(content: format!("Hello, {}!", props.name))
+///    }
+/// }
+/// ```
+///
 /// # Safety
 ///
 /// This requires the type to be [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If

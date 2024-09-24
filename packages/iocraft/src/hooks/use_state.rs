@@ -11,6 +11,12 @@ use std::{
 /// `UseState` is a hook that allows you to store state in a component.
 ///
 /// When the state changes, the component will be re-rendered.
+///
+/// # Example
+///
+/// ```no_run
+#[doc = include_str!("../../examples/counter.rs")]
+/// ```
 pub trait UseState {
     /// Creates a new state with its initial value computed by the given function.
     ///

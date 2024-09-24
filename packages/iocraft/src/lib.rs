@@ -58,7 +58,7 @@
 // Code is organized into modules primarily for the benefit of the maintainers. Types will be
 // re-exported in the root so that users of the library have a flat namespace to work with.
 //
-// The exception is the models that represent collections of types, namely hooks and components.
+// The exception is the modules that represent collections of types, namely hooks and components.
 // Those types will remain in their modules for the public API.
 
 mod canvas;

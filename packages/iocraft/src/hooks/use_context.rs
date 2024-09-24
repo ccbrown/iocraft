@@ -5,6 +5,16 @@ use std::{
 };
 
 /// `UseContext` provides methods for accessing context from a component.
+///
+/// With the exception of [`SystemContext`](crate::SystemContext), which is always available,
+/// contexts are provided via the [`ContextProvider`](crate::components::ContextProvider)
+/// component.
+///
+/// # Example
+///
+/// ```
+#[doc = include_str!("../../examples/context.rs")]
+/// ```
 pub trait UseContext<'a> {
     /// Returns a reference to the context of the given type.
     ///

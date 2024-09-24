@@ -6,6 +6,12 @@ use std::{
 };
 
 /// `UseTerminalEvents` is a hook that allows you to listen for user input such as key strokes.
+///
+/// # Example
+///
+/// ```no_run
+#[doc = include_str!("../../examples/use_input.rs")]
+/// ```
 pub trait UseTerminalEvents {
     /// Defines a callback to be invoked whenever a terminal event occurs.
     fn use_terminal_events<F>(&mut self, f: F)

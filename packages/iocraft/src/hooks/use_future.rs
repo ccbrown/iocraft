@@ -8,6 +8,12 @@ use std::{
 
 /// `UseFuture` is a hook that allows you to spawn an async task which is bound to the lifetime of
 /// the component.
+///
+/// # Example
+///
+/// ```no_run
+#[doc = include_str!("../../examples/counter.rs")]
+/// ```
 pub trait UseFuture {
     /// Spawns a future which is bound to the lifetime of the component. When the component is
     /// dropped, the future will also be dropped.

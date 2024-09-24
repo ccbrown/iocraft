@@ -156,6 +156,19 @@ pub struct BoxProps<'a> {
 }
 
 /// `Box` is your most fundamental building block for laying out and styling components.
+///
+/// # Example
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn my_element() -> impl Into<AnyElement<'static>> {
+/// element! {
+///     Box(padding: 2, border_style: BorderStyle::Round) {
+///         Text(content: "Hello!")
+///     }
+/// }
+/// # }
+/// ```
 #[derive(Default)]
 pub struct Box {
     border_style: BorderStyle,

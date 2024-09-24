@@ -11,6 +11,15 @@ pub struct ContextProviderProps<'a> {
 }
 
 /// `ContextProvider` is a component that provides a context to its children.
+///
+/// Once a context is provided, it can be accessed by the children using the
+/// [`UseContext`](crate::hooks::UseContext) hook.
+///
+/// # Example
+///
+/// ```
+#[doc = include_str!("../../examples/context.rs")]
+/// ```
 #[derive(Default)]
 pub struct ContextProvider;
 

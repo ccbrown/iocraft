@@ -59,6 +59,17 @@ pub struct TextProps {
 }
 
 /// `Text` is a component that renders a text string.
+///
+/// # Example
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn my_element() -> impl Into<AnyElement<'static>> {
+/// element! {
+///     Text(content: "Hello!")
+/// }
+/// # }
+/// ```
 #[derive(Default)]
 pub struct Text {
     style: CanvasTextStyle,

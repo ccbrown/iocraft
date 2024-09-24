@@ -7,6 +7,12 @@ use std::{
 
 /// `UseOutput` is a hook that allows you to write to stdout and stderr from a component. The
 /// output will be appended to stdout or stderr, above the rendered component output.
+///
+/// # Example
+///
+/// ```no_run
+#[doc = include_str!("../../examples/use_output.rs")]
+/// ```
 pub trait UseOutput {
     /// Gets handles which can be used to write to stdout and stderr.
     fn use_output(&mut self) -> (StdoutHandle, StderrHandle);

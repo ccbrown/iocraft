@@ -26,6 +26,40 @@ pub struct TextInputProps {
 }
 
 /// `TextInput` is a component that can receive text input from the user.
+///
+/// It will fill the available space and display the current value. Typically, you will want to
+/// render it in a [`Box`] component of the desired text field size.
+///
+/// # Example
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # #[component]
+/// # fn FormField(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+/// let value = hooks.use_state(|| "".to_string());
+///
+/// element! {
+///     Box(
+///         border_style: BorderStyle::Round,
+///         border_color: Color::Blue,
+///     ) {
+///         Box(width: 15) {
+///             Text(content: "Input: ")
+///         }
+///         Box(
+///             background_color: Color::DarkGrey,
+///             width: 30,
+///         ) {
+///             TextInput(
+///                 has_focus: true,
+///                 value: value.to_string(),
+///                 on_change: move |new_value| value.set(new_value),
+///             )
+///         }
+///     }
+/// }
+/// # }
+/// ```
 #[derive(Default)]
 pub struct TextInput {
     value: String,
