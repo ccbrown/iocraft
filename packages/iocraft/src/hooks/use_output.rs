@@ -139,28 +139,49 @@ impl UseOutputImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::*;
     use futures::task::noop_waker;
+    use macro_rules_attribute::apply;
+    use smol_macros::test;
 
     #[test]
     fn test_use_output_polling() {
         let mut use_output = UseOutputImpl::default();
         assert_eq!(
-            Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
+            Pin::new(&mut use_output)
+                .poll_change(&mut std::task::Context::from_waker(&noop_waker())),
             Poll::Pending
         );
 
         let stdout = use_output.use_stdout();
         stdout.println("Hello, world!");
         assert_eq!(
-            Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
+            Pin::new(&mut use_output)
+                .poll_change(&mut std::task::Context::from_waker(&noop_waker())),
             Poll::Ready(())
         );
 
         let stderr = use_output.use_stderr();
         stderr.println("Hello, error!");
         assert_eq!(
-            Pin::new(&mut use_output).poll_change(&mut Context::from_waker(&noop_waker())),
+            Pin::new(&mut use_output)
+                .poll_change(&mut std::task::Context::from_waker(&noop_waker())),
             Poll::Ready(())
         );
+    }
+
+    #[component]
+    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let (stdout, stderr) = hooks.use_output();
+        stdout.println("Hello, world!");
+        stderr.println("Hello, error!");
+        system.exit();
+        element!(Box)
+    }
+
+    #[apply(test!)]
+    async fn test_use_output() {
+        element!(MyComponent).render_loop().await.unwrap();
     }
 }

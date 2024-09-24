@@ -19,6 +19,12 @@ struct MyPropsWithTypeGeneric<T> {
     foo: Option<T>,
 }
 
+#[with_layout_style_props]
+#[derive(Default, Props)]
+struct MyPropsWithConstParam<const N: usize> {
+    foo: Option<[u8; N]>,
+}
+
 #[test]
 fn layout_style_props() {
     let props: MyProps = Default::default();
@@ -30,6 +36,10 @@ fn layout_style_props() {
     assert_eq!(props.display, Display::DEFAULT);
 
     let props: MyPropsWithTypeGeneric<String> = Default::default();
+    assert_eq!(props.foo, None);
+    assert_eq!(props.display, Display::DEFAULT);
+
+    let props: MyPropsWithConstParam<1> = Default::default();
     assert_eq!(props.foo, None);
     assert_eq!(props.display, Display::DEFAULT);
 }
