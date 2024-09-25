@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.2...iocraft-macros-v0.1.3) - 2024-09-25
+
+### Added
+
+- add use_async_handler hook
+- add mock_terminal_render_loop api
+
 ## [0.1.2](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.1...iocraft-macros-v0.1.2) - 2024-09-24
 
 ### Other
