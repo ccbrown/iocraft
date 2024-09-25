@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.1.2...iocraft-v0.2.0) - 2024-09-25
+
+### Added
+
+- add use_async_handler hook
+- add mock_terminal_render_loop api
+
+### Other
+
+- add more docs, ratatui shoutout, and non_exhaustive attrs
+
 ## [0.1.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.1.1...iocraft-v0.1.2) - 2024-09-24
 
 ### Other
