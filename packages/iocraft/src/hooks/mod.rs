@@ -35,6 +35,8 @@
 //! They must be called in the same order every time, so calling them in any sort of conditional or
 //! loop is not allowed. If you break the rules of hooks, you can expect a panic.
 
+mod use_async_handler;
+pub use use_async_handler::*;
 mod use_context;
 pub use use_context::*;
 mod use_future;

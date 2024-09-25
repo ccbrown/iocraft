@@ -37,6 +37,7 @@ impl Component for ContextProvider {
         _hooks: Hooks,
         updater: &mut ComponentUpdater,
     ) {
+        updater.set_transparent_layout(true);
         updater.update_children(
             props.children.iter_mut(),
             props.value.as_mut().map(|cx| cx.borrow()),
@@ -53,6 +54,17 @@ mod tests {
     #[component]
     fn MyComponent(hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let s = hooks.use_context::<StringContext>();
+
+        let _ = hooks.use_context_mut::<StringContext>();
+
+        hooks
+            .try_use_context::<StringContext>()
+            .expect("context not found");
+
+        hooks
+            .try_use_context_mut::<StringContext>()
+            .expect("mutable context not found");
+
         element! {
             Text(content: &s.0)
         }

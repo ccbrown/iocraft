@@ -370,6 +370,7 @@ impl ToTokens for ParsedComponent {
                         let mut hooks = hooks.with_context_stack(updater.component_context_stack());
                         Self::implementation(#(#impl_args),*).into()
                     };
+                    updater.set_transparent_layout(true);
                     updater.update_children([&mut e], None);
                 }
             }

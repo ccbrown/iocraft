@@ -135,6 +135,7 @@ pub(crate) struct InstantiatedComponent {
     helper: Box<dyn ComponentHelperExt>,
     hooks: Vec<Box<dyn AnyHook>>,
     first_update: bool,
+    has_transparent_layout: bool,
 }
 
 impl InstantiatedComponent {
@@ -146,6 +147,7 @@ impl InstantiatedComponent {
             helper,
             hooks: Default::default(),
             first_update: true,
+            has_transparent_layout: false,
         }
     }
 
@@ -160,12 +162,14 @@ impl InstantiatedComponent {
     pub fn update(
         &mut self,
         context: &mut UpdateContext<'_>,
+        unattached_child_node_ids: Option<&mut Vec<NodeId>>,
         component_context_stack: &mut ContextStack<'_>,
         props: AnyProps,
     ) {
         let mut updater = ComponentUpdater::new(
             self.node_id,
             &mut self.children,
+            unattached_child_node_ids,
             context,
             component_context_stack,
         );
@@ -178,6 +182,7 @@ impl InstantiatedComponent {
         );
         self.hooks.post_component_update(&mut updater);
         self.first_update = false;
+        self.has_transparent_layout = updater.has_transparent_layout();
     }
 
     pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
@@ -212,9 +217,13 @@ pub(crate) struct Components {
 impl Components {
     pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
         for (_, component) in self.components.iter_mut() {
-            drawer.for_child_node(component.node_id, |drawer| {
+            if component.has_transparent_layout {
                 component.draw(drawer);
-            });
+            } else {
+                drawer.for_child_node_layout(component.node_id, |drawer| {
+                    component.draw(drawer);
+                });
+            }
         }
     }
 

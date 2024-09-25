@@ -196,6 +196,7 @@ mod tests {
         );
 
         assert_eq!(element!(Text(content: "😀")).to_string(), "😀\n");
+        assert_eq!(element!(Text(content: "☀️")).to_string(), "☀️ \n");
 
         assert_eq!(
             element! {

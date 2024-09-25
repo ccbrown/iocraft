@@ -18,3 +18,4 @@ To run any of the examples, use `cargo run --example NAME`. For example, to run 
 |[table.rs](./table.rs)<br />Displays a list of users provided by reference via properties.|![preview](./images/table.png)|
 |[use_input.rs](./use_input.rs)<br />Demonstrates using keyboard input to move a 👾.|![preview](./images/use_input.png)|
 |[use_output.rs](./use_output.rs)<br />Continuously logs text output above the rendered component.|![preview](./images/use_output.png)|
+|[weather.rs](./weather.rs)<br />Demonstrates asynchronous loading of data from remote APIs in response to user input.|![preview](./images/weather.png)|

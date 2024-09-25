@@ -465,5 +465,47 @@ mod tests {
                 └──────┘
             "},
         );
+
+        assert_eq!(
+            element! {
+                Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                    Text(content: "☀️")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────┐
+                │  ☀️   │
+                └──────┘
+            "},
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                    Text(content: "☀️☀️")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────┐
+                │ ☀️ ☀️  │
+                └──────┘
+            "},
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 12, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                    Text(content: "フーバー")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────────┐
+                │ フーバー │
+                └──────────┘
+            "},
+        );
     }
 }

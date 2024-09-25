@@ -1,11 +1,15 @@
+use std::ops::{Deref, DerefMut};
+
 /// `Handler` is a type representing an optional event handler, commonly used for component properties.
-#[derive(Default)]
-pub enum Handler<'a, T> {
-    /// No handler is set.
-    #[default]
-    None,
-    /// A function handler.
-    Function(Box<dyn FnMut(T) + Send + 'a>),
+///
+/// Any function that takes a single argument and returns `()` can be converted into a `Handler`,
+/// and it can be invoked using function call syntax.
+pub struct Handler<'a, T>(Box<dyn FnMut(T) + Send + 'a>);
+
+impl<'a, T> Default for Handler<'a, T> {
+    fn default() -> Self {
+        Self::from(|_| {})
+    }
 }
 
 impl<'a, T, F> From<F> for Handler<'a, T>
@@ -13,27 +17,21 @@ where
     F: FnMut(T) + Send + 'a,
 {
     fn from(f: F) -> Self {
-        Self::Function(Box::new(f))
+        Self(Box::new(f))
     }
 }
 
-impl<'a, T> Handler<'a, T> {
-    /// Returns `true` if the handler is not set.
-    pub fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
+impl<'a, T: 'a> Deref for Handler<'a, T> {
+    type Target = dyn FnMut(T) + Send + 'a;
 
-    /// Takes the handler, leaving `None` in its place.
-    pub fn take(&mut self) -> Self {
-        std::mem::take(self)
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
 
-    /// Invokes the handler with the given value.
-    pub fn invoke(&mut self, value: T) {
-        match self {
-            Self::Function(f) => f(value),
-            Self::None => {}
-        }
+impl<'a, T: 'a> DerefMut for Handler<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -43,16 +41,14 @@ mod tests {
 
     #[test]
     fn test_handler() {
-        let mut handler = Handler::<i32>::None;
-        assert!(handler.is_none());
-        handler.take().invoke(0);
-        handler.invoke(0);
+        let mut handler = Handler::<i32>::default();
+        handler(0);
+        handler(0);
 
         let mut handler = Handler::from(|value| {
             assert_eq!(value, 42);
         });
-        assert!(!handler.is_none());
-        handler.invoke(42);
-        handler.take().invoke(42);
+        handler(42);
+        handler(42);
     }
 }

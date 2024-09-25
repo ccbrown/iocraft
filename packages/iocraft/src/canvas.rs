@@ -7,12 +7,23 @@ use std::{
     fmt::{self, Display},
     io::{self, Write},
 };
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Clone, Debug, PartialEq)]
 struct Character {
-    value: char,
+    value: String,
     style: CanvasTextStyle,
+}
+
+impl Character {
+    fn required_padding(&self) -> usize {
+        if self.value.contains('\u{fe0f}') {
+            // for the image variation selector, we need to explicitly append padding to keep things lining up
+            self.value.width() - 1
+        } else {
+            0
+        }
+    }
 }
 
 /// Describes the style of text to be rendered via a [`Canvas`].
@@ -88,13 +99,26 @@ impl Canvas {
     where
         I: IntoIterator<Item = char>,
     {
+        // Divide the string up into characters, which may consist of multiple Unicode code points.
         let row = &mut self.cells[y];
+        let mut buf = String::new();
         for c in chars.into_iter() {
             if x >= row.len() {
                 break;
             }
-            row[x].character = Some(Character { value: c, style });
-            x += c.width().unwrap_or(0);
+            let width = c.width().unwrap_or(0);
+            if width > 0 && !buf.is_empty() {
+                row[x].character = Some(Character {
+                    value: buf.clone(),
+                    style,
+                });
+                x += buf.width().max(1);
+                buf.clear();
+            }
+            buf.push(c);
+        }
+        if !buf.is_empty() && x < row.len() {
+            row[x].character = Some(Character { value: buf, style });
         }
     }
 
@@ -192,8 +216,8 @@ impl Canvas {
                 }
 
                 if let Some(c) = &cell.character {
-                    write!(w, "{}", c.value)?;
-                    col += c.value.width().unwrap_or(0);
+                    write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
+                    col += c.value.width().max(1);
                 } else {
                     w.write_all(b" ")?;
                     col += 1;

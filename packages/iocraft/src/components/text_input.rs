@@ -4,6 +4,7 @@ use crate::{
 };
 use futures::stream::Stream;
 use std::{
+    mem,
     pin::{pin, Pin},
     task::{Context, Poll},
 };
@@ -66,7 +67,7 @@ pub struct TextInput {
     value: String,
     events: Option<TerminalEvents>,
     style: CanvasTextStyle,
-    handler: Option<Handler<'static, String>>,
+    handler: Handler<'static, String>,
     has_focus: bool,
 }
 
@@ -91,7 +92,7 @@ impl Component for TextInput {
             ..Default::default()
         };
         self.value = props.value.clone();
-        self.handler = Some(props.on_change.take());
+        self.handler = mem::take(&mut props.on_change);
         self.has_focus = props.has_focus;
         updater.set_layout_style(taffy::style::Style {
             size: taffy::Size::percent(1.0),
@@ -156,9 +157,7 @@ impl Component for TextInput {
         }
         if changed {
             let new_value = self.value.clone();
-            if let Some(handler) = self.handler.as_mut() {
-                handler.invoke(new_value);
-            }
+            (self.handler)(new_value);
         }
         Poll::Pending
     }

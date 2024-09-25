@@ -32,7 +32,9 @@ pub(crate) struct UpdateContext<'a> {
 /// utilize during the update phase.
 pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a> {
     node_id: NodeId,
+    transparent_layout: bool,
     children: &'a mut Components,
+    unattached_child_node_ids: Option<&'a mut Vec<NodeId>>,
     context: &'a mut UpdateContext<'b>,
     component_context_stack: &'a mut ContextStack<'c>,
 }
@@ -41,12 +43,15 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     pub(crate) fn new(
         node_id: NodeId,
         children: &'a mut Components,
+        unattached_child_node_ids: Option<&'a mut Vec<NodeId>>,
         context: &'a mut UpdateContext<'b>,
         component_context_stack: &'a mut ContextStack<'c>,
     ) -> Self {
         Self {
             node_id,
+            transparent_layout: false,
             children,
+            unattached_child_node_ids,
             context,
             component_context_stack,
         }
@@ -115,6 +120,17 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             .expect("we should be able to mark the node as dirty");
     }
 
+    /// If set to `true`, the layout of the current component will be transparent, meaning that
+    /// children will effectively be direct descendants of the parent of the current component for
+    /// layout purposes.
+    pub fn set_transparent_layout(&mut self, transparent_layout: bool) {
+        self.transparent_layout = transparent_layout;
+    }
+
+    pub(crate) fn has_transparent_layout(&self) -> bool {
+        self.transparent_layout
+    }
+
     /// Updates the children of the current component.
     pub fn update_children<I, T>(&mut self, children: I, context: Option<Context>)
     where
@@ -125,7 +141,14 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             .with_context(context, |component_context_stack| {
                 let mut used_components = HashMap::with_capacity(self.children.components.len());
 
-                let mut child_node_ids = Vec::new();
+                let mut direct_child_node_ids = Vec::new();
+                let child_node_ids = if self.transparent_layout {
+                    self.unattached_child_node_ids
+                        .as_deref_mut()
+                        .unwrap_or(&mut direct_child_node_ids)
+                } else {
+                    &mut direct_child_node_ids
+                };
 
                 for mut child in children {
                     let mut component: InstantiatedComponent =
@@ -151,7 +174,12 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                                 InstantiatedComponent::new(new_node_id, child.props_mut(), h)
                             }
                         };
-                    component.update(self.context, component_context_stack, child.props_mut());
+                    component.update(
+                        self.context,
+                        Some(child_node_ids),
+                        component_context_stack,
+                        child.props_mut(),
+                    );
 
                     let mut child_key = child.key().clone();
                     while used_components.contains_key(&child_key) {
@@ -162,7 +190,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
 
                 self.context
                     .layout_engine
-                    .set_children(self.node_id, &child_node_ids)
+                    .set_children(self.node_id, &direct_child_node_ids)
                     .expect("we should be able to set the children");
 
                 for (_, component) in self.children.components.drain() {
@@ -223,7 +251,7 @@ impl<'a> ComponentDrawer<'a> {
 
     /// Prepares to begin drawing a node by moving to the node's position and invoking the given
     /// closure.
-    pub(crate) fn for_child_node<F>(&mut self, node_id: NodeId, f: F)
+    pub(crate) fn for_child_node_layout<F>(&mut self, node_id: NodeId, f: F)
     where
         F: FnOnce(&mut Self),
     {
@@ -301,6 +329,7 @@ impl<'a> Tree<'a> {
             let mut component_context_stack = ContextStack::root(&mut self.system_context);
             self.root_component.update(
                 &mut context,
+                None,
                 &mut component_context_stack,
                 self.root_component_props.borrow(),
             );
@@ -500,5 +529,25 @@ mod tests {
             "tick: 1\nrender count (a): 2\nrender count (b0): 2\nrender count (b1): 1\nrender count (c0): 2\nrender count (c1): 2\n",
         ];
         assert_eq!(actual, expected);
+    }
+
+    #[component]
+    fn FullWidthComponent() -> impl Into<AnyElement<'static>> {
+        element! {
+            Box(height: 2, width: 100pct, border_style: BorderStyle::Classic)
+        }
+    }
+
+    #[test]
+    fn test_transparent_layout() {
+        // For layout purposes, components defined with #[component] should not introduce a new
+        // node in between its parent and child.
+        let actual = element! {
+            Box(width: 10) {
+                FullWidthComponent
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "+--------+\n+--------+\n",);
     }
 }
