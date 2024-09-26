@@ -509,5 +509,27 @@ mod tests {
                 └──────────┘
             "},
         );
+
+        assert_eq!(
+            element! {
+                Box(
+                    border_style: BorderStyle::Round,
+                    flex_direction: FlexDirection::Column,
+                ) {
+                    Box(
+                        margin_top: -1,
+                    ) {
+                        Text(content: "Title")
+                    }
+                    Text(content: "Hello, world!")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ╭Title────────╮
+                │Hello, world!│
+                ╰─────────────╯
+            "},
+        );
     }
 }
