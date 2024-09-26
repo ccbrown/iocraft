@@ -433,6 +433,8 @@ mod tests {
         (&mut box_element).key();
         (&mut box_element).print();
         (&mut box_element).eprint();
+
+        #[cfg(unix)]
         box_element.write_to_raw_fd(std::io::stdout()).unwrap();
 
         let mut any_element: AnyElement<'static> = box_element.into_any();
