@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.2.0...iocraft-v0.2.1) - 2024-09-26
+
+### Other
+
+- add windows to ci ([#20](https://github.com/ccbrown/iocraft/pull/20))
+- use std::io::IsTerminal
+- eliminate use of examples symlinks
+
 ## [0.2.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.1.2...iocraft-v0.2.0) - 2024-09-25
 
 ### Added
