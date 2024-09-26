@@ -70,7 +70,7 @@ macro_rules! impl_from_length {
         }
         impl From<u32> for $name {
             fn from(l: u32) -> Self {
-                $name::Length(l)
+                $name::Length(l as _)
             }
         }
     };
@@ -90,7 +90,7 @@ impl_from_length!(Padding);
 impl_from_percent!(Padding);
 
 macro_rules! new_size_type {
-    ($(#[$m:meta])* $name:ident, $def:expr) => {
+    ($(#[$m:meta])* $name:ident, $intrepr:ty, $def:expr) => {
         $(#[$m])*
         #[derive(Clone, Copy, Debug, Default, PartialEq)]
         pub enum $name {
@@ -100,7 +100,7 @@ macro_rules! new_size_type {
             /// Automatically selects a suitable size.
             Auto,
             /// Sets an absolute value.
-            Length(u32),
+            Length($intrepr),
             /// Sets a percentage of the width or height of the parent.
             Percent(f32),
         }
@@ -147,12 +147,14 @@ new_size_type!(
     ///
     /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
     Margin,
+    i32,
     Margin::Length(0)
 );
 
 new_size_type!(
     /// Defines a width or height of an element.
     Size,
+    u32,
     Size::Auto
 );
 
