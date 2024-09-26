@@ -3,7 +3,6 @@ use crossterm::{
     cursor,
     event::{self, Event, EventStream},
     execute, queue, terminal,
-    tty::IsTty,
 };
 use futures::{
     channel::mpsc,
@@ -12,7 +11,7 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdout, Write},
+    io::{self, stdout, IsTerminal, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
@@ -396,9 +395,10 @@ impl Write for Terminal {
     }
 }
 
-/// Returns whether the standard output is a TTY terminal.
+// TODO: Remove this in a breaking release. Users should use the new `std::io::IsTerminal` trait.
+#[doc(hidden)]
 pub fn stdout_is_tty() -> bool {
-    stdout().is_tty()
+    stdout().is_terminal()
 }
 
 #[cfg(test)]

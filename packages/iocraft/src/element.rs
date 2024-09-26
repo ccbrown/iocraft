@@ -11,8 +11,7 @@ use std::{
     fmt::Debug,
     future::Future,
     hash::Hash,
-    io::{self, stderr, stdout, Write},
-    os::fd::AsRawFd,
+    io::{self, stderr, stdout, IsTerminal, Write},
     rc::Rc,
 };
 
@@ -167,12 +166,12 @@ pub trait ElementExt: private::Sealed + Sized {
 
     /// Renders the element and prints it to stdout.
     fn print(&mut self) {
-        self.write_to_raw_fd(stdout()).unwrap();
+        self.write_to_is_terminal(stdout()).unwrap();
     }
 
     /// Renders the element and prints it to stderr.
     fn eprint(&mut self) {
-        self.write_to_raw_fd(stderr()).unwrap();
+        self.write_to_is_terminal(stderr()).unwrap();
     }
 
     /// Renders the element and writes it to the given writer.
@@ -183,9 +182,10 @@ pub trait ElementExt: private::Sealed + Sized {
 
     /// Renders the element and writes it to the given raw file descriptor. If the file descriptor
     /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes.
-    fn write_to_raw_fd<F: Write + AsRawFd>(&mut self, fd: F) -> io::Result<()> {
+    #[cfg(unix)]
+    fn write_to_raw_fd<F: Write + std::os::fd::AsRawFd>(&mut self, fd: F) -> io::Result<()> {
         if fd.is_tty() {
-            let (width, _) = terminal::size().expect("we should be able to get the terminal size");
+            let (width, _) = terminal::size()?;
             let canvas = self.render(Some(width as _));
             canvas.write_ansi(fd)
         } else {
@@ -193,11 +193,24 @@ pub trait ElementExt: private::Sealed + Sized {
         }
     }
 
+    /// Renders the element and writes it to the given writer also implementing
+    /// [`IsTerminal`](std::io::IsTerminal). If the writer is a terminal, the canvas will be
+    /// rendered based on its size, with ANSI escape codes.
+    fn write_to_is_terminal<W: Write + IsTerminal>(&mut self, w: W) -> io::Result<()> {
+        if w.is_terminal() {
+            let (width, _) = terminal::size()?;
+            let canvas = self.render(Some(width as _));
+            canvas.write_ansi(w)
+        } else {
+            self.write(w)
+        }
+    }
+
     /// Renders the element in a loop, allowing it to be dynamic and interactive.
     ///
     /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
     /// a file, this will probably not produce the desired result. You can determine whether stdout
-    /// is a TTY with [`stdout_is_tty`](crate::stdout_is_tty).
+    /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
     fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
 
     /// Renders the element in a loop using a mock terminal, allowing you to simulate terminal
@@ -261,7 +274,7 @@ pub trait ElementExt: private::Sealed + Sized {
     ///
     /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
     /// a file, this will probably not produce the desired result. You can determine whether stdout
-    /// is a TTY with [`stdout_is_tty`](crate::stdout_is_tty).
+    /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
     fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>>;
 }
 
