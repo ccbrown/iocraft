@@ -21,7 +21,19 @@
 //! Here's your first `iocraft` program:
 //!
 //! ```
-#![doc = include_str!("../examples/hello_world.rs")]
+//! use iocraft::prelude::*;
+//!
+//! fn main() {
+//!     element! {
+//!         Box(
+//!             border_style: BorderStyle::Round,
+//!             border_color: Color::Blue,
+//!         ) {
+//!             Text(content: "Hello, world!")
+//!         }
+//!     }
+//!     .print();
+//! }
 //! ```
 //!
 //! Your UI is composed primarily via the [`element!`] macro, which allows you to declare your UI
@@ -36,7 +48,23 @@
 //! which increments every 100ms:
 //!
 //! ```no_run
-#![doc = include_str!("../examples/counter.rs")]
+//! # use iocraft::prelude::*;
+//! # use std::time::Duration;
+//! #[component]
+//! fn Counter(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+//!     let mut count = hooks.use_state(|| 0);
+//!
+//!     hooks.use_future(async move {
+//!         loop {
+//!             smol::Timer::after(Duration::from_millis(100)).await;
+//!             count += 1;
+//!         }
+//!     });
+//!
+//!     element! {
+//!         Text(color: Color::Blue, content: format!("counter: {}", count))
+//!     }
+//! }
 //! ```
 //!
 //! ## More Examples
@@ -54,6 +82,7 @@
 //! You may also want to check out [Ratatui](https://github.com/ratatui/ratatui), which serves a
 //! similar purpose with a less declarative API.
 
+#![allow(clippy::needless_doctest_main)]
 #![warn(missing_docs)]
 
 // # Organization

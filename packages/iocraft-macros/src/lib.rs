@@ -382,8 +382,24 @@ impl ToTokens for ParsedComponent {
 ///
 /// Custom components are defined by adding this macro to a function that returns an `Element`:
 ///
-/// ```no_run
-#[doc = include_str!("../examples/counter.rs")]
+/// ```
+/// # use iocraft::prelude::*;
+/// # use std::time::Duration;
+/// #[component]
+/// fn Counter(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+///     let mut count = hooks.use_state(|| 0);
+///
+///     hooks.use_future(async move {
+///         loop {
+///             smol::Timer::after(Duration::from_millis(100)).await;
+///             count += 1;
+///         }
+///     });
+///
+///     element! {
+///         Text(color: Color::Blue, content: format!("counter: {}", count))
+///     }
+/// }
 /// ```
 ///
 /// The function is allowed to take up to two arguments, one named `props`, for the component's
@@ -392,7 +408,60 @@ impl ToTokens for ParsedComponent {
 /// Here is an example of a component that takes a reference to a `Vec` of `User` structs via properties:
 ///
 /// ```
-#[doc = include_str!("../examples/table.rs")]
+/// # use iocraft::prelude::*;
+/// # struct User {
+/// #     id: i32,
+/// #     name: String,
+/// #     email: String,
+/// # }
+/// #[derive(Default, Props)]
+/// struct UsersTableProps<'a> {
+///     users: Option<&'a Vec<User>>,
+/// }
+///
+/// #[component]
+/// fn UsersTable<'a>(props: &UsersTableProps<'a>) -> impl Into<AnyElement<'a>> {
+///     element! {
+///         Box(
+///             margin_top: 1,
+///             margin_bottom: 1,
+///             flex_direction: FlexDirection::Column,
+///             width: 60,
+///             border_style: BorderStyle::Round,
+///             border_color: Color::Cyan,
+///         ) {
+///             Box(border_style: BorderStyle::Single, border_edges: Edges::Bottom, border_color: Color::Grey) {
+///                 Box(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
+///                     Text(content: "Id", weight: Weight::Bold, decoration: TextDecoration::Underline)
+///                 }
+///
+///                 Box(width: 40pct) {
+///                     Text(content: "Name", weight: Weight::Bold, decoration: TextDecoration::Underline)
+///                 }
+///
+///                 Box(width: 50pct) {
+///                     Text(content: "Email", weight: Weight::Bold, decoration: TextDecoration::Underline)
+///                 }
+///             }
+///
+///             #(props.users.map(|users| users.iter().enumerate().map(|(i, user)| element! {
+///                 Box(background_color: if i % 2 == 0 { None } else { Some(Color::DarkGrey) }) {
+///                     Box(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
+///                         Text(content: user.id.to_string())
+///                     }
+///
+///                     Box(width: 40pct) {
+///                         Text(content: user.name.clone())
+///                     }
+///
+///                     Box(width: 50pct) {
+///                         Text(content: user.email.clone())
+///                     }
+///                 }
+///             })).into_iter().flatten())
+///         }
+///     }
+/// }
 /// ```
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {

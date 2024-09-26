@@ -10,8 +10,27 @@ use std::{
 ///
 /// # Example
 ///
-/// ```no_run
-#[doc = include_str!("../../examples/use_output.rs")]
+/// ```
+/// # use iocraft::prelude::*;
+/// # use std::time::Duration;
+/// #[component]
+/// fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+///     let (stdout, stderr) = hooks.use_output();
+///
+///     hooks.use_future(async move {
+///         loop {
+///             smol::Timer::after(Duration::from_secs(1)).await;
+///             stdout.println("Hello from iocraft to stdout!");
+///             stderr.println("  And hello to stderr too!");
+///         }
+///     });
+///
+///     element! {
+///         Box(border_style: BorderStyle::Round, border_color: Color::Green) {
+///             Text(content: "Hello, use_stdio!")
+///         }
+///     }
+/// }
 /// ```
 pub trait UseOutput {
     /// Gets handles which can be used to write to stdout and stderr.
