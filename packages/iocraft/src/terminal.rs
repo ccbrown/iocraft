@@ -164,12 +164,14 @@ impl StdTerminal {
     fn set_raw_mode_enabled(&mut self, raw_mode_enabled: bool) -> io::Result<()> {
         if raw_mode_enabled != self.raw_mode_enabled {
             if raw_mode_enabled {
-                execute!(
-                    self.dest,
-                    event::PushKeyboardEnhancementFlags(
-                        event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-                    )
-                )?;
+                if terminal::supports_keyboard_enhancement()? {
+                    execute!(
+                        self.dest,
+                        event::PushKeyboardEnhancementFlags(
+                            event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                        )
+                    )?;
+                }
                 if self.fullscreen {
                     execute!(self.dest, event::EnableMouseCapture)?;
                 }
@@ -179,7 +181,9 @@ impl StdTerminal {
                 if self.fullscreen {
                     execute!(self.dest, event::DisableMouseCapture)?;
                 }
-                execute!(self.dest, event::PopKeyboardEnhancementFlags)?;
+                if terminal::supports_keyboard_enhancement()? {
+                    execute!(self.dest, event::PopKeyboardEnhancementFlags)?;
+                }
             }
             self.raw_mode_enabled = raw_mode_enabled;
         }
