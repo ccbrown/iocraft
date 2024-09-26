@@ -419,6 +419,7 @@ mod tests {
 
     #[test]
     fn test_stdout_is_tty() {
+        #[allow(deprecated)]
         let _ = stdout_is_tty();
     }
 }

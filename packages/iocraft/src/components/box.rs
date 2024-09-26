@@ -466,6 +466,8 @@ mod tests {
             "},
         );
 
+        let extra_space = if handles_vs16_incorrectly() { " " } else { "" };
+
         assert_eq!(
             element! {
                 Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
@@ -473,11 +475,11 @@ mod tests {
                 }
             }
             .to_string(),
-            indoc! {"
+            format!(indoc! {"
                 ┌──────┐
-                │  ☀️   │
+                │  ☀️{}  │
                 └──────┘
-            "},
+            "}, extra_space),
         );
 
         assert_eq!(
@@ -487,11 +489,11 @@ mod tests {
                 }
             }
             .to_string(),
-            indoc! {"
+            format!(indoc! {"
                 ┌──────┐
-                │ ☀️ ☀️  │
+                │ ☀️{}☀️{} │
                 └──────┘
-            "},
+            "}, extra_space, extra_space),
         );
 
         assert_eq!(

@@ -4,8 +4,10 @@ use crossterm::{
     style::{Attribute, Colored},
 };
 use std::{
+    env,
     fmt::{self, Display},
     io::{self, Write},
+    sync::Once,
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -15,11 +17,35 @@ struct Character {
     style: CanvasTextStyle,
 }
 
+static mut HANDLES_VS16_INCORRECTLY: bool = false;
+static INIT_HANDLES_VS16_INCORRECTLY: Once = Once::new();
+
+// Apple's Terminal incorrectly only advances the cursor one space for emoji with VS16, so we need
+// to add whitespace to compensate.
+//
+// https://www.jeffquast.com/post/ucs-detect-test-results/
+// https://darrenburns.net/posts/emoji-in-the-terminal/
+//
+// Windows and iTerm2 seem to do the right thing. Hopefully one day we'll be able to remove this hack.
+pub(crate) fn handles_vs16_incorrectly() -> bool {
+    unsafe {
+        INIT_HANDLES_VS16_INCORRECTLY.call_once(|| {
+            HANDLES_VS16_INCORRECTLY = env::var("TERM_PROGRAM")
+                .map(|s| s == "Apple_Terminal")
+                .unwrap_or(false);
+        });
+        HANDLES_VS16_INCORRECTLY
+    }
+}
+
 impl Character {
     fn required_padding(&self) -> usize {
         if self.value.contains('\u{fe0f}') {
-            // for the image variation selector, we need to explicitly append padding to keep things lining up
-            self.value.width() - 1
+            if handles_vs16_incorrectly() {
+                self.value.width() - 1
+            } else {
+                0
+            }
         } else {
             0
         }
