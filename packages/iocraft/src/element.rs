@@ -5,7 +5,7 @@ use crate::{
     render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
 use any_key::AnyHash;
-use crossterm::{terminal, tty::IsTty};
+use crossterm::terminal;
 use futures::Stream;
 use std::{
     fmt::Debug,
@@ -184,6 +184,7 @@ pub trait ElementExt: private::Sealed + Sized {
     /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes.
     #[cfg(unix)]
     fn write_to_raw_fd<F: Write + std::os::fd::AsRawFd>(&mut self, fd: F) -> io::Result<()> {
+        use crossterm::tty::IsTty;
         if fd.is_tty() {
             let (width, _) = terminal::size()?;
             let canvas = self.render(Some(width as _));
@@ -432,6 +433,7 @@ mod tests {
         (&mut box_element).key();
         (&mut box_element).print();
         (&mut box_element).eprint();
+        box_element.write_to_raw_fd(std::io::stdout()).unwrap();
 
         let mut any_element: AnyElement<'static> = box_element.into_any();
         any_element.key();

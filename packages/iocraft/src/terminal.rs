@@ -395,8 +395,8 @@ impl Write for Terminal {
     }
 }
 
-// TODO: Remove this in a breaking release. Users should use the new `std::io::IsTerminal` trait.
-#[doc(hidden)]
+/// Returns whether the standard output is a TTY terminal.
+#[deprecated(note = "Users should use the `std::io::IsTerminal` trait instead.")]
 pub fn stdout_is_tty() -> bool {
     stdout().is_terminal()
 }
