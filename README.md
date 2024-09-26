@@ -1,4 +1,17 @@
-# iocraft [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ccbrown/iocraft/commit.yaml)](https://github.com/ccbrown/iocraft/actions) [![docs.rs](https://img.shields.io/docsrs/iocraft)](https://docs.rs/iocraft/) [![Codecov](https://img.shields.io/codecov/c/github/ccbrown/iocraft)](https://app.codecov.io/github/ccbrown/iocraft)
+<div align="center">
+  <h1><code>iocraft</code></h1>
+
+  <p>
+    <strong>✨ A Rust crate for beautiful, artisanally crafted CLIs and text-based IO. ✨</strong>
+  </p>
+
+  <p>
+    <a href="https://github.com/ccbrown/iocraft/actions"><img src="https://img.shields.io/github/actions/workflow/status/ccbrown/iocraft/commit.yaml" alt="GitHub Actions Workflow Status" /></a>
+    <a href="https://docs.rs/iocraft/"><img src="https://img.shields.io/docsrs/iocraft" alt="docs.rs" /></a>
+    <a href="https://crates.io/crates/iocraft"><img src="https://img.shields.io/crates/v/iocraft" alt="crates.io" /></a>
+    <a href="https://app.codecov.io/github/ccbrown/iocraft"><img src="https://img.shields.io/codecov/c/github/ccbrown/iocraft" alt="Codecov" /></a>
+  </p>
+</div>
 
 `iocraft` is a library for crafting beautiful text output and interfaces for the terminal or
 logs. It allows you to easily build complex layouts and interactive elements using a
@@ -12,6 +25,7 @@ declarative API.
 - Create animated or interactive elements with event handling and hooks.
 - Build fullscreen terminal applications with ease.
 - Pass props and context by reference to avoid unnecessary cloning.
+- Broad support for both Unix and Windows terminals so your UIs look great everywhere.
 
 ## Getting Started
 
