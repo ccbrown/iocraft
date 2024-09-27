@@ -110,12 +110,25 @@ impl Canvas {
         self.cells.len()
     }
 
+    fn clear_text(&mut self, x: usize, y: usize, w: usize, h: usize) {
+        for y in y..y + h {
+            if let Some(row) = self.cells.get_mut(y) {
+                for x in x..x + w {
+                    if x < row.len() {
+                        row[x].character = None;
+                    }
+                }
+            }
+        }
+    }
+
     fn set_background_color(&mut self, x: usize, y: usize, w: usize, h: usize, color: Color) {
         for y in y..y + h {
-            let row = &mut self.cells[y];
-            for x in x..x + w {
-                if x < row.len() {
-                    row[x].background_color = Some(color);
+            if let Some(row) = self.cells.get_mut(y) {
+                for x in x..x + w {
+                    if x < row.len() {
+                        row[x].background_color = Some(color);
+                    }
                 }
             }
         }
@@ -331,6 +344,26 @@ impl<'a> CanvasSubviewMut<'a> {
         );
     }
 
+    /// Removes text from the region.
+    pub fn clear_text(&mut self, x: isize, y: isize, w: usize, h: usize) {
+        let mut left = self.x as isize + x;
+        let mut top = self.y as isize + y;
+        let mut right = left + w as isize;
+        let mut bottom = top + h as isize;
+        if self.clip {
+            left = left.max(self.x as isize);
+            top = top.max(self.y as isize);
+            right = right.min((self.x + self.width) as isize);
+            bottom = bottom.min((self.y + self.height) as isize);
+        }
+        self.canvas.clear_text(
+            left as _,
+            top as _,
+            (right - left) as _,
+            (bottom - top) as _,
+        );
+    }
+
     /// Writes text to the region.
     pub fn set_text(&mut self, x: isize, mut y: isize, text: &str, style: CanvasTextStyle) {
         let mut x = self.x as isize + x;
@@ -543,6 +576,18 @@ mod tests {
 
         let actual = canvas.to_string();
         assert_eq!(actual, "\n\n  ne 2\n  ne 3\n\n");
+    }
+
+    #[test]
+    fn test_canvas_text_clearing() {
+        let mut canvas = Canvas::new(10, 1);
+        canvas
+            .subview_mut(0, 0, 10, 1, true)
+            .set_text(0, 0, "hello!", CanvasTextStyle::default());
+        assert_eq!(canvas.to_string(), "hello!\n");
+
+        canvas.subview_mut(0, 0, 10, 1, true).clear_text(0, 0, 3, 1);
+        assert_eq!(canvas.to_string(), "   lo!\n");
     }
 
     #[test]

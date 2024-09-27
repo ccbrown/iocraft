@@ -11,10 +11,10 @@ use futures::{
     future::{select, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
 };
+use indexmap::IndexMap;
 use std::{
     any::Any,
     cell::{Ref, RefMut},
-    collections::HashMap,
     io, mem,
     pin::Pin,
     task::{self, Poll},
@@ -139,7 +139,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     {
         self.component_context_stack
             .with_context(context, |component_context_stack| {
-                let mut used_components = HashMap::with_capacity(self.children.components.len());
+                let mut used_components = IndexMap::with_capacity(self.children.components.len());
 
                 let mut direct_child_node_ids = Vec::new();
                 let child_node_ids = if self.transparent_layout {
@@ -152,7 +152,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
 
                 for mut child in children {
                     let mut component: InstantiatedComponent =
-                        match self.children.components.remove(child.key()) {
+                        match self.children.components.swap_remove(child.key()) {
                             Some(component)
                                 if component.component().type_id()
                                     == child.helper().component_type_id() =>
@@ -193,7 +193,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                     .set_children(self.node_id, &direct_child_node_ids)
                     .expect("we should be able to set the children");
 
-                for (_, component) in self.children.components.drain() {
+                for (_, component) in self.children.components.drain(..) {
                     self.context
                         .layout_engine
                         .remove(component.node_id())

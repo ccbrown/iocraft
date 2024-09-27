@@ -9,7 +9,7 @@ use taffy::{
 // Re-export basic enum types.
 pub use crossterm::style::Color;
 pub use taffy::style::{
-    AlignContent, AlignItems, Display, FlexDirection, FlexWrap, JustifyContent, Overflow,
+    AlignContent, AlignItems, Display, FlexDirection, FlexWrap, JustifyContent, Overflow, Position,
 };
 
 /// Defines a type that represents a percentage [0.0-100.0] and is convertible to any of the
@@ -17,39 +17,6 @@ pub use taffy::style::{
 /// [`element!`](crate::element!) macro using the `pct` suffix, e.g. `50pct`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Percent(pub f32);
-
-/// Defines the area to reserve around the element's content, but inside the border.
-///
-/// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum Padding {
-    /// No padding.
-    #[default]
-    Unset,
-    /// Sets an absolute value.
-    Length(u32),
-    /// Sets a percentage of the width or height of the parent.
-    Percent(f32),
-}
-
-impl Padding {
-    fn or(self, other: Self) -> Self {
-        match self {
-            Padding::Unset => other,
-            _ => self,
-        }
-    }
-}
-
-impl From<Padding> for LengthPercentage {
-    fn from(p: Padding) -> Self {
-        match p {
-            Padding::Unset => LengthPercentage::Length(0.0),
-            Padding::Length(l) => LengthPercentage::Length(l as _),
-            Padding::Percent(p) => LengthPercentage::Percent(p / 100.0),
-        }
-    }
-}
 
 macro_rules! impl_from_length {
     ($name:ident) => {
@@ -86,8 +53,57 @@ macro_rules! impl_from_percent {
     };
 }
 
-impl_from_length!(Padding);
-impl_from_percent!(Padding);
+macro_rules! new_length_percentage_type {
+    ($(#[$m:meta])* $name:ident) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, Default, PartialEq)]
+        pub enum $name {
+            /// No padding.
+            #[default]
+            Unset,
+            /// Sets an absolute value.
+            Length(u32),
+            /// Sets a percentage of the width or height of the parent.
+            Percent(f32),
+        }
+
+        impl $name {
+            fn or(self, other: Self) -> Self {
+                match self {
+                    $name::Unset => other,
+                    _ => self,
+                }
+            }
+        }
+
+        impl From<$name> for LengthPercentage {
+            fn from(p: $name) -> Self {
+                match p {
+                    $name::Unset => LengthPercentage::Length(0.0),
+                    $name::Length(l) => LengthPercentage::Length(l as _),
+                    $name::Percent(p) => LengthPercentage::Percent(p / 100.0),
+                }
+            }
+        }
+
+        impl_from_length!($name);
+        impl_from_percent!($name);
+    }
+}
+
+new_length_percentage_type!(
+    /// Defines the area to reserve around the element's content, but inside the border.
+    ///
+    /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
+    Padding
+);
+
+new_length_percentage_type!(
+    /// Defines the gaps in between rows or columns of flex items.
+    ///
+    /// See [the MDN documentation for gap](https://developer.mozilla.org/en-US/docs/Web/CSS/gap).
+    Gap
+);
 
 macro_rules! new_size_type {
     ($(#[$m:meta])* $name:ident, $intrepr:ty, $def:expr) => {
@@ -155,6 +171,15 @@ new_size_type!(
     /// Defines a width or height of an element.
     Size,
     u32,
+    Size::Auto
+);
+
+new_size_type!(
+    /// Sets the position of a positioned element.
+    ///
+    /// See [the MDN documentation for inset](https://developer.mozilla.org/en-US/docs/Web/CSS/inset).
+    Inset,
+    i32,
     Size::Auto
 );
 
@@ -231,6 +256,10 @@ impl From<LayoutStyle> for Style {
                 width: s.max_width.into(),
                 height: s.max_height.into(),
             },
+            gap: geometry::Size {
+                width: s.gap.or(s.column_gap).into(),
+                height: s.gap.or(s.row_gap).into(),
+            },
             padding: Rect {
                 left: s.padding_left.or(s.padding).into(),
                 right: s.padding_right.or(s.padding).into(),
@@ -243,6 +272,13 @@ impl From<LayoutStyle> for Style {
                 top: s.margin_top.or(s.margin).into(),
                 bottom: s.margin_bottom.or(s.margin).into(),
             },
+            inset: Rect {
+                left: s.left.or(s.inset).into(),
+                right: s.right.or(s.inset).into(),
+                top: s.top.or(s.inset).into(),
+                bottom: s.bottom.or(s.inset).into(),
+            },
+            position: s.position,
             flex_direction: s.flex_direction,
             flex_wrap: s.flex_wrap,
             flex_basis: s.flex_basis.into(),

@@ -14,6 +14,7 @@ To run any of the examples, use `cargo run --example NAME`. For example, to run 
 |[form.rs](./form.rs)<br />Displays a form prompting the user for input into multiple text fields. Uses mutable reference props to surface the user's input to the caller once the form is submitted.|![preview](./images/form.png)|
 |[fullscreen.rs](./fullscreen.rs)<br />Takes over the full terminal, rendering to an alternate buffer and preventing the user from scrolling.|![preview](./images/fullscreen.png)|
 |[hello_world.rs](./hello_world.rs)<br />Hello, world!|![preview](./images/hello-world.png)|
+|[overlap.rs](./overlap.rs)<br />Uses absolute positioning to create overlapping elements.|![preview](./images/overlap.png)|
 |[progress_bar.rs](./progress_bar.rs)<br />Renders a dynamic progress bar which fills up and then exits.|![preview](./images/progress_bar.png)|
 |[table.rs](./table.rs)<br />Displays a list of users provided by reference via properties.|![preview](./images/table.png)|
 |[use_input.rs](./use_input.rs)<br />Demonstrates using keyboard input to move a 👾.|![preview](./images/use_input.png)|

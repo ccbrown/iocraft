@@ -504,6 +504,24 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             pub max_height: ::iocraft::Size
         },
         quote! {
+            /// Defines the gaps in between rows or columns of flex items.
+            ///
+            /// See [the MDN documentation for gap](https://developer.mozilla.org/en-US/docs/Web/CSS/gap).
+            pub gap: ::iocraft::Gap
+        },
+        quote! {
+            /// Defines the gaps in between columns of flex items.
+            ///
+            /// See [the MDN documentation for column-gap](https://developer.mozilla.org/en-US/docs/Web/CSS/column-gap).
+            pub column_gap: ::iocraft::Gap
+        },
+        quote! {
+            /// Defines the gaps in between rows of flex items.
+            ///
+            /// See [the MDN documentation for row-gap](https://developer.mozilla.org/en-US/docs/Web/CSS/row-gap).
+            pub row_gap: ::iocraft::Gap
+        },
+        quote! {
             /// Defines the area to reserve around the element's content, but inside the border.
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
@@ -532,6 +550,40 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
             pub padding_left: ::iocraft::Padding
+        },
+        quote! {
+            /// Controls how the element is layed out and whether it will be controlled by the flexbox.
+            pub position: ::iocraft::Position
+        },
+        quote! {
+            /// Sets the position of a positioned element.
+            ///
+            /// See [the MDN documentation for inset](https://developer.mozilla.org/en-US/docs/Web/CSS/inset).
+            pub inset: ::iocraft::Inset
+        },
+        quote! {
+            /// Sets the vertical position of a positioned element.
+            ///
+            /// See [the MDN documentation for top](https://developer.mozilla.org/en-US/docs/Web/CSS/top).
+            pub top: ::iocraft::Inset
+        },
+        quote! {
+            /// Sets the horizontal position of a positioned element.
+            ///
+            /// See [the MDN documentation for right](https://developer.mozilla.org/en-US/docs/Web/CSS/right).
+            pub right: ::iocraft::Inset
+        },
+        quote! {
+            /// Sets the vertical position of a positioned element.
+            ///
+            /// See [the MDN documentation for bottom](https://developer.mozilla.org/en-US/docs/Web/CSS/bottom).
+            pub bottom: ::iocraft::Inset
+        },
+        quote! {
+            /// Sets the horizontal position of a positioned element.
+            ///
+            /// See [the MDN documentation for left](https://developer.mozilla.org/en-US/docs/Web/CSS/left).
+            pub left: ::iocraft::Inset
         },
         quote! {
             /// Defines the area to reserve around the element's content, but outside the border.

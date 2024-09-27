@@ -235,6 +235,12 @@ impl Component for Box {
         let mut canvas = drawer.canvas();
 
         if let Some(color) = self.background_color {
+            canvas.clear_text(
+                0,
+                0,
+                layout.size.width as usize,
+                layout.size.height as usize,
+            );
             canvas.set_background_color(
                 0,
                 0,
@@ -529,6 +535,60 @@ mod tests {
                 ╭Title────────╮
                 │Hello, world!│
                 ╰─────────────╯
+            "},
+        );
+
+        assert_eq!(
+            element! {
+                Box {
+                    Text(content: "This is the background text.")
+                    Box(
+                        position: Position::Absolute,
+                        top: 0,
+                        left: 3,
+                    ) {
+                        Text(content: "Foo!")
+                    }
+                }
+            }
+            .to_string(),
+            "ThiFoo! the background text.\n",
+        );
+
+        assert_eq!(
+            element! {
+                Box {
+                    Text(content: "This is the background text.")
+                    Box(
+                        position: Position::Absolute,
+                        top: 0,
+                        left: 3,
+                        width: 6,
+                        height: 1,
+                        background_color: Color::Red,
+                    )
+                }
+            }
+            .to_string(),
+            "Thi      he background text.\n",
+        );
+
+        assert_eq!(
+            element! {
+                Box(width: 20, border_style: BorderStyle::Single, column_gap: 2) {
+                    Box(width: 3) {
+                        Text(content: "foo")
+                    }
+                    Box(width: 3) {
+                        Text(content: "bar")
+                    }
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────────────────┐
+                │foo  bar          │
+                └──────────────────┘
             "},
         );
     }

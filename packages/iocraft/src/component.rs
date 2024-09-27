@@ -6,9 +6,9 @@ use crate::{
     render::{ComponentDrawer, ComponentUpdater, UpdateContext},
 };
 use futures::future::poll_fn;
+use indexmap::IndexMap;
 use std::{
     any::{Any, TypeId},
-    collections::HashMap,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
@@ -211,7 +211,7 @@ impl InstantiatedComponent {
 
 #[derive(Default)]
 pub(crate) struct Components {
-    pub components: HashMap<ElementKey, InstantiatedComponent>,
+    pub components: IndexMap<ElementKey, InstantiatedComponent>,
 }
 
 impl Components {
