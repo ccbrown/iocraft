@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.4...iocraft-macros-v0.1.5) - 2024-09-27
+
+### Added
+
+- add position, inset, and gap style props
+
 ## [0.1.4](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.3...iocraft-macros-v0.1.4) - 2024-09-26
 
 ### Other
