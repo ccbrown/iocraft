@@ -2,7 +2,7 @@
   <h1><code>iocraft</code></h1>
 
   <p>
-    <strong>✨ A Rust crate for beautiful, artisanally crafted CLIs and text-based IO. ✨</strong>
+    <strong>✨ A Rust crate for beautiful, artisanally crafted CLIs, TUIs, and text-based IO. ✨</strong>
   </p>
 
   <p>
