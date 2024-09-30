@@ -232,31 +232,11 @@ pub trait ElementExt: private::Sealed + Sized {
     ///     let actual = element!(MyTextInput)
     ///         .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
     ///             vec![
-    ///                 TerminalEvent::Key(KeyEvent {
-    ///                     code: KeyCode::Char('f'),
-    ///                     modifiers: KeyModifiers::empty(),
-    ///                     kind: KeyEventKind::Press,
-    ///                 }),
-    ///                 TerminalEvent::Key(KeyEvent {
-    ///                     code: KeyCode::Char('f'),
-    ///                     modifiers: KeyModifiers::empty(),
-    ///                     kind: KeyEventKind::Release,
-    ///                 }),
-    ///                 TerminalEvent::Key(KeyEvent {
-    ///                     code: KeyCode::Char('o'),
-    ///                     modifiers: KeyModifiers::empty(),
-    ///                     kind: KeyEventKind::Press,
-    ///                 }),
-    ///                 TerminalEvent::Key(KeyEvent {
-    ///                     code: KeyCode::Char('o'),
-    ///                     modifiers: KeyModifiers::empty(),
-    ///                     kind: KeyEventKind::Repeat,
-    ///                 }),
-    ///                 TerminalEvent::Key(KeyEvent {
-    ///                     code: KeyCode::Char('o'),
-    ///                     modifiers: KeyModifiers::empty(),
-    ///                     kind: KeyEventKind::Release,
-    ///                 }),
+    ///                 TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('f'))),
+    ///                 TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('f'))),
+    ///                 TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('o'))),
+    ///                 TerminalEvent::Key(KeyEvent::new(KeyEventKind::Repeat, KeyCode::Char('o'))),
+    ///                 TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('o'))),
     ///             ],
     ///         )))
     ///         .map(|c| c.to_string())

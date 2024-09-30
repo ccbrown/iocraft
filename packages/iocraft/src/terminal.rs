@@ -35,6 +35,17 @@ pub struct KeyEvent {
     pub kind: KeyEventKind,
 }
 
+impl KeyEvent {
+    /// Creates a new `KeyEvent`.
+    pub fn new(kind: KeyEventKind, code: KeyCode) -> Self {
+        Self {
+            code,
+            modifiers: KeyModifiers::empty(),
+            kind,
+        }
+    }
+}
+
 /// An event fired when the mouse is moved, clicked, scrolled, etc. in fullscreen mode.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
@@ -50,6 +61,18 @@ pub struct FullscreenMouseEvent {
 
     /// The kind of mouse event.
     pub kind: MouseEventKind,
+}
+
+impl FullscreenMouseEvent {
+    /// Creates a new `FullscreenMouseEvent`.
+    pub fn new(kind: MouseEventKind, column: u16, row: u16) -> Self {
+        Self {
+            modifiers: KeyModifiers::empty(),
+            column,
+            row,
+            kind,
+        }
+    }
 }
 
 /// An event fired by the terminal.

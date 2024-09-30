@@ -261,12 +261,11 @@ mod tests {
             }
         }
         .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
-            TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
-                column: 10,
-                row: 10,
-                modifiers: KeyModifiers::empty(),
-                kind: MouseEventKind::Down(MouseButton::Left),
-            }),
+            TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                MouseEventKind::Down(MouseButton::Left),
+                10,
+                10,
+            )),
         ])))
         .collect()
         .await;
