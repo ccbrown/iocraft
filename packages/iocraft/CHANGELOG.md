@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.2.3...iocraft-v0.3.0) - 2024-09-30
+
+### Added
+
+- convenience methods for creating terminal event types
+- fullscreen mouse events, calculator example
+
+### Other
+
+- seal hooks, update docs, rm deprecated fn
+
 ## [0.2.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.2.2...iocraft-v0.2.3) - 2024-09-27
 
 ### Added
