@@ -4,7 +4,7 @@ use std::time::Duration;
 #[component]
 fn ProgressBar(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let mut system = hooks.use_context_mut::<SystemContext>();
-    let progress = hooks.use_state::<f32, _>(|| 0.0);
+    let mut progress = hooks.use_state::<f32, _>(|| 0.0);
 
     hooks.use_future(async move {
         loop {

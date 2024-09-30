@@ -103,11 +103,11 @@ struct StateValue<T> {
 }
 
 /// A reference to the value of a [`State`].
-pub struct StateRef<T: 'static> {
-    inner: <SyncStorage as AnyStorage>::Ref<'static, StateValue<T>>,
+pub struct StateRef<'a, T: 'static> {
+    inner: <SyncStorage as AnyStorage>::Ref<'a, StateValue<T>>,
 }
 
-impl<T: 'static> ops::Deref for StateRef<T> {
+impl<'a, T: 'static> ops::Deref for StateRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -138,18 +138,22 @@ impl<T: Copy + Sync + Send + 'static> State<T> {
 
 impl<T: Sync + Send + 'static> State<T> {
     /// Sets the value of the state.
-    pub fn set(&self, value: T) {
+    pub fn set(&mut self, value: T) {
         self.modify(|v| *v = value);
     }
 
     /// Returns a reference to the state's value.
+    ///
+    /// <div class="warning">It is possible to create a deadlock using this method. If you have
+    /// multiple copies of the same state, writes to one will be blocked for as long as any
+    /// reference returned by this method exists.</div>
     pub fn read(&self) -> StateRef<T> {
         StateRef {
             inner: self.inner.read(),
         }
     }
 
-    fn modify<F>(&self, f: F)
+    fn modify<F>(&mut self, f: F)
     where
         F: FnOnce(&mut T),
     {

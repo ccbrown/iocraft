@@ -25,9 +25,9 @@ mod private {
 /// #[component]
 /// fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 ///     let mut system = hooks.use_context_mut::<SystemContext>();
-///     let x = hooks.use_state(|| 0);
-///     let y = hooks.use_state(|| 0);
-///     let should_exit = hooks.use_state(|| false);
+///     let mut x = hooks.use_state(|| 0);
+///     let mut y = hooks.use_state(|| 0);
+///     let mut should_exit = hooks.use_state(|| false);
 ///
 ///     hooks.use_terminal_events({
 ///         move |event| match event {
@@ -197,7 +197,7 @@ mod tests {
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let should_exit = hooks.use_state(|| false);
+        let mut should_exit = hooks.use_state(|| false);
         hooks.use_terminal_events(move |_event| {
             should_exit.set(true);
         });
@@ -230,7 +230,7 @@ mod tests {
     #[component]
     fn MyClickableComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let should_exit = hooks.use_state(|| false);
+        let mut should_exit = hooks.use_state(|| false);
         hooks.use_local_terminal_events(move |event| {
             if let TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),

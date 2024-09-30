@@ -38,7 +38,7 @@ pub struct TextInputProps {
 /// # use iocraft::prelude::*;
 /// # #[component]
 /// # fn FormField(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-/// let value = hooks.use_state(|| "".to_string());
+/// let mut value = hooks.use_state(|| "".to_string());
 ///
 /// element! {
 ///     Box(
@@ -173,7 +173,7 @@ mod tests {
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let value = hooks.use_state(|| "".to_string());
+        let mut value = hooks.use_state(|| "".to_string());
 
         if value.read().as_str() == "foo" {
             system.exit();

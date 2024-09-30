@@ -129,7 +129,7 @@ impl WeatherData {
 #[component]
 fn LoadingIndicator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let frame = hooks.use_state(|| 0);
+    let mut frame = hooks.use_state(|| 0);
     hooks.use_future(async move {
         loop {
             smol::Timer::after(std::time::Duration::from_millis(100)).await;
@@ -208,8 +208,8 @@ enum WeatherState {
 #[component]
 fn Weather(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let mut system = hooks.use_context_mut::<SystemContext>();
-    let state = hooks.use_state(|| WeatherState::Init);
-    let should_exit = hooks.use_state(|| false);
+    let mut state = hooks.use_state(|| WeatherState::Init);
+    let mut should_exit = hooks.use_state(|| false);
 
     let mut load = hooks.use_async_handler(move |_: ()| async move {
         state.set(WeatherState::Loading);

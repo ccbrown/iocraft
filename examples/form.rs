@@ -9,7 +9,7 @@ struct FormFieldProps {
 
 #[component]
 fn FormField(props: &FormFieldProps) -> impl Into<AnyElement<'static>> {
-    let Some(value) = props.value else {
+    let Some(mut value) = props.value else {
         panic!("value is required");
     };
 
@@ -49,8 +49,8 @@ fn Form<'a>(props: &mut FormProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement
 
     let first_name = hooks.use_state(|| "".to_string());
     let last_name = hooks.use_state(|| "".to_string());
-    let focus = hooks.use_state(|| 0);
-    let should_submit = hooks.use_state(|| false);
+    let mut focus = hooks.use_state(|| 0);
+    let mut should_submit = hooks.use_state(|| false);
 
     hooks.use_terminal_events(move |event| match event {
         TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {

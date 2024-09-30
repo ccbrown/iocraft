@@ -6,8 +6,8 @@ use std::time::Duration;
 fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let (width, height) = hooks.use_terminal_size();
     let mut system = hooks.use_context_mut::<SystemContext>();
-    let time = hooks.use_state(|| Local::now());
-    let should_exit = hooks.use_state(|| false);
+    let mut time = hooks.use_state(|| Local::now());
+    let mut should_exit = hooks.use_state(|| false);
 
     hooks.use_future(async move {
         loop {

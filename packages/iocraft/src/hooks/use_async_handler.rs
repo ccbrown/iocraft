@@ -81,7 +81,7 @@ mod tests {
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let should_exit = hooks.use_state(|| false);
+        let mut should_exit = hooks.use_state(|| false);
         let mut exit = hooks.use_async_handler(move |_| async move {
             should_exit.set(true);
         });

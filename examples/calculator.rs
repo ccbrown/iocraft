@@ -188,10 +188,10 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let numpad_button_style = theme.numpad_button_style();
     let operator_button_style = theme.operator_button_style();
     let fn_button_style = theme.fn_button_style();
-    let expr = hooks.use_state(|| "0".to_string());
-    let clear_on_number = hooks.use_state(|| true);
+    let mut expr = hooks.use_state(|| "0".to_string());
+    let mut clear_on_number = hooks.use_state(|| true);
 
-    let handle_backspace = move || {
+    let mut handle_backspace = move || {
         let new_expr = expr
             .read()
             .chars()
@@ -206,7 +206,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     };
 
-    let handle_number = move |n: u8| {
+    let mut handle_number = move |n: u8| {
         if clear_on_number.get() {
             expr.set(n.to_string());
             clear_on_number.set(false);
@@ -215,7 +215,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     };
 
-    let handle_decimal = move || {
+    let mut handle_decimal = move || {
         if clear_on_number.get() {
             expr.set("0.".to_string());
             clear_on_number.set(false);
@@ -224,7 +224,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     };
 
-    let handle_clear = move || {
+    let mut handle_clear = move || {
         expr.set("0".to_string());
         clear_on_number.set(true);
     };
@@ -234,7 +234,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         Some('+') | Some('-') | Some('×') | Some('÷')
     );
 
-    let handle_operator = move |op: char| {
+    let mut handle_operator = move |op: char| {
         if clear_on_number.get() {
             clear_on_number.set(false);
         }
@@ -243,7 +243,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     };
 
-    let handle_percent = move || {
+    let mut handle_percent = move || {
         if clear_on_number.get() {
             clear_on_number.set(false);
         }
@@ -252,7 +252,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     };
 
-    let handle_plus_minus = move || {
+    let mut handle_plus_minus = move || {
         if clear_on_number.get() {
             clear_on_number.set(false);
         }
@@ -261,7 +261,7 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     };
 
-    let handle_equals = move || {
+    let mut handle_equals = move || {
         if let Ok(f) = mexprp::eval::<f64>(&expr.to_string()) {
             expr.set(f.to_string());
             clear_on_number.set(true);
@@ -350,8 +350,8 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let (width, height) = hooks.use_terminal_size();
     let mut system = hooks.use_context_mut::<SystemContext>();
-    let should_exit = hooks.use_state(|| false);
-    let theme = hooks.use_state(|| Theme::default());
+    let mut should_exit = hooks.use_state(|| false);
+    let mut theme = hooks.use_state(|| Theme::default());
 
     hooks.use_terminal_events({
         move |event| match event {
