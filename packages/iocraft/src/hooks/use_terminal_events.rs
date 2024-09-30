@@ -6,6 +6,11 @@ use std::{
 };
 use taffy::{Point, Size};
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseTerminalEvents` is a hook that allows you to listen for user input such as key strokes.
 ///
 /// # Example
@@ -83,7 +88,7 @@ use taffy::{Point, Size};
 ///     }
 /// }
 /// ```
-pub trait UseTerminalEvents {
+pub trait UseTerminalEvents: private::Sealed {
     /// Defines a callback to be invoked whenever a terminal event occurs.
     ///
     /// This hook will be called for all terminal events, including those that occur outside of the

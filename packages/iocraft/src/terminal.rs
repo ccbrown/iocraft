@@ -11,7 +11,7 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdout, IsTerminal, Write},
+    io::{self, stdout, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
@@ -22,6 +22,7 @@ use std::{
 pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers, MouseEventKind};
 
 /// An event fired when a key is pressed.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct KeyEvent {
     /// A code indicating the key that was pressed.
@@ -429,12 +430,6 @@ impl Write for Terminal {
     }
 }
 
-/// Returns whether the standard output is a TTY terminal.
-#[deprecated(note = "Users should use the `std::io::IsTerminal` trait instead.")]
-pub fn stdout_is_tty() -> bool {
-    stdout().is_terminal()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
@@ -449,11 +444,5 @@ mod tests {
         assert!(!terminal.is_raw_mode_enabled());
         let canvas = Canvas::new(10, 1);
         terminal.write_canvas(&canvas).unwrap();
-    }
-
-    #[test]
-    fn test_stdout_is_tty() {
-        #[allow(deprecated)]
-        let _ = stdout_is_tty();
     }
 }

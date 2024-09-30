@@ -5,6 +5,11 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseOutput` is a hook that allows you to write to stdout and stderr from a component. The
 /// output will be appended to stdout or stderr, above the rendered component output.
 ///
@@ -32,7 +37,7 @@ use std::{
 ///     }
 /// }
 /// ```
-pub trait UseOutput {
+pub trait UseOutput: private::Sealed {
     /// Gets handles which can be used to write to stdout and stderr.
     fn use_output(&mut self) -> (StdoutHandle, StderrHandle);
 }

@@ -7,11 +7,16 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseFuture` is a hook that allows you to create a [`Handler`] which executes an asynchronous
 /// task that is bound to the lifetime of the component.
 ///
 /// If the component is dropped, all executing tasks will also be dropped.
-pub trait UseAsyncHandler {
+pub trait UseAsyncHandler: private::Sealed {
     /// Returns a [`Handler`] which when invoked will execute the given function and drive the
     /// resulting future to completion.
     fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> Handler<'static, T>

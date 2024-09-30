@@ -6,6 +6,11 @@ use std::{
     task::{Context, Poll},
 };
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseFuture` is a hook that allows you to spawn an async task which is bound to the lifetime of
 /// the component.
 ///
@@ -30,7 +35,7 @@ use std::{
 ///     }
 /// }
 /// ```
-pub trait UseFuture {
+pub trait UseFuture: private::Sealed {
     /// Spawns a future which is bound to the lifetime of the component. When the component is
     /// dropped, the future will also be dropped.
     ///

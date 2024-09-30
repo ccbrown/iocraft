@@ -4,8 +4,13 @@ use crate::{
 };
 use crossterm::terminal;
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseTerminalSize` is a hook that returns the current terminal size.
-pub trait UseTerminalSize {
+pub trait UseTerminalSize: private::Sealed {
     /// Returns the current terminal size as a tuple of `(width, height)`.
     fn use_terminal_size(&mut self) -> (u16, u16);
 }

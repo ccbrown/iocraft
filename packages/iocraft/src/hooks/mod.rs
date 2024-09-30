@@ -34,6 +34,11 @@
 //!
 //! They must be called in the same order every time, so calling them in any sort of conditional or
 //! loop is not allowed. If you break the rules of hooks, you can expect a panic.
+//!
+//! # Note to Library Authors
+//!
+//! If you are writing a library that provides hooks, it's recommended that you seal your hook
+//! traits so you can add new methods without breaking semver compatibility.
 
 mod use_async_handler;
 pub use use_async_handler::*;

@@ -4,6 +4,11 @@ use std::{
     cell::{Ref, RefMut},
 };
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseContext` provides methods for accessing context from a component.
 ///
 /// With the exception of [`SystemContext`](crate::SystemContext), which is always available,
@@ -29,7 +34,7 @@ use std::{
 ///     }
 /// }
 /// ```
-pub trait UseContext<'a> {
+pub trait UseContext<'a>: private::Sealed {
     /// Returns a reference to the context of the given type.
     ///
     /// # Panics

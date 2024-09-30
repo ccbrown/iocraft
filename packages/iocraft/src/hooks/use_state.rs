@@ -8,6 +8,11 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for crate::Hooks<'_, '_> {}
+}
+
 /// `UseState` is a hook that allows you to store state in a component.
 ///
 /// When the state changes, the component will be re-rendered.
@@ -33,7 +38,7 @@ use std::{
 ///     }
 /// }
 /// ```
-pub trait UseState {
+pub trait UseState: private::Sealed {
     /// Creates a new state with its initial value computed by the given function.
     ///
     /// When the state changes, the component will be re-rendered.
