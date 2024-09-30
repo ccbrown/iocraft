@@ -186,10 +186,36 @@ impl InstantiatedComponent {
     }
 
     pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
-        self.hooks.pre_component_draw(drawer);
-        self.component.draw(drawer);
+        if self.has_transparent_layout {
+            // If the component has a transparent layout, provide the first child's layout to the
+            // hooks and component.
+            if let Some((_, child)) = self.children.components.iter().next().as_ref() {
+                drawer.for_child_node_layout(child.node_id, |drawer| {
+                    self.hooks.pre_component_draw(drawer);
+                    self.component.draw(drawer);
+                });
+            } else {
+                self.hooks.pre_component_draw(drawer);
+                self.component.draw(drawer);
+            }
+        } else {
+            self.hooks.pre_component_draw(drawer);
+            self.component.draw(drawer);
+        }
+
         self.children.draw(drawer);
-        self.hooks.post_component_draw(drawer);
+
+        if self.has_transparent_layout {
+            if let Some((_, child)) = self.children.components.iter().next().as_ref() {
+                drawer.for_child_node_layout(child.node_id, |drawer| {
+                    self.hooks.post_component_draw(drawer);
+                });
+            } else {
+                self.hooks.post_component_draw(drawer);
+            }
+        } else {
+            self.hooks.post_component_draw(drawer);
+        }
     }
 
     pub async fn wait(&mut self) {

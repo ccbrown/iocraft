@@ -19,7 +19,7 @@ use std::{
 };
 
 // Re-exports for basic types.
-pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
+pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers, MouseEventKind};
 
 /// An event fired when a key is pressed.
 #[derive(Clone, Debug)]
@@ -34,12 +34,31 @@ pub struct KeyEvent {
     pub kind: KeyEventKind,
 }
 
+/// An event fired when the mouse is moved, clicked, scrolled, etc. in fullscreen mode.
+#[non_exhaustive]
+#[derive(Clone, Debug)]
+pub struct FullscreenMouseEvent {
+    /// The modifiers that were active when the event occurred.
+    pub modifiers: KeyModifiers,
+
+    /// The column that the event occurred on.
+    pub column: u16,
+
+    /// The row that the event occurred on.
+    pub row: u16,
+
+    /// The kind of mouse event.
+    pub kind: MouseEventKind,
+}
+
 /// An event fired by the terminal.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum TerminalEvent {
     /// A key event, fired when a key is pressed.
     Key(KeyEvent),
+    /// A mouse event, fired when the mouse is moved, clicked, scrolled, etc. in fullscreen mode.
+    FullscreenMouse(FullscreenMouseEvent),
     /// A resize event, fired when the terminal is resized.
     Resize(u16, u16),
 }
@@ -80,6 +99,7 @@ struct StdTerminal {
     dest: io::Stdout,
     fullscreen: bool,
     raw_mode_enabled: bool,
+    enabled_keyboard_enhancement: bool,
     prev_canvas_height: u16,
 }
 
@@ -135,6 +155,14 @@ impl TerminalImpl for StdTerminal {
                         modifiers: event.modifiers,
                         kind: event.kind,
                     })),
+                    Ok(Event::Mouse(event)) => {
+                        Some(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
+                            modifiers: event.modifiers,
+                            column: event.column,
+                            row: event.row,
+                            kind: event.kind,
+                        }))
+                    }
                     Ok(Event::Resize(width, height)) => Some(TerminalEvent::Resize(width, height)),
                     _ => None,
                 }
@@ -157,6 +185,7 @@ impl StdTerminal {
             dest,
             fullscreen,
             raw_mode_enabled: false,
+            enabled_keyboard_enhancement: false,
             prev_canvas_height: 0,
         })
     }
@@ -171,6 +200,7 @@ impl StdTerminal {
                             event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                         )
                     )?;
+                    self.enabled_keyboard_enhancement = true;
                 }
                 if self.fullscreen {
                     execute!(self.dest, event::EnableMouseCapture)?;
@@ -181,7 +211,7 @@ impl StdTerminal {
                 if self.fullscreen {
                     execute!(self.dest, event::DisableMouseCapture)?;
                 }
-                if terminal::supports_keyboard_enhancement()? {
+                if self.enabled_keyboard_enhancement {
                     execute!(self.dest, event::PopKeyboardEnhancementFlags)?;
                 }
             }

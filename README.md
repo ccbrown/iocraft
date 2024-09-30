@@ -97,6 +97,7 @@ forms, and more!
 <img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/table.png" height=402 />
 <img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/form.png" height=387 />
 <img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/overlap.png" height=450 />
+<img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/calculator.png" height=450 />
 <img src="https://raw.githubusercontent.com/ccbrown/iocraft/refs/heads/main/examples/images/weather-powershell.png" height=350 />
 
 ## Shoutouts
