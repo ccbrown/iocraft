@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.3.1...iocraft-v0.3.2) - 2024-10-04
+
+### Added
+
+- add button component
+
 ## [0.3.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.3.0...iocraft-v0.3.1) - 2024-09-30
 
 ### Added
