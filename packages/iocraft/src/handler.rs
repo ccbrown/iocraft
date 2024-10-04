@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    mem,
+    ops::{Deref, DerefMut},
+};
 
 /// `Handler` is a type representing an optional event handler, commonly used for component properties.
 ///
@@ -10,6 +13,11 @@ impl<'a, T> Handler<'a, T> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
+    }
+
+    /// Takes the handler, leaving a default-initialized handler in its place.
+    pub fn take(&mut self) -> Self {
+        mem::take(self)
     }
 }
 

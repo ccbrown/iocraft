@@ -131,6 +131,16 @@ where
     }
 }
 
+impl<'a, 'b: 'a> From<&'a mut AnyElement<'b>> for AnyElement<'b> {
+    fn from(e: &'a mut AnyElement<'b>) -> Self {
+        Self {
+            key: e.key.clone(),
+            props: e.props.borrow(),
+            helper: e.helper.copy(),
+        }
+    }
+}
+
 mod private {
     use super::*;
 

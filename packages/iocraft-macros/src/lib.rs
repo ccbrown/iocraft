@@ -337,6 +337,7 @@ impl Parse for ParsedComponent {
 
 impl ToTokens for ParsedComponent {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let attrs = &self.f.attrs;
         let vis = &self.f.vis;
         let name = &self.f.sig.ident;
         let args = &self.f.sig.inputs;
@@ -352,6 +353,7 @@ impl ToTokens for ParsedComponent {
             .unwrap_or_else(|| quote!(::iocraft::NoProps));
 
         tokens.extend(quote! {
+            #(#attrs)*
             #vis struct #name;
 
             impl #name {

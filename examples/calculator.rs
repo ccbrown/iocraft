@@ -131,52 +131,42 @@ fn Screen(hooks: Hooks, props: &ScreenProps) -> impl Into<AnyElement<'static>> {
 }
 
 #[derive(Default, Props)]
-struct ButtonProps {
+struct CalculatorButtonProps {
     label: String,
     style: Option<ButtonStyle>,
     on_click: Handler<'static, ()>,
 }
 
 #[component]
-fn Button(props: &mut ButtonProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+fn CalculatorButton(props: &mut CalculatorButtonProps) -> impl Into<AnyElement<'static>> {
     let style = props.style.unwrap();
 
-    hooks.use_local_terminal_events({
-        let mut on_click = std::mem::take(&mut props.on_click);
-        move |event| match event {
-            TerminalEvent::FullscreenMouse(FullscreenMouseEvent { kind, .. })
-                if matches!(kind, MouseEventKind::Down(_)) =>
-            {
-                on_click(());
-            }
-            _ => {}
-        }
-    });
-
     element! {
-        Box(
-            border_style: BorderStyle::Custom(BorderCharacters {
-                top: '▁',
-                ..Default::default()
-            }),
-            border_edges: Edges::Top,
-            border_color: style.trim_color,
-            flex_grow: 1.0,
-            margin_left: 1,
-            margin_right: 1,
-        ) {
+        Button(handler: props.on_click.take()) {
             Box(
-                background_color: style.color,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                height: 3,
+                border_style: BorderStyle::Custom(BorderCharacters {
+                    top: '▁',
+                    ..Default::default()
+                }),
+                border_edges: Edges::Top,
+                border_color: style.trim_color,
                 flex_grow: 1.0,
+                margin_left: 1,
+                margin_right: 1,
             ) {
-                Text(
-                    content: &props.label,
-                    color: style.text_color,
-                    weight: Weight::Bold,
-                )
+                Box(
+                    background_color: style.color,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    height: 3,
+                    flex_grow: 1.0,
+                ) {
+                    Text(
+                        content: &props.label,
+                        color: style.text_color,
+                        weight: Weight::Bold,
+                    )
+                }
             }
         }
     }
@@ -313,34 +303,34 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 Screen(content: expr.to_string())
             }
             Box(width: 100pct) {
-                Button(label: "←", style: fn_button_style, on_click: move |_| handle_backspace())
-                Button(label: "±", style: fn_button_style, on_click: move |_| handle_plus_minus())
-                Button(label: "%", style: fn_button_style, on_click: move |_| handle_percent())
-                Button(label: "÷", style: operator_button_style, on_click: move |_| handle_operator('÷'))
+                CalculatorButton(label: "←", style: fn_button_style, on_click: move |_| handle_backspace())
+                CalculatorButton(label: "±", style: fn_button_style, on_click: move |_| handle_plus_minus())
+                CalculatorButton(label: "%", style: fn_button_style, on_click: move |_| handle_percent())
+                CalculatorButton(label: "÷", style: operator_button_style, on_click: move |_| handle_operator('÷'))
             }
             Box(width: 100pct) {
-                Button(label: "7", style: numpad_button_style, on_click: move |_| handle_number(7))
-                Button(label: "8", style: numpad_button_style, on_click: move |_| handle_number(8))
-                Button(label: "9", style: numpad_button_style, on_click: move |_| handle_number(9))
-                Button(label: "×", style: operator_button_style, on_click: move |_| handle_operator('×'))
+                CalculatorButton(label: "7", style: numpad_button_style, on_click: move |_| handle_number(7))
+                CalculatorButton(label: "8", style: numpad_button_style, on_click: move |_| handle_number(8))
+                CalculatorButton(label: "9", style: numpad_button_style, on_click: move |_| handle_number(9))
+                CalculatorButton(label: "×", style: operator_button_style, on_click: move |_| handle_operator('×'))
             }
             Box(width: 100pct) {
-                Button(label: "4", style: numpad_button_style, on_click: move |_| handle_number(4))
-                Button(label: "5", style: numpad_button_style, on_click: move |_| handle_number(5))
-                Button(label: "6", style: numpad_button_style, on_click: move |_| handle_number(6))
-                Button(label: "-", style: operator_button_style, on_click: move |_| handle_operator('-'))
+                CalculatorButton(label: "4", style: numpad_button_style, on_click: move |_| handle_number(4))
+                CalculatorButton(label: "5", style: numpad_button_style, on_click: move |_| handle_number(5))
+                CalculatorButton(label: "6", style: numpad_button_style, on_click: move |_| handle_number(6))
+                CalculatorButton(label: "-", style: operator_button_style, on_click: move |_| handle_operator('-'))
             }
             Box(width: 100pct) {
-                Button(label: "1", style: numpad_button_style, on_click: move |_| handle_number(1))
-                Button(label: "2", style: numpad_button_style, on_click: move |_| handle_number(2))
-                Button(label: "3", style: numpad_button_style, on_click: move |_| handle_number(3))
-                Button(label: "+", style: operator_button_style, on_click: move |_| handle_operator('+'))
+                CalculatorButton(label: "1", style: numpad_button_style, on_click: move |_| handle_number(1))
+                CalculatorButton(label: "2", style: numpad_button_style, on_click: move |_| handle_number(2))
+                CalculatorButton(label: "3", style: numpad_button_style, on_click: move |_| handle_number(3))
+                CalculatorButton(label: "+", style: operator_button_style, on_click: move |_| handle_operator('+'))
             }
             Box(width: 100pct) {
-                Button(label: "C", style: theme.clear_button_style(), on_click: move |_| handle_clear())
-                Button(label: "0", style: numpad_button_style, on_click: move |_| handle_number(0))
-                Button(label: ".", style: numpad_button_style, on_click: move |_| handle_decimal())
-                Button(label: "=", style: operator_button_style, on_click: move |_| handle_equals())
+                CalculatorButton(label: "C", style: theme.clear_button_style(), on_click: move |_| handle_clear())
+                CalculatorButton(label: "0", style: numpad_button_style, on_click: move |_| handle_number(0))
+                CalculatorButton(label: ".", style: numpad_button_style, on_click: move |_| handle_decimal())
+                CalculatorButton(label: "=", style: operator_button_style, on_click: move |_| handle_equals())
             }
         }
     }

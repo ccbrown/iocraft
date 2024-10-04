@@ -4,7 +4,6 @@ use crate::{
 };
 use futures::stream::Stream;
 use std::{
-    mem,
     pin::{pin, Pin},
     task::{Context, Poll},
 };
@@ -92,7 +91,7 @@ impl Component for TextInput {
             ..Default::default()
         };
         self.value = props.value.clone();
-        self.handler = mem::take(&mut props.on_change);
+        self.handler = props.on_change.take();
         self.has_focus = props.has_focus;
         updater.set_layout_style(taffy::style::Style {
             size: taffy::Size::percent(1.0),
