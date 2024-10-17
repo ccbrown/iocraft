@@ -69,7 +69,7 @@ impl ElementKey {
     }
 }
 
-/// An element is a description of an uninstantiated components, including its key and properties.
+/// An element is a description of an uninstantiated component, including its key and properties.
 #[derive(Clone)]
 pub struct Element<'a, T: ElementType + 'a> {
     /// The key of the element.
