@@ -12,8 +12,8 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Brace, Comma, Paren},
-    DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Ident, ItemFn, ItemStruct, Lifetime,
-    Lit, Member, Pat, Result, Token, Type, TypePath,
+    DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Generics, Ident, ItemFn, ItemStruct,
+    Lifetime, Lit, Member, Pat, Result, Token, Type, TypePath, WhereClause, WherePredicate,
 };
 use uuid::Uuid;
 
@@ -344,6 +344,62 @@ impl ToTokens for ParsedComponent {
         let block = &self.f.block;
         let output = &self.f.sig.output;
         let generics = &self.f.sig.generics;
+        let lifetime_generics = {
+            Generics {
+                params: generics
+                    .params
+                    .iter()
+                    .filter(|param| matches!(param, GenericParam::Lifetime(_)))
+                    .cloned()
+                    .collect(),
+                where_clause: generics
+                    .where_clause
+                    .as_ref()
+                    .map(|where_clause| WhereClause {
+                        where_token: where_clause.where_token,
+                        predicates: where_clause
+                            .predicates
+                            .iter()
+                            .filter(|predicate| matches!(predicate, WherePredicate::Lifetime(_)))
+                            .cloned()
+                            .collect(),
+                    }),
+                ..generics.clone()
+            }
+        };
+        let (lifetime_impl_generics, _lifetime_ty_generics, lifetime_where_clause) =
+            lifetime_generics.split_for_impl();
+        let type_generics = {
+            Generics {
+                params: generics
+                    .params
+                    .iter()
+                    .filter(|param| !matches!(param, GenericParam::Lifetime(_)))
+                    .cloned()
+                    .collect(),
+                where_clause: generics
+                    .where_clause
+                    .as_ref()
+                    .map(|where_clause| WhereClause {
+                        where_token: where_clause.where_token,
+                        predicates: where_clause
+                            .predicates
+                            .iter()
+                            .filter(|predicate| !matches!(predicate, WherePredicate::Lifetime(_)))
+                            .cloned()
+                            .collect(),
+                    }),
+                ..generics.clone()
+            }
+        };
+        let (impl_generics, ty_generics, where_clause) = type_generics.split_for_impl();
+        let ty_generic_names = type_generics.params.iter().filter_map(|param| match param {
+            GenericParam::Type(ty) => {
+                let name = &ty.ident;
+                Some(quote!(#name))
+            }
+            _ => None,
+        });
         let impl_args = &self.impl_args;
 
         let props_type_name = self
@@ -354,17 +410,21 @@ impl ToTokens for ParsedComponent {
 
         tokens.extend(quote! {
             #(#attrs)*
-            #vis struct #name;
-
-            impl #name {
-                fn implementation #generics (#args) #output #block
+            #vis struct #name #impl_generics {
+                _marker: std::marker::PhantomData<*const (#(#ty_generic_names),*)>,
             }
 
-            impl ::iocraft::Component for #name {
+            impl #impl_generics #name #ty_generics #where_clause {
+                fn implementation #lifetime_impl_generics (#args) #output #lifetime_where_clause #block
+            }
+
+            impl #impl_generics ::iocraft::Component for #name #ty_generics #where_clause {
                 type Props<'a> = #props_type_name;
 
                 fn new(_props: &Self::Props<'_>) -> Self {
-                    Self
+                    Self{
+                        _marker: std::marker::PhantomData,
+                    }
                 }
 
                 fn update(&mut self, props: &mut Self::Props<'_>, mut hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
@@ -465,6 +525,25 @@ impl ToTokens for ParsedComponent {
 ///     }
 /// }
 /// ```
+///
+/// Components can also be generic:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct MyGenericComponentProps<T> {
+///     items: Vec<T>,
+/// }
+///
+/// #[component]
+/// fn MyGenericComponent<T: 'static>(
+///     _props: &MyGenericComponentProps<T>,
+/// ) -> impl Into<AnyElement<'static>> {
+///     element!(Box)
+/// }
+/// ```
+///
+/// However, note that generic type parameters must be `'static`.
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let component = parse_macro_input!(item as ParsedComponent);
