@@ -27,3 +27,25 @@ fn MyComponentWithHooks(_hooks: Hooks) -> impl Into<AnyElement<'static>> {
 fn MyComponentWithHooksRef(_hooks: &mut Hooks) -> impl Into<AnyElement<'static>> {
     element!(Box)
 }
+
+#[derive(Props)]
+struct MyGenericProps<T, const U: usize> {
+    foo: [T; U],
+}
+
+#[component]
+fn MyComponentWithGenericProps<T: 'static, const U: usize>(
+    _props: &mut MyGenericProps<T, U>,
+) -> impl Into<AnyElement<'static>> {
+    element!(Box)
+}
+
+#[component]
+fn MyComponentWithGenericPropsWhereClause<T, const U: usize>(
+    _props: &mut MyGenericProps<T, U>,
+) -> impl Into<AnyElement<'static>>
+where
+    T: 'static,
+{
+    element!(Box)
+}

@@ -35,6 +35,25 @@ impl Component for MyContainer {
     }
 }
 
+struct MyGenericComponent<T> {
+    _marker: std::marker::PhantomData<*const T>,
+}
+
+#[derive(Default, Props)]
+struct MyGenericComponentProps<T> {
+    items: Vec<T>,
+}
+
+impl<T: 'static> Component for MyGenericComponent<T> {
+    type Props<'a> = MyGenericComponentProps<T>;
+
+    fn new(_props: &Self::Props<'_>) -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 #[test]
 fn minimal() {
     let _: Element<MyComponent> = element!(MyComponent);
@@ -144,4 +163,12 @@ fn key() {
         }
     };
     assert_eq!(e.props.children.len(), 1);
+}
+
+#[test]
+fn generics() {
+    let e = element! {
+        MyGenericComponent<i32>(items: vec![0])
+    };
+    assert_eq!(vec![0], e.props.items);
 }
