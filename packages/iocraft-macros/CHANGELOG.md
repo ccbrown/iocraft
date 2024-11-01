@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.6...iocraft-macros-v0.1.7) - 2024-11-01
+
+### Added
+
+- support generic type parameters for component macro ([#33](https://github.com/ccbrown/iocraft/pull/33))
+
+### Fixed
+
+- keep components send + sync
+
 ## [0.1.6](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.5...iocraft-macros-v0.1.6) - 2024-10-04
 
 ### Added
