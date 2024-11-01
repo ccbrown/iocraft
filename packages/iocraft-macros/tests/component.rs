@@ -40,6 +40,12 @@ fn MyComponentWithGenericProps<T: 'static, const U: usize>(
     element!(Box)
 }
 
+fn check_component_traits<T: Sync + Send>() {}
+
+fn check_component_traits_with_generic<T: 'static, const U: usize>() {
+    check_component_traits::<MyComponentWithGenericProps<T, U>>();
+}
+
 #[component]
 fn MyComponentWithGenericPropsWhereClause<T, const U: usize>(
     _props: &mut MyGenericProps<T, U>,

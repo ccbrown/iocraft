@@ -411,7 +411,7 @@ impl ToTokens for ParsedComponent {
         tokens.extend(quote! {
             #(#attrs)*
             #vis struct #name #impl_generics {
-                _marker: std::marker::PhantomData<*const (#(#ty_generic_names),*)>,
+                _marker: std::marker::PhantomData<fn(#(#ty_generic_names),*)>,
             }
 
             impl #impl_generics #name #ty_generics #where_clause {
