@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.7...iocraft-macros-v0.1.8) - 2024-12-10
+
+### Added
+
+- make async functions send+sync (#38)
+
 ## [0.1.7](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.1.6...iocraft-macros-v0.1.7) - 2024-11-01
 
 ### Added

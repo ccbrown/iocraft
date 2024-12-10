@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.4.1...iocraft-v0.5.0) - 2024-12-10
+
+### Added
+
+- make async functions send+sync (#38)
+
 ## [0.4.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.4.0...iocraft-v0.4.1) - 2024-12-05
 
 ### Added
