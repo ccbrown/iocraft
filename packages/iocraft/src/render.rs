@@ -466,8 +466,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::prelude::*;
-    use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
     use std::future::Future;
@@ -528,20 +528,15 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    async fn await_send_future<F: Future<Output = ()> + Send>(f: F) {
-        f.await;
+    async fn await_send_future<F: Future<Output = io::Result<()>> + Send>(f: F) {
+        f.await.unwrap();
     }
 
     // Make sure terminal_render_loop can be sent across threads.
     #[apply(test!)]
     async fn test_terminal_render_loop_send() {
         let (term, _output) = Terminal::mock(MockTerminalConfig::default());
-        await_send_future(async move {
-            terminal_render_loop(element!(MyComponent), term)
-                .await
-                .unwrap();
-        })
-        .await;
+        await_send_future(terminal_render_loop(element!(MyComponent), term)).await;
     }
 
     #[component]
