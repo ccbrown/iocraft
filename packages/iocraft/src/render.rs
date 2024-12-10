@@ -275,7 +275,7 @@ impl<'a> ComponentDrawer<'a> {
     }
 }
 
-type MeasureFunc = Box<dyn Fn(Size<Option<f32>>, Size<AvailableSpace>, &Style) -> Size<f32>>;
+type MeasureFunc = Box<dyn Fn(Size<Option<f32>>, Size<AvailableSpace>, &Style) -> Size<f32> + Send>;
 
 #[derive(Default)]
 pub(crate) struct LayoutEngineNodeContext {
@@ -405,11 +405,7 @@ impl<'a> Tree<'a> {
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
-            select(
-                self.root_component.wait().boxed_local(),
-                term.wait().boxed_local(),
-            )
-            .await;
+            select(self.root_component.wait().boxed(), term.wait().boxed()).await;
             if term.received_ctrl_c() {
                 break;
             }
@@ -474,6 +470,7 @@ mod tests {
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
+    use std::future::Future;
 
     #[derive(Default, Props)]
     struct MyInnerComponentProps {
@@ -529,6 +526,22 @@ mod tests {
             "tick: 1\nrender count (a): 2\nrender count (b0): 2\nrender count (b1): 1\nrender count (c0): 2\nrender count (c1): 2\n",
         ];
         assert_eq!(actual, expected);
+    }
+
+    async fn await_send_future<F: Future<Output = ()> + Send>(f: F) {
+        f.await;
+    }
+
+    // Make sure terminal_render_loop can be sent across threads.
+    #[apply(test!)]
+    async fn test_terminal_render_loop_send() {
+        let (term, _output) = Terminal::mock(MockTerminalConfig::default());
+        await_send_future(async move {
+            terminal_render_loop(element!(MyComponent), term)
+                .await
+                .unwrap();
+        })
+        .await;
     }
 
     #[component]

@@ -60,7 +60,7 @@ use std::marker::PhantomData;
 /// implemented for a type that is not actually covariant, then the safety of the program is
 /// compromised. You can use the [`#[derive(Props)]`](derive@crate::Props) macro to implement this trait safely. If the
 /// type is not actually covariant, the derive macro will give you an error at compile-time.
-pub unsafe trait Props {}
+pub unsafe trait Props: Send + Sync {}
 
 #[doc(hidden)]
 #[derive(Clone, Copy, iocraft_macros::Props, Default)]
@@ -88,6 +88,12 @@ pub struct AnyProps<'a> {
     drop: Option<Box<dyn DropRaw + 'a>>,
     _marker: PhantomData<&'a mut ()>,
 }
+
+// SAFETY: Safe because `Props` must be `Send` and `Sync`.
+unsafe impl Send for AnyProps<'_> {}
+
+// SAFETY: Safe because `Props` must be `Sync`.
+unsafe impl Sync for AnyProps<'_> {}
 
 impl<'a> AnyProps<'a> {
     pub(crate) fn owned<T: Props + 'a>(props: T) -> Self {

@@ -29,20 +29,20 @@ fn MyComponentWithHooksRef(_hooks: &mut Hooks) -> impl Into<AnyElement<'static>>
 }
 
 #[derive(Props)]
-struct MyGenericProps<T, const U: usize> {
+struct MyGenericProps<T: Send + Sync, const U: usize> {
     foo: [T; U],
 }
 
 #[component]
-fn MyComponentWithGenericProps<T: 'static, const U: usize>(
+fn MyComponentWithGenericProps<T: Send + Sync + 'static, const U: usize>(
     _props: &mut MyGenericProps<T, U>,
 ) -> impl Into<AnyElement<'static>> {
     element!(Box)
 }
 
-fn check_component_traits<T: Sync + Send>() {}
+fn check_component_traits<T: Send + Sync>() {}
 
-fn check_component_traits_with_generic<T: 'static, const U: usize>() {
+fn check_component_traits_with_generic<T: Send + Sync + 'static, const U: usize>() {
     check_component_traits::<MyComponentWithGenericProps<T, U>>();
 }
 
@@ -51,7 +51,7 @@ fn MyComponentWithGenericPropsWhereClause<T, const U: usize>(
     _props: &mut MyGenericProps<T, U>,
 ) -> impl Into<AnyElement<'static>>
 where
-    T: 'static,
+    T: Send + Sync + 'static,
 {
     element!(Box)
 }
