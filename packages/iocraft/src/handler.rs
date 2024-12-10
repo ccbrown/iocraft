@@ -7,7 +7,7 @@ use std::{
 ///
 /// Any function that takes a single argument and returns `()` can be converted into a `Handler`,
 /// and it can be invoked using function call syntax.
-pub struct Handler<'a, T>(bool, Box<dyn FnMut(T) + Send + 'a>);
+pub struct Handler<'a, T>(bool, Box<dyn FnMut(T) + Send + Sync + 'a>);
 
 impl<'a, T> Handler<'a, T> {
     /// Returns `true` if the handler was default-initialized.
@@ -29,7 +29,7 @@ impl<'a, T> Default for Handler<'a, T> {
 
 impl<'a, T, F> From<F> for Handler<'a, T>
 where
-    F: FnMut(T) + Send + 'a,
+    F: FnMut(T) + Send + Sync + 'a,
 {
     fn from(f: F) -> Self {
         Self(true, Box::new(f))
@@ -37,7 +37,7 @@ where
 }
 
 impl<'a, T: 'a> Deref for Handler<'a, T> {
-    type Target = dyn FnMut(T) + Send + 'a;
+    type Target = dyn FnMut(T) + Send + Sync + 'a;
 
     fn deref(&self) -> &Self::Target {
         &self.1

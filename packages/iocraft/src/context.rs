@@ -29,31 +29,31 @@ impl SystemContext {
 pub enum Context<'a> {
     /// Provides the context via a mutable reference. Children will be able to get mutable or
     /// immutable references to the context.
-    Mut(&'a mut dyn Any),
+    Mut(&'a mut (dyn Any + Send + Sync)),
     /// Provides the context via an immutable reference. Children will not be able to get a mutable
     /// reference to the context.
-    Ref(&'a dyn Any),
+    Ref(&'a (dyn Any + Send + Sync)),
     /// Provides the context via an owned value. Children will be able to get mutable or immutable
     /// references to the context.
-    Owned(Box<dyn Any>),
+    Owned(Box<(dyn Any + Send + Sync)>),
 }
 
 impl<'a> Context<'a> {
     /// Creates a new context from an owned value. Children will be able to get mutable or
     /// immutable references to the context.
-    pub fn owned<T: Any>(context: T) -> Self {
+    pub fn owned<T: Any + Send + Sync>(context: T) -> Self {
         Context::Owned(Box::new(context))
     }
 
     /// Creates a new context from a mutable reference. Children will be able to get mutable or
     /// immutable references to the context.
-    pub fn from_mut<T: Any>(context: &'a mut T) -> Self {
+    pub fn from_mut<T: Any + Send + Sync>(context: &'a mut T) -> Self {
         Context::Mut(context)
     }
 
     /// Creates a new context from an immutable reference. Children will not be able to get a
     /// mutable reference to the context.
-    pub fn from_ref<T: Any>(context: &'a T) -> Self {
+    pub fn from_ref<T: Any + Send + Sync>(context: &'a T) -> Self {
         Context::Ref(context)
     }
 
@@ -91,7 +91,7 @@ pub struct ContextStack<'a> {
 }
 
 impl<'a> ContextStack<'a> {
-    pub(crate) fn root(root_context: &'a mut dyn Any) -> Self {
+    pub(crate) fn root(root_context: &'a mut (dyn Any + Send + Sync)) -> Self {
         Self {
             contexts: vec![RefCell::new(Context::Mut(root_context))],
         }
