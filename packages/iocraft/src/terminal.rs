@@ -111,7 +111,7 @@ impl Stream for TerminalEvents {
     }
 }
 
-trait TerminalImpl: Write {
+trait TerminalImpl: Write + Send {
     fn width(&self) -> Option<u16>;
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;

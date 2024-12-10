@@ -35,16 +35,16 @@ impl Component for MyContainer {
     }
 }
 
-struct MyGenericComponent<T> {
-    _marker: std::marker::PhantomData<*const T>,
+struct MyGenericComponent<T: Sync + 'static> {
+    _marker: std::marker::PhantomData<&'static T>,
 }
 
 #[derive(Default, Props)]
-struct MyGenericComponentProps<T> {
+struct MyGenericComponentProps<T: Send + Sync> {
     items: Vec<T>,
 }
 
-impl<T: 'static> Component for MyGenericComponent<T> {
+impl<T: Send + Sync + 'static> Component for MyGenericComponent<T> {
     type Props<'a> = MyGenericComponentProps<T>;
 
     fn new(_props: &Self::Props<'_>) -> Self {

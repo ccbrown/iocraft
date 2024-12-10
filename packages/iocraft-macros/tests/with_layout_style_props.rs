@@ -15,7 +15,7 @@ struct MyPropsWithLifetime<'lt> {
 
 #[with_layout_style_props]
 #[derive(Default, Props)]
-struct MyPropsWithTypeGeneric<T> {
+struct MyPropsWithTypeGeneric<T: Send + Sync> {
     foo: Option<T>,
 }
 

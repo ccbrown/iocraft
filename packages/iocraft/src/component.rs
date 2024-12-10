@@ -28,7 +28,7 @@ impl<C: Component> ComponentHelper<C> {
 }
 
 #[doc(hidden)]
-pub trait ComponentHelperExt: Any {
+pub trait ComponentHelperExt: Any + Send + Sync {
     fn new_component(&self, props: AnyProps) -> Box<dyn AnyComponent>;
     fn update_component(
         &self,
@@ -70,7 +70,7 @@ impl<C: Component> ComponentHelperExt for ComponentHelper<C> {
 ///
 /// Most users will not need to implement this trait directly. This is only required for new, low
 /// level component type definitions. Instead, the [`component`](macro@crate::component) macro should be used.
-pub trait Component: Any + Unpin {
+pub trait Component: Any + Send + Sync + Unpin {
     /// The type of properties that the component accepts.
     type Props<'a>: Props
     where
@@ -103,7 +103,7 @@ impl<C: Component> ElementType for C {
 }
 
 #[doc(hidden)]
-pub trait AnyComponent: Any + Unpin {
+pub trait AnyComponent: Any + Send + Sync + Unpin {
     fn update(&mut self, props: AnyProps, hooks: Hooks, updater: &mut ComponentUpdater);
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>);
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;

@@ -21,14 +21,14 @@ pub trait UseAsyncHandler: private::Sealed {
     /// resulting future to completion.
     fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> Handler<'static, T>
     where
-        Fun: FnMut(T) -> Fut + Send + 'static,
+        Fun: FnMut(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static;
 }
 
 impl UseAsyncHandler for Hooks<'_, '_> {
     fn use_async_handler<T, Fun, Fut>(&mut self, mut f: Fun) -> Handler<'static, T>
     where
-        Fun: FnMut(T) -> Fut + Send + 'static,
+        Fun: FnMut(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
         let handler_impl_state = self.use_hook(UseAsyncHandlerImpl::default).state.clone();

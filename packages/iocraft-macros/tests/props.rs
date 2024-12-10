@@ -25,11 +25,11 @@ struct StructWithLifetimeAndConsts<'lt, const N: usize, const M: usize> {
 }
 
 #[derive(Props)]
-struct StructWithTypeGeneric<T> {
+struct StructWithTypeGeneric<T: Send + Sync> {
     foo: T,
 }
 
 #[derive(Props)]
-struct StructWithLifetimeAndTypeGeneric<'lt, T> {
+struct StructWithLifetimeAndTypeGeneric<'lt, T: Sync> {
     foo: &'lt T,
 }

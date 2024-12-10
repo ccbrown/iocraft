@@ -531,12 +531,12 @@ impl ToTokens for ParsedComponent {
 /// ```
 /// # use iocraft::prelude::*;
 /// #[derive(Default, Props)]
-/// struct MyGenericComponentProps<T> {
+/// struct MyGenericComponentProps<T: Send + Sync> {
 ///     items: Vec<T>,
 /// }
 ///
 /// #[component]
-/// fn MyGenericComponent<T: 'static>(
+/// fn MyGenericComponent<T: Send + Sync + 'static>(
 ///     _props: &MyGenericComponentProps<T>,
 /// ) -> impl Into<AnyElement<'static>> {
 ///     element!(Box)

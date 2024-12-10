@@ -10,7 +10,7 @@ use std::{
 ///
 /// Hooks are created by implementing this trait. All methods have default implementations, so
 /// you only need to implement the ones you care about.
-pub trait Hook: Unpin {
+pub trait Hook: Unpin + Send {
     /// Called to determine if the hook has caused a change which requires its component to be
     /// redrawn.
     fn poll_change(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<()> {

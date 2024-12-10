@@ -12,7 +12,7 @@ use std::{
     future::Future,
     hash::Hash,
     io::{self, stderr, stdout, IsTerminal, Write},
-    rc::Rc,
+    sync::Arc,
 };
 
 /// Used by the `element!` macro to extend a collection with elements.
@@ -60,12 +60,12 @@ where
 /// Used to identify an element within the scope of its parent. This is used to minimize the number
 /// of times components are destroyed and recreated from render-to-render.
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ElementKey(Rc<Box<dyn AnyHash>>);
+pub struct ElementKey(Arc<Box<dyn AnyHash + Send + Sync>>);
 
 impl ElementKey {
     /// Constructs a new key.
-    pub fn new<K: Debug + Hash + Eq + 'static>(key: K) -> Self {
-        Self(Rc::new(Box::new(key)))
+    pub fn new<K: Debug + Hash + Eq + Send + Sync + 'static>(key: K) -> Self {
+        Self(Arc::new(Box::new(key)))
     }
 }
 
