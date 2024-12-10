@@ -1,11 +1,11 @@
 use crate::{Handler, Hook, Hooks};
-use futures::future::BoxFuture;
-use std::{
+use core::{
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex},
     task::{Context, Poll, Waker},
 };
+use futures::future::BoxFuture;
+use std::sync::{Arc, Mutex};
 
 mod private {
     pub trait Sealed {}

@@ -1,5 +1,5 @@
 use crate::Hooks;
-use std::{
+use core::{
     any::Any,
     cell::{Ref, RefMut},
 };

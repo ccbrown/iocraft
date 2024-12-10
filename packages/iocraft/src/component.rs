@@ -5,14 +5,14 @@ use crate::{
     props::{AnyProps, Props},
     render::{ComponentDrawer, ComponentUpdater, UpdateContext},
 };
-use futures::future::poll_fn;
-use indexmap::IndexMap;
-use std::{
+use core::{
     any::{Any, TypeId},
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
+use futures::future::poll_fn;
+use indexmap::IndexMap;
 use taffy::NodeId;
 
 pub(crate) struct ComponentHelper<C: Component> {

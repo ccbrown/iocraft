@@ -1,10 +1,10 @@
 use crate::{Hook, Hooks};
-use futures::future::BoxFuture;
-use std::{
+use core::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
+use futures::future::BoxFuture;
 
 mod private {
     pub trait Sealed {}

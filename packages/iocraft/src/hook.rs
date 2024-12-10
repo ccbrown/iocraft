@@ -1,5 +1,5 @@
 use crate::{ComponentDrawer, ComponentUpdater, ContextStack};
-use std::{
+use core::{
     any::Any,
     pin::Pin,
     task::{Context, Poll},

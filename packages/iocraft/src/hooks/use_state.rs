@@ -1,12 +1,12 @@
 use crate::{Hook, Hooks};
-use generational_box::{AnyStorage, GenerationalBox, Owner, SyncStorage};
-use std::{
+use core::{
     cmp,
     fmt::{self, Debug, Display, Formatter},
     ops,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+use generational_box::{AnyStorage, GenerationalBox, Owner, SyncStorage};
 
 mod private {
     pub trait Sealed {}
@@ -266,8 +266,8 @@ impl<T: cmp::Eq + Sync + Send + 'static> cmp::Eq for State<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::pin::Pin;
     use futures::task::noop_waker;
-    use std::pin::Pin;
 
     #[test]
     fn test_state() {

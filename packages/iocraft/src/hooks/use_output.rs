@@ -1,9 +1,9 @@
 use crate::{ComponentUpdater, Hook, Hooks};
-use std::{
+use core::{
     pin::Pin,
-    sync::{Arc, Mutex},
     task::{Context, Poll, Waker},
 };
+use std::sync::{Arc, Mutex};
 
 mod private {
     pub trait Sealed {}
@@ -173,7 +173,7 @@ mod tests {
         let mut use_output = UseOutputImpl::default();
         assert_eq!(
             Pin::new(&mut use_output)
-                .poll_change(&mut std::task::Context::from_waker(&noop_waker())),
+                .poll_change(&mut core::task::Context::from_waker(&noop_waker())),
             Poll::Pending
         );
 
@@ -181,7 +181,7 @@ mod tests {
         stdout.println("Hello, world!");
         assert_eq!(
             Pin::new(&mut use_output)
-                .poll_change(&mut std::task::Context::from_waker(&noop_waker())),
+                .poll_change(&mut core::task::Context::from_waker(&noop_waker())),
             Poll::Ready(())
         );
 
@@ -189,7 +189,7 @@ mod tests {
         stderr.println("Hello, error!");
         assert_eq!(
             Pin::new(&mut use_output)
-                .poll_change(&mut std::task::Context::from_waker(&noop_waker())),
+                .poll_change(&mut core::task::Context::from_waker(&noop_waker())),
             Poll::Ready(())
         );
     }

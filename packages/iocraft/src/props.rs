@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// This trait makes a struct available for use as component properties.
 ///

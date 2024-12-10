@@ -6,19 +6,20 @@ use crate::{
     props::AnyProps,
     terminal::{MockTerminalConfig, MockTerminalOutputStream, Terminal, TerminalEvents},
 };
+use core::{
+    any::Any,
+    cell::{Ref, RefMut},
+    mem,
+    pin::Pin,
+    task::{self, Poll},
+};
 use crossterm::{execute, terminal};
 use futures::{
     future::{select, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
 };
 use indexmap::IndexMap;
-use std::{
-    any::Any,
-    cell::{Ref, RefMut},
-    io, mem,
-    pin::Pin,
-    task::{self, Poll},
-};
+use std::io;
 use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
 use uuid::Uuid;
 
@@ -468,9 +469,9 @@ where
 mod tests {
     use super::*;
     use crate::prelude::*;
+    use core::future::Future;
     use macro_rules_attribute::apply;
     use smol_macros::test;
-    use std::future::Future;
 
     #[derive(Default, Props)]
     struct MyInnerComponentProps {

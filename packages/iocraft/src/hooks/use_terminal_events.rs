@@ -1,9 +1,9 @@
 use crate::{ComponentUpdater, FullscreenMouseEvent, Hook, Hooks, TerminalEvent, TerminalEvents};
-use futures::stream::Stream;
-use std::{
+use core::{
     pin::{pin, Pin},
     task::{Context, Poll},
 };
+use futures::stream::Stream;
 use taffy::{Point, Size};
 
 mod private {
