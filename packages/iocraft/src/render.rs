@@ -559,4 +559,149 @@ mod tests {
         .to_string();
         assert_eq!(actual, "+--------+\n+--------+\n",);
     }
+
+    #[derive(Default, Props)]
+    pub struct ContainerProps<'a> {
+        pub children: Vec<AnyElement<'a>>,
+    }
+
+    #[component]
+    pub fn Container<'a>(
+        props: &mut ContainerProps<'a>,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'a>> {
+        let (width, _) = hooks.use_terminal_size();
+        use std::io::Write;
+        write!(std::io::stdout(), "using width: {}\n", width);
+
+        element! {
+            Box(
+                flex_direction: FlexDirection::Column,
+                width,
+            ) {
+                #(&mut props.children)
+            }
+        }
+    }
+
+    #[test]
+    fn test_blank_lines_repro() {
+        use std::io::IsTerminal;
+        let is_tty = std::io::stdout().is_terminal();
+        let canvas = element! {
+            Container {
+                Box(
+                    border_color: Color::Cyan,
+                    border_style: BorderStyle::Round,
+                    flex_direction: FlexDirection::Column,
+                    width: crate::Size::Auto,
+                ) {
+                    Box(
+                        border_edges: Edges::Bottom,
+                        border_color: Color::Cyan,
+                        border_style: BorderStyle::Round,
+                    ) {
+                        Box(
+                            padding_left: 1,
+                            width: 10pct,
+                        ) {
+                            Text(
+                                content: "Plugin",
+                                weight: Weight::Bold,
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 8pct,
+                        ) {
+                            Text(
+                                content: "Author",
+                                weight: Weight::Bold,
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 5pct,
+                        ) {
+                            Text(
+                                content: "Format",
+                                weight: Weight::Bold,
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 20pct,
+                        ) {
+                            Text(
+                                content: "Description",
+                                weight: Weight::Bold,
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 57pct,
+                        ) {
+                            Text(
+                                content: "Locator",
+                                weight: Weight::Bold,
+                            )
+                        }
+                    }
+
+                    Box {
+                        Box(
+                            padding_left: 1,
+                            width: 10pct,
+                        ) {
+                            Text(
+                                content: "Zig",
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 8pct,
+                        ) {
+                            Text(
+                                content: "stk0vrfl0w",
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 5pct,
+                        ) {
+                            Text(
+                                content: "TOML",
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 20pct,
+                        ) {
+                            Text(
+                                content: "Zig is a general-purpose programming language and toolchain.",
+                            )
+                        }
+                        Box(
+                            padding_left: 1,
+                            width: 57pct,
+                        ) {
+                            Text(
+                                content: "https://raw.githubusercontent.com/stk0vrfl0w/proto-toml-plugins/main/plugins/zig.toml",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .render(if is_tty {
+            crossterm::terminal::size().ok().map(|size| size.0 as usize)
+        } else {
+            None
+        });
+        if is_tty {
+            canvas.write_ansi(std::io::stdout()).unwrap();
+        } else {
+            canvas.write(std::io::stdout()).unwrap();
+        }
+    }
 }
