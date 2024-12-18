@@ -572,7 +572,7 @@ mod tests {
     ) -> impl Into<AnyElement<'a>> {
         let (width, _) = hooks.use_terminal_size();
         use std::io::Write;
-        write!(std::io::stdout(), "using width: {}\n", width);
+        write!(std::io::stdout(), "using width: {}\n", width).unwrap();
 
         element! {
             Box(
