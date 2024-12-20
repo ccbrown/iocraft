@@ -322,7 +322,7 @@ pub struct CanvasSubviewMut<'a> {
     canvas: &'a mut Canvas,
 }
 
-impl<'a> CanvasSubviewMut<'a> {
+impl CanvasSubviewMut<'_> {
     /// Fills the region with the given color.
     pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
         let mut left = self.x as isize + x;

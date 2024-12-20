@@ -107,7 +107,7 @@ pub struct StateRef<'a, T: 'static> {
     inner: <SyncStorage as AnyStorage>::Ref<'a, StateValue<T>>,
 }
 
-impl<'a, T: 'static> ops::Deref for StateRef<'a, T> {
+impl<T: 'static> ops::Deref for StateRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -121,7 +121,7 @@ pub struct StateMutRef<'a, T: 'static> {
     did_deref_mut: bool,
 }
 
-impl<'a, T: 'static> ops::Deref for StateMutRef<'a, T> {
+impl<T: 'static> ops::Deref for StateMutRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -129,14 +129,14 @@ impl<'a, T: 'static> ops::Deref for StateMutRef<'a, T> {
     }
 }
 
-impl<'a, T: 'static> ops::DerefMut for StateMutRef<'a, T> {
+impl<T: 'static> ops::DerefMut for StateMutRef<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.did_deref_mut = true;
         &mut self.inner.value
     }
 }
 
-impl<'a, T: 'static> Drop for StateMutRef<'a, T> {
+impl<T: 'static> Drop for StateMutRef<'_, T> {
     fn drop(&mut self) {
         if self.did_deref_mut {
             self.inner.did_change = true;
