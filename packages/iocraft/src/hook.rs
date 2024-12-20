@@ -92,7 +92,7 @@ pub struct Hooks<'a, 'b: 'a> {
     pub(crate) context_stack: Option<&'a ContextStack<'b>>,
 }
 
-impl<'a, 'b> Hooks<'a, 'b> {
+impl<'a> Hooks<'a, '_> {
     pub(crate) fn new(hooks: &'a mut Vec<Box<dyn AnyHook>>, first_update: bool) -> Self {
         Self {
             hooks,

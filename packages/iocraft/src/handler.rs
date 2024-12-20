@@ -9,7 +9,7 @@ use core::{
 /// and it can be invoked using function call syntax.
 pub struct Handler<'a, T>(bool, Box<dyn FnMut(T) + Send + Sync + 'a>);
 
-impl<'a, T> Handler<'a, T> {
+impl<T> Handler<'_, T> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
@@ -21,7 +21,7 @@ impl<'a, T> Handler<'a, T> {
     }
 }
 
-impl<'a, T> Default for Handler<'a, T> {
+impl<T> Default for Handler<'_, T> {
     fn default() -> Self {
         Self(false, Box::new(|_| {}))
     }

@@ -219,7 +219,7 @@ pub struct ComponentDrawer<'a> {
     context: DrawContext<'a>,
 }
 
-impl<'a> ComponentDrawer<'a> {
+impl ComponentDrawer<'_> {
     /// Gets the calculated layout of the current node.
     pub fn layout(&self) -> Layout {
         *self

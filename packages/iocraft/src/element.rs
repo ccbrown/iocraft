@@ -145,10 +145,10 @@ mod private {
     use super::*;
 
     pub trait Sealed {}
-    impl<'a> Sealed for AnyElement<'a> {}
-    impl<'a> Sealed for &mut AnyElement<'a> {}
-    impl<'a, T> Sealed for Element<'a, T> where T: Component {}
-    impl<'a, T> Sealed for &mut Element<'a, T> where T: Component {}
+    impl Sealed for AnyElement<'_> {}
+    impl Sealed for &mut AnyElement<'_> {}
+    impl<T> Sealed for Element<'_, T> where T: Component {}
+    impl<T> Sealed for &mut Element<'_, T> where T: Component {}
 }
 
 /// A trait implemented by all element types, providing methods for common operations on them.
@@ -414,6 +414,7 @@ where
 mod tests {
     use crate::prelude::*;
 
+    #[allow(clippy::unnecessary_mut_passed)]
     #[test]
     fn test_element() {
         let mut box_element = element!(Box);
