@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.5.0...iocraft-v0.5.1) - 2024-12-20
+
+### Added
+
+- add write function to State (#45)
+
+### Fixed
+
+- rename extend function to avoid std conflicts (#46)
+
+### Other
+
+- rust 1.83 clippy fixes (#47)
+- use core instead of std where possible
+
 ## [0.5.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.4.1...iocraft-v0.5.0) - 2024-12-10
 
 ### Added
