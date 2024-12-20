@@ -18,7 +18,7 @@ use std::{
 /// Used by the `element!` macro to extend a collection with elements.
 #[doc(hidden)]
 pub trait ExtendWithElements<T>: Sized {
-    fn extend<E: Extend<T>>(self, dest: &mut E);
+    fn extend_with_elements<E: Extend<T>>(self, dest: &mut E);
 }
 
 impl<'a, T, U> ExtendWithElements<T> for Element<'a, U>
@@ -26,13 +26,13 @@ where
     U: ElementType + 'a,
     T: From<Element<'a, U>>,
 {
-    fn extend<E: Extend<T>>(self, dest: &mut E) {
+    fn extend_with_elements<E: Extend<T>>(self, dest: &mut E) {
         dest.extend([self.into()]);
     }
 }
 
 impl<'a> ExtendWithElements<AnyElement<'a>> for AnyElement<'a> {
-    fn extend<E: Extend<AnyElement<'a>>>(self, dest: &mut E) {
+    fn extend_with_elements<E: Extend<AnyElement<'a>>>(self, dest: &mut E) {
         dest.extend([self]);
     }
 }
@@ -42,7 +42,7 @@ where
     I: IntoIterator<Item = U>,
     U: Into<T>,
 {
-    fn extend<E: Extend<T>>(self, dest: &mut E) {
+    fn extend_with_elements<E: Extend<T>>(self, dest: &mut E) {
         dest.extend(self.into_iter().map(|e| e.into()));
     }
 }
@@ -54,7 +54,7 @@ where
     T: Extend<E>,
     U: ExtendWithElements<E>,
 {
-    elements.extend(dest);
+    elements.extend_with_elements(dest);
 }
 
 /// Used to identify an element within the scope of its parent. This is used to minimize the number
