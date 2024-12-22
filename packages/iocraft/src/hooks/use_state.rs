@@ -6,7 +6,9 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use generational_box::{AnyStorage, BorrowError, GenerationalBox, Owner, SyncStorage};
+use generational_box::{
+    AnyStorage, BorrowError, BorrowMutError, GenerationalBox, Owner, SyncStorage,
+};
 
 mod private {
     pub trait Sealed {}
@@ -149,6 +151,10 @@ impl<T: 'static> Drop for StateMutRef<'_, T> {
 
 /// `State` is a copyable wrapper for a value that can be observed for changes. States used by a
 /// component will cause the component to be re-rendered when its value changes.
+///
+/// # Panics
+///
+/// Attempts to read a state after its owner has been dropped will panic.
 pub struct State<T: Send + Sync + 'static> {
     inner: GenerationalBox<StateValue<T>, SyncStorage>,
 }
@@ -171,7 +177,9 @@ impl<T: Copy + Sync + Send + 'static> State<T> {
 impl<T: Sync + Send + 'static> State<T> {
     /// Sets the value of the state.
     pub fn set(&mut self, value: T) {
-        *self.write() = value;
+        if let Some(v) = self.try_write() {
+            *v = value;
+        }
     }
 
     /// Returns a reference to the state's value.
@@ -179,12 +187,29 @@ impl<T: Sync + Send + 'static> State<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, writes to one will be blocked for as long as any
     /// reference returned by this method exists.</div>
+    ///
+    /// # Panics
+    ///
+    /// Panics if the owner of the state has been dropped.
     pub fn read(&self) -> StateRef<T> {
+        self.try_read()
+            .expect("attempt to read state after owner was dropped")
+    }
+
+    /// Returns a reference to the state's value, if its owner has not been dropped.
+    ///
+    /// <div class="warning">It is possible to create a deadlock using this method. If you have
+    /// multiple copies of the same state, writes to one will be blocked for as long as any
+    /// reference returned by this method exists.</div>
+    pub fn try_read(&self) -> Option<StateRef<T>> {
         loop {
             match self.inner.try_read() {
-                Ok(inner) => break StateRef { inner },
-                Err(BorrowError::AlreadyBorrowedMut(_)) => self.inner.write(),
-                Err(BorrowError::Dropped(_)) => panic!("state was read after owner was dropped"),
+                Ok(inner) => break Some(StateRef { inner }),
+                Err(BorrowError::AlreadyBorrowedMut(_)) => match self.inner.try_write() {
+                    Err(BorrowMutError::Dropped(_)) => break None,
+                    _ => continue,
+                },
+                Err(BorrowError::Dropped(_)) => break None,
             };
         }
     }
@@ -194,11 +219,25 @@ impl<T: Sync + Send + 'static> State<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, operations on one will be blocked for as long as any
     /// reference returned by this method exists.</div>
+    ///
+    /// # Panics
+    ///
+    /// Panics if the owner of the state has been dropped.
     pub fn write(&mut self) -> StateMutRef<T> {
-        StateMutRef {
-            inner: self.inner.write(),
+        self.try_write()
+            .expect("attempt to write state after owner was dropped")
+    }
+
+    /// Returns a mutable reference to the state's value, if its owner has not been dropped.
+    ///
+    /// <div class="warning">It is possible to create a deadlock using this method. If you have
+    /// multiple copies of the same state, operations on one will be blocked for as long as any
+    /// reference returned by this method exists.</div>
+    pub fn try_write(&mut self) -> Option<StateMutRef<T>> {
+        self.inner.try_write().ok().map(|inner| StateMutRef {
+            inner,
             did_deref_mut: false,
-        }
+        })
     }
 }
 
@@ -224,7 +263,9 @@ impl<T: ops::Add<Output = T> + Copy + Sync + Send + 'static> ops::Add<T> for Sta
 
 impl<T: ops::AddAssign<T> + Copy + Sync + Send + 'static> ops::AddAssign<T> for State<T> {
     fn add_assign(&mut self, rhs: T) {
-        *self.write() += rhs;
+        if let Some(v) = self.try_write() {
+            *v += rhs;
+        }
     }
 }
 
@@ -238,7 +279,9 @@ impl<T: ops::Sub<Output = T> + Copy + Sync + Send + 'static> ops::Sub<T> for Sta
 
 impl<T: ops::SubAssign<T> + Copy + Sync + Send + 'static> ops::SubAssign<T> for State<T> {
     fn sub_assign(&mut self, rhs: T) {
-        *self.write() -= rhs;
+        if let Some(v) = self.try_write() {
+            *v -= rhs;
+        }
     }
 }
 
@@ -252,7 +295,9 @@ impl<T: ops::Mul<Output = T> + Copy + Sync + Send + 'static> ops::Mul<T> for Sta
 
 impl<T: ops::MulAssign<T> + Copy + Sync + Send + 'static> ops::MulAssign<T> for State<T> {
     fn mul_assign(&mut self, rhs: T) {
-        *self.write() *= rhs;
+        if let Some(v) = self.try_write() {
+            *v *= rhs;
+        }
     }
 }
 
@@ -266,7 +311,9 @@ impl<T: ops::Div<Output = T> + Copy + Sync + Send + 'static> ops::Div<T> for Sta
 
 impl<T: ops::DivAssign<T> + Copy + Sync + Send + 'static> ops::DivAssign<T> for State<T> {
     fn div_assign(&mut self, rhs: T) {
-        *self.write() /= rhs;
+        if let Some(v) = self.try_write() {
+            *v /= rhs;
+        }
     }
 }
 
