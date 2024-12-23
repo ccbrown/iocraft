@@ -393,4 +393,17 @@ mod tests {
         let state_copy = state.clone();
         assert_eq!(*state.read(), *state_copy.read());
     }
+
+    #[test]
+    fn test_dropped_state() {
+        let hook = UseStateImpl::new(42);
+
+        let mut state = hook.state;
+        assert_eq!(state.get(), 42);
+
+        drop(hook);
+
+        assert!(state.try_read().is_none());
+        assert!(state.try_write().is_none());
+    }
 }
