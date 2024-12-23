@@ -405,5 +405,12 @@ mod tests {
 
         assert!(state.try_read().is_none());
         assert!(state.try_write().is_none());
+
+        // these should be no-ops
+        state.set(43);
+        state += 1;
+        state -= 1;
+        state *= 2;
+        state /= 2;
     }
 }
