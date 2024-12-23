@@ -177,7 +177,7 @@ impl<T: Copy + Sync + Send + 'static> State<T> {
 impl<T: Sync + Send + 'static> State<T> {
     /// Sets the value of the state.
     pub fn set(&mut self, value: T) {
-        if let Some(v) = self.try_write() {
+        if let Some(mut v) = self.try_write() {
             *v = value;
         }
     }
@@ -263,7 +263,7 @@ impl<T: ops::Add<Output = T> + Copy + Sync + Send + 'static> ops::Add<T> for Sta
 
 impl<T: ops::AddAssign<T> + Copy + Sync + Send + 'static> ops::AddAssign<T> for State<T> {
     fn add_assign(&mut self, rhs: T) {
-        if let Some(v) = self.try_write() {
+        if let Some(mut v) = self.try_write() {
             *v += rhs;
         }
     }
@@ -279,7 +279,7 @@ impl<T: ops::Sub<Output = T> + Copy + Sync + Send + 'static> ops::Sub<T> for Sta
 
 impl<T: ops::SubAssign<T> + Copy + Sync + Send + 'static> ops::SubAssign<T> for State<T> {
     fn sub_assign(&mut self, rhs: T) {
-        if let Some(v) = self.try_write() {
+        if let Some(mut v) = self.try_write() {
             *v -= rhs;
         }
     }
@@ -295,7 +295,7 @@ impl<T: ops::Mul<Output = T> + Copy + Sync + Send + 'static> ops::Mul<T> for Sta
 
 impl<T: ops::MulAssign<T> + Copy + Sync + Send + 'static> ops::MulAssign<T> for State<T> {
     fn mul_assign(&mut self, rhs: T) {
-        if let Some(v) = self.try_write() {
+        if let Some(mut v) = self.try_write() {
             *v *= rhs;
         }
     }
@@ -311,7 +311,7 @@ impl<T: ops::Div<Output = T> + Copy + Sync + Send + 'static> ops::Div<T> for Sta
 
 impl<T: ops::DivAssign<T> + Copy + Sync + Send + 'static> ops::DivAssign<T> for State<T> {
     fn div_assign(&mut self, rhs: T) {
-        if let Some(v) = self.try_write() {
+        if let Some(mut v) = self.try_write() {
             *v /= rhs;
         }
     }
