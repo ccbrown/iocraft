@@ -198,6 +198,9 @@ impl<T: Sync + Send + 'static> State<T> {
 
     /// Returns a reference to the state's value, if its owner has not been dropped.
     ///
+    /// Most applications should not need to use this method. If you only read the state's value
+    /// from your component and its hooks, you should use [`read`](State::read) instead.
+    ///
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, writes to one will be blocked for as long as any
     /// reference returned by this method exists.</div>
@@ -229,6 +232,9 @@ impl<T: Sync + Send + 'static> State<T> {
     }
 
     /// Returns a mutable reference to the state's value, if its owner has not been dropped.
+    ///
+    /// Most applications should not need to use this method. If you only write the state's value
+    /// from your component and its hooks, you should use [`write`](State::write) instead.
     ///
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, operations on one will be blocked for as long as any
