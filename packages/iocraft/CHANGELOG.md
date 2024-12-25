@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.5.1...iocraft-v0.5.2) - 2024-12-25
+
+### Added
+
+- add try_ methods to State, document/reduce panics (#49)
+
+### Fixed
+
+- improve component recycling algorithm (#51)
+
+### Other
+
+- add notes to State::try_ methods
+
 ## [0.5.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.5.0...iocraft-v0.5.1) - 2024-12-20
 
 ### Added
