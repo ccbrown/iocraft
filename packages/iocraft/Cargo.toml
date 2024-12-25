@@ -16,8 +16,6 @@ unicode-width = "0.1.13"
 textwrap = "0.16.1"
 generational-box = "0.5.6"
 any_key = "0.1.1"
-uuid = { version = "1.10.0", features = ["v4"] }
-indexmap = "2.5.0"
 
 [dev-dependencies]
 indoc = "2"

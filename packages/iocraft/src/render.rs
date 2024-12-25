@@ -2,14 +2,14 @@ use crate::{
     canvas::{Canvas, CanvasSubviewMut},
     component::{ComponentHelperExt, Components, InstantiatedComponent},
     context::{Context, ContextStack, SystemContext},
-    element::{ElementExt, ElementKey},
+    element::ElementExt,
+    multimap::AppendOnlyMultimap,
     props::AnyProps,
     terminal::{MockTerminalConfig, MockTerminalOutputStream, Terminal, TerminalEvents},
 };
 use core::{
     any::Any,
     cell::{Ref, RefMut},
-    mem,
     pin::Pin,
     task::{self, Poll},
 };
@@ -18,10 +18,8 @@ use futures::{
     future::{select, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
 };
-use indexmap::IndexMap;
 use std::io;
 use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
-use uuid::Uuid;
 
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
@@ -140,7 +138,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     {
         self.component_context_stack
             .with_context(context, |component_context_stack| {
-                let mut used_components = IndexMap::with_capacity(self.children.components.len());
+                let mut used_components = AppendOnlyMultimap::default();
 
                 let mut direct_child_node_ids = Vec::new();
                 let child_node_ids = if self.transparent_layout {
@@ -153,7 +151,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
 
                 for mut child in children {
                     let mut component: InstantiatedComponent =
-                        match self.children.components.swap_remove(child.key()) {
+                        match self.children.components.pop_front(child.key()) {
                             Some(component)
                                 if component.component().type_id()
                                     == child.helper().component_type_id() =>
@@ -182,11 +180,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                         child.props_mut(),
                     );
 
-                    let mut child_key = child.key().clone();
-                    while used_components.contains_key(&child_key) {
-                        child_key = ElementKey::new(Uuid::new_v4().as_u128());
-                    }
-                    used_components.insert(child_key, component);
+                    used_components.push_back(child.key().clone(), component);
                 }
 
                 self.context
@@ -194,13 +188,13 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                     .set_children(self.node_id, &direct_child_node_ids)
                     .expect("we should be able to set the children");
 
-                for (_, component) in self.children.components.drain(..) {
+                for component in self.children.components.iter() {
                     self.context
                         .layout_engine
                         .remove(component.node_id())
                         .expect("we should be able to remove the node");
                 }
-                mem::swap(&mut self.children.components, &mut used_components);
+                self.children.components = used_components.into();
             });
     }
 }
@@ -507,9 +501,7 @@ mod tests {
             Box(flex_direction: FlexDirection::Column) {
                 Text(content: format!("tick: {}", tick))
                 MyInnerComponent(label: "a")
-                // without a key, these next elements may not be re-used across renders
                 #((0..2).map(|i| element! { MyInnerComponent(label: format!("b{}", i)) }))
-                // with a key, these next elements will definitely be re-used across renders
                 #((0..2).map(|i| element! { MyInnerComponent(key: i, label: format!("c{}", i)) }))
             }
         }
@@ -524,7 +516,7 @@ mod tests {
         let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
         let expected = vec![
             "tick: 0\nrender count (a): 1\nrender count (b0): 1\nrender count (b1): 1\nrender count (c0): 1\nrender count (c1): 1\n",
-            "tick: 1\nrender count (a): 2\nrender count (b0): 2\nrender count (b1): 1\nrender count (c0): 2\nrender count (c1): 2\n",
+            "tick: 1\nrender count (a): 2\nrender count (b0): 2\nrender count (b1): 2\nrender count (c0): 2\nrender count (c1): 2\n",
         ];
         assert_eq!(actual, expected);
     }
@@ -558,5 +550,65 @@ mod tests {
         }
         .to_string();
         assert_eq!(actual, "+--------+\n+--------+\n",);
+    }
+
+    #[derive(Default, Props)]
+    struct AsyncTickerProps {
+        ticks: Option<State<i32>>,
+    }
+
+    #[component]
+    fn AsyncTicker<'a>(
+        props: &mut AsyncTickerProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'a>> {
+        let mut ticks = props.ticks.unwrap();
+        hooks.use_future(async move {
+            ticks += 1;
+        });
+        element!(Box)
+    }
+
+    #[component]
+    fn AsyncTickerContainer(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let child_ticks = hooks.use_state(|| 0);
+        let mut tick = hooks.use_state(|| 0);
+
+        hooks.use_future(async move {
+            tick += 1;
+        });
+
+        if tick == 5 {
+            // make sure our children have all ticked exactly 10 times
+            assert_eq!(child_ticks, 10);
+            system.exit();
+        } else {
+            // do a few more render passes
+            tick += 1;
+        }
+
+        element! {
+            Box {
+                #((0..10).map(|_| {
+                    element! {
+                        AsyncTicker(ticks: child_ticks)
+                    }
+                }))
+            }
+        }
+    }
+
+    // This is a regression test for an issue where elements added via iterator without keys would
+    // be re-created on every render instead of being recycled.
+    #[apply(test!)]
+    async fn test_async_ticker_container() {
+        let canvases: Vec<_> = mock_terminal_render_loop(
+            element!(AsyncTickerContainer),
+            MockTerminalConfig::default(),
+        )
+        .collect()
+        .await;
+        assert!(canvases.len() > 0);
     }
 }

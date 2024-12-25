@@ -2,6 +2,7 @@ use crate::{
     context::ContextStack,
     element::{ElementKey, ElementType},
     hook::{AnyHook, Hook, Hooks},
+    multimap::RemoveOnlyMultimap,
     props::{AnyProps, Props},
     render::{ComponentDrawer, ComponentUpdater, UpdateContext},
 };
@@ -12,7 +13,6 @@ use core::{
     task::{Context, Poll},
 };
 use futures::future::poll_fn;
-use indexmap::IndexMap;
 use taffy::NodeId;
 
 pub(crate) struct ComponentHelper<C: Component> {
@@ -189,7 +189,7 @@ impl InstantiatedComponent {
         if self.has_transparent_layout {
             // If the component has a transparent layout, provide the first child's layout to the
             // hooks and component.
-            if let Some((_, child)) = self.children.components.iter().next().as_ref() {
+            if let Some(child) = self.children.components.iter().next().as_ref() {
                 drawer.for_child_node_layout(child.node_id, |drawer| {
                     self.hooks.pre_component_draw(drawer);
                     self.component.draw(drawer);
@@ -206,7 +206,7 @@ impl InstantiatedComponent {
         self.children.draw(drawer);
 
         if self.has_transparent_layout {
-            if let Some((_, child)) = self.children.components.iter().next().as_ref() {
+            if let Some(child) = self.children.components.iter().next().as_ref() {
                 drawer.for_child_node_layout(child.node_id, |drawer| {
                     self.hooks.post_component_draw(drawer);
                 });
@@ -237,12 +237,12 @@ impl InstantiatedComponent {
 
 #[derive(Default)]
 pub(crate) struct Components {
-    pub components: IndexMap<ElementKey, InstantiatedComponent>,
+    pub components: RemoveOnlyMultimap<ElementKey, InstantiatedComponent>,
 }
 
 impl Components {
     pub fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
-        for (_, component) in self.components.iter_mut() {
+        for component in self.components.iter_mut() {
             if component.has_transparent_layout {
                 component.draw(drawer);
             } else {
@@ -255,7 +255,7 @@ impl Components {
 
     pub fn poll_change(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let mut is_ready = false;
-        for component in self.components.values_mut() {
+        for component in self.components.iter_mut() {
             if Pin::new(&mut *component).poll_change(cx).is_ready() {
                 is_ready = true;
             }

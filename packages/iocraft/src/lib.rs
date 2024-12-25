@@ -99,6 +99,7 @@ mod context;
 mod element;
 mod handler;
 mod hook;
+mod multimap;
 mod props;
 mod render;
 mod style;
