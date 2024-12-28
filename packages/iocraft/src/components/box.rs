@@ -346,6 +346,18 @@ mod tests {
     use crate::prelude::*;
     use indoc::indoc;
 
+    #[derive(Default, Props)]
+    pub struct MyTextProps {
+        pub content: String,
+    }
+
+    #[component]
+    pub fn MyText<'a>(props: &MyTextProps) -> impl Into<AnyElement<'a>> {
+        element! {
+            Text(content: &props.content)
+        }
+    }
+
     #[test]
     fn test_box() {
         assert_eq!(element!(Box).to_string(), "");
@@ -588,6 +600,27 @@ mod tests {
             indoc! {"
                 ┌──────────────────┐
                 │foo  bar          │
+                └──────────────────┘
+            "},
+        );
+
+        // regression test for https://github.com/ccbrown/iocraft/issues/52
+        assert_eq!(
+            element! {
+                Box(width: 20, border_style: BorderStyle::Single, row_gap: 1, flex_direction: FlexDirection::Column) {
+                    Text(content: "foo")
+                    MyText(content: "bar")
+                    MyText(content: "baz")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────────────────┐
+                │foo               │
+                │                  │
+                │bar               │
+                │                  │
+                │baz               │
                 └──────────────────┘
             "},
         );

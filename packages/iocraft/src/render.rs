@@ -19,7 +19,7 @@ use futures::{
     stream::{Stream, StreamExt},
 };
 use std::io;
-use taffy::{AvailableSpace, Layout, NodeId, Point, Size, Style, TaffyTree};
+use taffy::{AvailableSpace, Display, Layout, NodeId, Point, Size, Style, TaffyTree};
 
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
@@ -33,7 +33,7 @@ pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a> {
     node_id: NodeId,
     transparent_layout: bool,
     children: &'a mut Components,
-    unattached_child_node_ids: Option<&'a mut Vec<NodeId>>,
+    unattached_child_node_ids: &'a mut Vec<NodeId>,
     context: &'a mut UpdateContext<'b>,
     component_context_stack: &'a mut ContextStack<'c>,
 }
@@ -42,7 +42,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     pub(crate) fn new(
         node_id: NodeId,
         children: &'a mut Components,
-        unattached_child_node_ids: Option<&'a mut Vec<NodeId>>,
+        unattached_child_node_ids: &'a mut Vec<NodeId>,
         context: &'a mut UpdateContext<'b>,
         component_context_stack: &'a mut ContextStack<'c>,
     ) -> Self {
@@ -123,6 +123,18 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     /// children will effectively be direct descendants of the parent of the current component for
     /// layout purposes.
     pub fn set_transparent_layout(&mut self, transparent_layout: bool) {
+        if transparent_layout && !self.transparent_layout {
+            self.context
+                .layout_engine
+                .set_style(
+                    self.node_id,
+                    Style {
+                        display: Display::None,
+                        ..Default::default()
+                    },
+                )
+                .expect("we should be able to set the style");
+        }
         self.transparent_layout = transparent_layout;
     }
 
@@ -142,9 +154,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
 
                 let mut direct_child_node_ids = Vec::new();
                 let child_node_ids = if self.transparent_layout {
-                    self.unattached_child_node_ids
-                        .as_deref_mut()
-                        .unwrap_or(&mut direct_child_node_ids)
+                    &mut self.unattached_child_node_ids
                 } else {
                     &mut direct_child_node_ids
                 };
@@ -175,7 +185,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
                         };
                     component.update(
                         self.context,
-                        Some(child_node_ids),
+                        child_node_ids,
                         component_context_stack,
                         child.props_mut(),
                     );
@@ -315,6 +325,7 @@ impl<'a> Tree<'a> {
         max_width: Option<usize>,
         terminal: Option<&mut Terminal>,
     ) -> RenderOutput {
+        let mut wrapper_child_node_ids = vec![self.root_component.node_id()];
         let did_clear_terminal_output = {
             let mut context = UpdateContext {
                 terminal,
@@ -324,12 +335,15 @@ impl<'a> Tree<'a> {
             let mut component_context_stack = ContextStack::root(&mut self.system_context);
             self.root_component.update(
                 &mut context,
-                None,
+                &mut wrapper_child_node_ids,
                 &mut component_context_stack,
                 self.root_component_props.borrow(),
             );
             context.did_clear_terminal_output
         };
+        self.layout_engine
+            .set_children(self.wrapper_node_id, &wrapper_child_node_ids)
+            .expect("we should be able to set the children");
 
         self.layout_engine
             .compute_layout_with_measure(
