@@ -236,7 +236,7 @@ pub trait ElementExt: private::Sealed + Sized {
     /// # use futures::stream::StreamExt;
     /// # #[component]
     /// # fn MyTextInput() -> impl Into<AnyElement<'static>> {
-    /// #     element!(Box)
+    /// #     element!(View)
     /// # }
     /// async fn test_text_input() {
     ///     let actual = element!(MyTextInput)
@@ -417,18 +417,18 @@ mod tests {
     #[allow(clippy::unnecessary_mut_passed)]
     #[test]
     fn test_element() {
-        let mut box_element = element!(Box);
-        box_element.key();
-        box_element.print();
-        box_element.eprint();
-        (&mut box_element).key();
-        (&mut box_element).print();
-        (&mut box_element).eprint();
+        let mut view_element = element!(View);
+        view_element.key();
+        view_element.print();
+        view_element.eprint();
+        (&mut view_element).key();
+        (&mut view_element).print();
+        (&mut view_element).eprint();
 
         #[cfg(unix)]
-        box_element.write_to_raw_fd(std::io::stdout()).unwrap();
+        view_element.write_to_raw_fd(std::io::stdout()).unwrap();
 
-        let mut any_element: AnyElement<'static> = box_element.into_any();
+        let mut any_element: AnyElement<'static> = view_element.into_any();
         any_element.key();
         any_element.print();
         any_element.eprint();
@@ -436,8 +436,8 @@ mod tests {
         (&mut any_element).print();
         (&mut any_element).eprint();
 
-        let mut box_element = element!(Box);
-        let mut any_element_ref: AnyElement = (&mut box_element).into();
+        let mut view_element = element!(View);
+        let mut any_element_ref: AnyElement = (&mut view_element).into();
         any_element_ref.print();
         any_element_ref.eprint();
     }

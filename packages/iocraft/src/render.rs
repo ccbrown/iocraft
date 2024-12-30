@@ -512,7 +512,7 @@ mod tests {
         }
 
         element! {
-            Box(flex_direction: FlexDirection::Column) {
+            View(flex_direction: FlexDirection::Column) {
                 Text(content: format!("tick: {}", tick))
                 MyInnerComponent(label: "a")
                 #((0..2).map(|i| element! { MyInnerComponent(label: format!("b{}", i)) }))
@@ -549,7 +549,7 @@ mod tests {
     #[component]
     fn FullWidthComponent() -> impl Into<AnyElement<'static>> {
         element! {
-            Box(height: 2, width: 100pct, border_style: BorderStyle::Classic)
+            View(height: 2, width: 100pct, border_style: BorderStyle::Classic)
         }
     }
 
@@ -558,7 +558,7 @@ mod tests {
         // For layout purposes, components defined with #[component] should not introduce a new
         // node in between its parent and child.
         let actual = element! {
-            Box(width: 10) {
+            View(width: 10) {
                 FullWidthComponent
             }
         }
@@ -580,7 +580,7 @@ mod tests {
         hooks.use_future(async move {
             ticks += 1;
         });
-        element!(Box)
+        element!(View)
     }
 
     #[component]
@@ -603,7 +603,7 @@ mod tests {
         }
 
         element! {
-            Box {
+            View {
                 #((0..10).map(|_| {
                     element! {
                         AsyncTicker(ticks: child_ticks)

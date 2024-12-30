@@ -14,7 +14,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     });
 
     element! {
-        Box(border_style: BorderStyle::Round, border_color: Color::Green) {
+        View(border_style: BorderStyle::Round, border_color: Color::Green) {
             Text(content: "Hello, use_stdio!")
         }
     }

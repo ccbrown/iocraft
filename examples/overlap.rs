@@ -11,20 +11,20 @@ at conubia venenatis.";
 
 fn main() {
     element! {
-        Box(
+        View(
             border_style: BorderStyle::DoubleLeftRight,
             border_color: Color::Green,
             margin: 1,
             width: 78,
             flex_direction: FlexDirection::Column,
         ) {
-            Box(margin_top: -1) {
+            View(margin_top: -1) {
                 Text(content: " Overlap Example ", wrap: TextWrap::NoWrap)
             }
-            Box(padding: 1) {
+            View(padding: 1) {
                 Text(content: format!("{} {}", LOREM_IPSUM, LOREM_IPSUM), color: Color::DarkGrey, weight: Weight::Light)
             }
-            Box(
+            View(
                 border_color: Color::Red,
                 border_style: BorderStyle::DoubleTopBottom,
                 padding: 1,
@@ -34,7 +34,7 @@ fn main() {
             ) {
                 Text(content: "This element is overlapping the text!")
             }
-            Box(
+            View(
                 background_color: Color::Reset,
                 border_color: Color::Red,
                 border_style: BorderStyle::DoubleTopBottom,

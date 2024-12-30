@@ -2,7 +2,7 @@ use iocraft::prelude::*;
 
 fn main() {
     element! {
-        Box(
+        View(
             border_style: BorderStyle::Round,
             border_color: Color::Blue,
         ) {

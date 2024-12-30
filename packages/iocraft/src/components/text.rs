@@ -199,7 +199,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 14) {
+                View(width: 14) {
                     Text(content: "this is a wrapping test")
                 }
             }
@@ -209,7 +209,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 15) {
+                View(width: 15) {
                     Text(content: "this is an alignment test", align: TextAlign::Right)
                 }
             }
@@ -219,7 +219,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 15) {
+                View(width: 15) {
                     Text(content: "this is an alignment test", align: TextAlign::Center)
                 }
             }

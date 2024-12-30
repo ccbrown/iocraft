@@ -18,11 +18,11 @@ fn ProgressBar(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     }
 
     element! {
-        Box {
-            Box(border_style: BorderStyle::Round, border_color: Color::Blue, width: 60) {
-                Box(width: Percent(progress.get()), height: 1, background_color: Color::Green)
+        View {
+            View(border_style: BorderStyle::Round, border_color: Color::Blue, width: 60) {
+                View(width: Percent(progress.get()), height: 1, background_color: Color::Green)
             }
-            Box(padding: 1) {
+            View(padding: 1) {
                 Text(content: format!("{:.0}%", progress))
             }
         }

@@ -5,7 +5,7 @@ use crate::{
 use iocraft_macros::with_layout_style_props;
 use taffy::{LengthPercentage, Rect};
 
-/// A border style which can be applied to a [`Box`].
+/// A border style which can be applied to a [`View`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BorderStyle {
     /// No border.
@@ -29,7 +29,7 @@ pub enum BorderStyle {
     Custom(BorderCharacters),
 }
 
-/// The characters used to render a custom border for a [`Box`].
+/// The characters used to render a custom border for a [`View`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BorderCharacters {
     /// The character used for the top-left corner.
@@ -135,15 +135,15 @@ impl BorderStyle {
     }
 }
 
-/// The props which can be passed to the [`Box`] component.
+/// The props which can be passed to the [`View`] component.
 #[non_exhaustive]
 #[with_layout_style_props]
 #[derive(Default, Props)]
-pub struct BoxProps<'a> {
-    /// The elements to render inside of the box.
+pub struct ViewProps<'a> {
+    /// The elements to render inside of the view.
     pub children: Vec<AnyElement<'a>>,
 
-    /// The style of the border. By default, the box will have no border.
+    /// The style of the border. By default, the view will have no border.
     pub border_style: BorderStyle,
 
     /// The color of the border.
@@ -156,7 +156,7 @@ pub struct BoxProps<'a> {
     pub background_color: Option<Color>,
 }
 
-/// `Box` is your most fundamental building block for laying out and styling components.
+/// `View` is your most fundamental building block for laying out and styling components.
 ///
 /// # Example
 ///
@@ -164,22 +164,22 @@ pub struct BoxProps<'a> {
 /// # use iocraft::prelude::*;
 /// # fn my_element() -> impl Into<AnyElement<'static>> {
 /// element! {
-///     Box(padding: 2, border_style: BorderStyle::Round) {
+///     View(padding: 2, border_style: BorderStyle::Round) {
 ///         Text(content: "Hello!")
 ///     }
 /// }
 /// # }
 /// ```
 #[derive(Default)]
-pub struct Box {
+pub struct View {
     border_style: BorderStyle,
     border_text_style: CanvasTextStyle,
     border_edges: Edges,
     background_color: Option<Color>,
 }
 
-impl Component for Box {
-    type Props<'a> = BoxProps<'a>;
+impl Component for View {
+    type Props<'a> = ViewProps<'a>;
 
     fn new(_props: &Self::Props<'_>) -> Self {
         Default::default()
@@ -359,12 +359,12 @@ mod tests {
     }
 
     #[test]
-    fn test_box() {
-        assert_eq!(element!(Box).to_string(), "");
+    fn test_view() {
+        assert_eq!(element!(View).to_string(), "");
 
         assert_eq!(
             element! {
-                Box {
+                View {
                     Text(content: "foo")
                     Text(content: "bar")
                 }
@@ -375,7 +375,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(padding: 1) {
+                View(padding: 1) {
                     Text(content: "foo")
                 }
             }
@@ -385,7 +385,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(margin: 2) {
+                View(margin: 2) {
                     Text(content: "foo")
                 }
             }
@@ -395,11 +395,11 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 20) {
-                    Box(width: 60pct) {
+                View(width: 20) {
+                    View(width: 60pct) {
                         Text(content: "foo")
                     }
-                    Box(width: 40pct) {
+                    View(width: 40pct) {
                         Text(content: "bar")
                     }
                 }
@@ -410,11 +410,11 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 20, border_style: BorderStyle::Single) {
-                    Box(width: 60pct) {
+                View(width: 20, border_style: BorderStyle::Single) {
+                    View(width: 60pct) {
                         Text(content: "foo")
                     }
-                    Box(width: 40pct) {
+                    View(width: 40pct) {
                         Text(content: "bar")
                     }
                 }
@@ -429,30 +429,30 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(flex_direction: FlexDirection::Column) {
-                    Box {
-                        Box(border_style: BorderStyle::Single, margin_right: 2) {
+                View(flex_direction: FlexDirection::Column) {
+                    View {
+                        View(border_style: BorderStyle::Single, margin_right: 2) {
                             Text(content: "Single")
                         }
-                        Box(border_style: BorderStyle::Double, margin_right: 2) {
+                        View(border_style: BorderStyle::Double, margin_right: 2) {
                             Text(content: "Double")
                         }
-                        Box(border_style: BorderStyle::Round, margin_right: 2) {
+                        View(border_style: BorderStyle::Round, margin_right: 2) {
                             Text(content: "Round")
                         }
-                        Box(border_style: BorderStyle::Bold) {
+                        View(border_style: BorderStyle::Bold) {
                             Text(content: "Bold")
                         }
                     }
 
-                    Box(margin_top: 1) {
-                        Box(border_style: BorderStyle::DoubleLeftRight, margin_right: 2) {
+                    View(margin_top: 1) {
+                        View(border_style: BorderStyle::DoubleLeftRight, margin_right: 2) {
                             Text(content: "DoubleLeftRight")
                         }
-                        Box(border_style: BorderStyle::DoubleTopBottom, margin_right: 2) {
+                        View(border_style: BorderStyle::DoubleTopBottom, margin_right: 2) {
                             Text(content: "DoubleTopBottom")
                         }
-                        Box(border_style: BorderStyle::Classic) {
+                        View(border_style: BorderStyle::Classic) {
                             Text(content: "Classic")
                         }
                     }
@@ -472,7 +472,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                View(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
                     Text(content: "✅")
                 }
             }
@@ -488,7 +488,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                View(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
                     Text(content: "☀️")
                 }
             }
@@ -502,7 +502,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                View(width: 8, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
                     Text(content: "☀️☀️")
                 }
             }
@@ -516,7 +516,7 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 12, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
+                View(width: 12, border_style: BorderStyle::Single, justify_content: JustifyContent::Center) {
                     Text(content: "フーバー")
                 }
             }
@@ -530,11 +530,11 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(
+                View(
                     border_style: BorderStyle::Round,
                     flex_direction: FlexDirection::Column,
                 ) {
-                    Box(
+                    View(
                         margin_top: -1,
                     ) {
                         Text(content: "Title")
@@ -552,9 +552,9 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box {
+                View {
                     Text(content: "This is the background text.")
-                    Box(
+                    View(
                         position: Position::Absolute,
                         top: 0,
                         left: 3,
@@ -569,9 +569,9 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box {
+                View {
                     Text(content: "This is the background text.")
-                    Box(
+                    View(
                         position: Position::Absolute,
                         top: 0,
                         left: 3,
@@ -587,11 +587,11 @@ mod tests {
 
         assert_eq!(
             element! {
-                Box(width: 20, border_style: BorderStyle::Single, column_gap: 2) {
-                    Box(width: 3) {
+                View(width: 20, border_style: BorderStyle::Single, column_gap: 2) {
+                    View(width: 3) {
                         Text(content: "foo")
                     }
-                    Box(width: 3) {
+                    View(width: 3) {
                         Text(content: "bar")
                     }
                 }
@@ -607,7 +607,7 @@ mod tests {
         // regression test for https://github.com/ccbrown/iocraft/issues/52
         assert_eq!(
             element! {
-                Box(width: 20, border_style: BorderStyle::Single, row_gap: 1, flex_direction: FlexDirection::Column) {
+                View(width: 20, border_style: BorderStyle::Single, row_gap: 1, flex_direction: FlexDirection::Column) {
                     Text(content: "foo")
                     MyText(content: "bar")
                     MyText(content: "baz")

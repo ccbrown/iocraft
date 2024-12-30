@@ -29,7 +29,7 @@ pub struct TextInputProps {
 /// `TextInput` is a component that can receive text input from the user.
 ///
 /// It will fill the available space and display the current value. Typically, you will want to
-/// render it in a [`Box`] component of the desired text field size.
+/// render it in a [`View`](crate::components::View) component of the desired text field size.
 ///
 /// # Example
 ///
@@ -40,14 +40,14 @@ pub struct TextInputProps {
 /// let mut value = hooks.use_state(|| "".to_string());
 ///
 /// element! {
-///     Box(
+///     View(
 ///         border_style: BorderStyle::Round,
 ///         border_color: Color::Blue,
 ///     ) {
-///         Box(width: 15) {
+///         View(width: 15) {
 ///             Text(content: "Input: ")
 ///         }
-///         Box(
+///         View(
 ///             background_color: Color::DarkGrey,
 ///             width: 30,
 ///         ) {
@@ -179,7 +179,7 @@ mod tests {
         }
 
         element! {
-            Box(height: 1, width: 10) {
+            View(height: 1, width: 10) {
                 TextInput(
                     has_focus: true,
                     value: value.to_string(),

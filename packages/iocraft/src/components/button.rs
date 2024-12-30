@@ -1,5 +1,5 @@
 use crate::{
-    component, components::Box, element, hooks::UseTerminalEvents, AnyElement,
+    component, components::View, element, hooks::UseTerminalEvents, AnyElement,
     FullscreenMouseEvent, Handler, Hooks, KeyCode, KeyEvent, KeyEventKind, MouseEventKind, Props,
     TerminalEvent,
 };
@@ -32,7 +32,7 @@ pub struct ButtonProps<'a> {
 /// # fn foo() -> impl Into<AnyElement<'static>> {
 /// element! {
 ///     Button(handler: |_| { /* do something */ }, has_focus: true) {
-///         Box(border_style: BorderStyle::Round, border_color: Color::Blue) {
+///         View(border_style: BorderStyle::Round, border_color: Color::Blue) {
 ///             Text(content: "Click me!")
 ///         }
 ///     }
@@ -64,7 +64,7 @@ pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<An
 
     match props.children.iter_mut().next() {
         Some(child) => child.into(),
-        None => element!(Box).into_any(),
+        None => element!(View).into_any(),
     }
 }
 

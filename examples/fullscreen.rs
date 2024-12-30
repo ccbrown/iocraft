@@ -33,7 +33,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     }
 
     element! {
-        Box(
+        View(
             // subtract one in case there's a scrollbar
             width: width - 1,
             height,
@@ -44,7 +44,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
         ) {
-            Box(
+            View(
                 border_style: BorderStyle::Round,
                 border_color: Color::Blue,
                 margin_bottom: 2,

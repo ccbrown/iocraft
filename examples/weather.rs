@@ -137,7 +137,7 @@ fn LoadingIndicator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         }
     });
     element! {
-        Box(
+        View(
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
             width: 100pct,
@@ -157,11 +157,11 @@ struct WeatherDataViewProps {
 #[component]
 fn WeatherDataView(props: &WeatherDataViewProps) -> impl Into<AnyElement<'static>> {
     element! {
-        Box(
+        View(
             flex_direction: FlexDirection::Column,
             width: 100pct,
         ) {
-            Box(
+            View(
                 flex_direction: FlexDirection::Column,
                 border_style: BorderStyle::Single,
                 border_color: Color::DarkGrey,
@@ -169,28 +169,28 @@ fn WeatherDataView(props: &WeatherDataViewProps) -> impl Into<AnyElement<'static
                 align_items: AlignItems::Center,
                 width: 100pct,
             ) {
-                Box {
+                View {
                     Text(content: "Weather for ")
                     Text(content: format!("{}, {}, {}", props.data.location.city, props.data.location.region, props.data.location.country))
                 }
                 Text(content: format!("{}º, {}º", props.data.location.lat, props.data.location.lon), color: Color::DarkGrey)
             }
-            Box(
+            View(
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
             ) {
-                Box(padding: 1) {
+                View(padding: 1) {
                     Text(content: format!("{} {} {}", props.data.current.emoji(), props.data.current.description(), props.data.current.emoji()), color: props.data.current.color())
                 }
-                Box {
+                View {
                     Text(content: "Temperature: ", weight: Weight::Bold)
                     Text(content: format!("{:.1}{}", props.data.current.temperature_2m, props.data.current_units.temperature_2m))
                 }
-                Box {
+                View {
                     Text(content: "Humidity: ", weight: Weight::Bold)
                     Text(content: format!("{:.1}{}", props.data.current.relative_humidity_2m, props.data.current_units.relative_humidity_2m))
                 }
-                Box {
+                View {
                     Text(content: "Chance of Precipitation: ", weight: Weight::Bold)
                     Text(content: format!("{:.1}{}", props.data.current.precipitation_probability, props.data.current_units.precipitation_probability))
                 }
@@ -237,7 +237,7 @@ fn Weather(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     }
 
     element! {
-        Box(
+        View(
             width: 70,
             height: 14,
             margin: 1,
@@ -245,7 +245,7 @@ fn Weather(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             border_color: Color::Cyan,
             flex_direction: FlexDirection::Column,
         ) {
-            Box(
+            View(
                 flex_grow: 1.0,
             ) {
                 #(match &*state.read() {
@@ -253,7 +253,7 @@ fn Weather(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                         WeatherDataView(data: data.clone())
                     }.into_any(),
                     WeatherState::Loaded(Err(err)) => element! {
-                        Box(
+                        View(
                             flex_direction: FlexDirection::Column,
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
@@ -268,7 +268,7 @@ fn Weather(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     _ => element!(LoadingIndicator).into_any(),
                 })
             }
-            Box(
+            View(
                 width: 100pct,
                 border_style: BorderStyle::Single,
                 border_color: Color::DarkGrey,
