@@ -31,7 +31,7 @@ mod private {
 ///     });
 ///
 ///     element! {
-///         Box(border_style: BorderStyle::Round, border_color: Color::Green) {
+///         View(border_style: BorderStyle::Round, border_color: Color::Green) {
 ///             Text(content: "Hello, use_stdio!")
 ///         }
 ///     }
@@ -201,7 +201,7 @@ mod tests {
         stdout.println("Hello, world!");
         stderr.println("Hello, error!");
         system.exit();
-        element!(Box)
+        element!(View)
     }
 
     #[apply(test!)]

@@ -39,7 +39,7 @@ use iocraft::prelude::*;
 
 fn main() {
     element! {
-        Box(
+        View(
             border_style: BorderStyle::Round,
             border_color: Color::Blue,
         ) {
@@ -55,7 +55,7 @@ fn main() {
 Your UI is composed primarily via the `element!` macro, which allows you to
 declare your UI elements in a React/SwiftUI-like syntax.
 
-`iocraft` provides a few built-in components, such as `Box`, `Text`, and
+`iocraft` provides a few built-in components, such as `View`, `Text`, and
 `TextInput`, but you can also create your own using the `#[component]` macro.
 
 For example, here's a custom component that uses a hook to display a counter

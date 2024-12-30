@@ -105,7 +105,7 @@ struct ScreenProps {
 fn Screen(hooks: Hooks, props: &ScreenProps) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<Theme>();
     element! {
-        Box(
+        View(
             width: 100pct,
             border_style: BorderStyle::Custom(BorderCharacters {
                 top: '▁',
@@ -114,7 +114,7 @@ fn Screen(hooks: Hooks, props: &ScreenProps) -> impl Into<AnyElement<'static>> {
             border_edges: Edges::Top,
             border_color: theme.screen_trim_color(),
         ) {
-            Box(
+            View(
                 width: 100pct,
                 background_color: theme.screen_color(),
                 padding: 1,
@@ -143,7 +143,7 @@ fn CalculatorButton(props: &mut CalculatorButtonProps) -> impl Into<AnyElement<'
 
     element! {
         Button(handler: props.on_click.take()) {
-            Box(
+            View(
                 border_style: BorderStyle::Custom(BorderCharacters {
                     top: '▁',
                     ..Default::default()
@@ -154,7 +154,7 @@ fn CalculatorButton(props: &mut CalculatorButtonProps) -> impl Into<AnyElement<'
                 margin_left: 1,
                 margin_right: 1,
             ) {
-                Box(
+                View(
                     background_color: style.color,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
@@ -289,44 +289,44 @@ fn Calculator(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     });
 
     element! {
-        Box(
+        View(
             width: 100pct,
             height: 100pct,
             flex_direction: FlexDirection::Column,
             padding_left: 1,
             padding_right: 1,
         ) {
-            Box(
+            View(
                 padding_left: 1,
                 padding_right: 1,
             ) {
                 Screen(content: expr.to_string())
             }
-            Box(width: 100pct) {
+            View(width: 100pct) {
                 CalculatorButton(label: "←", style: fn_button_style, on_click: move |_| handle_backspace())
                 CalculatorButton(label: "±", style: fn_button_style, on_click: move |_| handle_plus_minus())
                 CalculatorButton(label: "%", style: fn_button_style, on_click: move |_| handle_percent())
                 CalculatorButton(label: "÷", style: operator_button_style, on_click: move |_| handle_operator('÷'))
             }
-            Box(width: 100pct) {
+            View(width: 100pct) {
                 CalculatorButton(label: "7", style: numpad_button_style, on_click: move |_| handle_number(7))
                 CalculatorButton(label: "8", style: numpad_button_style, on_click: move |_| handle_number(8))
                 CalculatorButton(label: "9", style: numpad_button_style, on_click: move |_| handle_number(9))
                 CalculatorButton(label: "×", style: operator_button_style, on_click: move |_| handle_operator('×'))
             }
-            Box(width: 100pct) {
+            View(width: 100pct) {
                 CalculatorButton(label: "4", style: numpad_button_style, on_click: move |_| handle_number(4))
                 CalculatorButton(label: "5", style: numpad_button_style, on_click: move |_| handle_number(5))
                 CalculatorButton(label: "6", style: numpad_button_style, on_click: move |_| handle_number(6))
                 CalculatorButton(label: "-", style: operator_button_style, on_click: move |_| handle_operator('-'))
             }
-            Box(width: 100pct) {
+            View(width: 100pct) {
                 CalculatorButton(label: "1", style: numpad_button_style, on_click: move |_| handle_number(1))
                 CalculatorButton(label: "2", style: numpad_button_style, on_click: move |_| handle_number(2))
                 CalculatorButton(label: "3", style: numpad_button_style, on_click: move |_| handle_number(3))
                 CalculatorButton(label: "+", style: operator_button_style, on_click: move |_| handle_operator('+'))
             }
-            Box(width: 100pct) {
+            View(width: 100pct) {
                 CalculatorButton(label: "C", style: theme.clear_button_style(), on_click: move |_| handle_clear())
                 CalculatorButton(label: "0", style: numpad_button_style, on_click: move |_| handle_number(0))
                 CalculatorButton(label: ".", style: numpad_button_style, on_click: move |_| handle_decimal())
@@ -361,7 +361,7 @@ fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     }
 
     element! {
-        Box(
+        View(
             // subtract one in case there's a scrollbar
             width: width - 1,
             height: height,
@@ -369,10 +369,10 @@ fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             flex_direction: FlexDirection::Column,
             gap: 1,
         ) {
-            Box(
+            View(
                 flex_grow: 1.0,
             ) {
-                Box(
+                View(
                     max_width: 120,
                     max_height: 40,
                     flex_grow: 1.0,
@@ -382,7 +382,7 @@ fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     }
                 }
             }
-            Box(
+            View(
                 height: 1,
                 background_color: theme.get().footer_background_color(),
                 padding_left: 1,

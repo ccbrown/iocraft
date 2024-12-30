@@ -27,7 +27,7 @@ pub struct ContextProviderProps<'a> {
 ///     let number = hooks.use_context::<NumberOfTheDay>();
 ///
 ///     element! {
-///         Box(border_style: BorderStyle::Round, border_color: Color::Cyan) {
+///         View(border_style: BorderStyle::Round, border_color: Color::Cyan) {
 ///             Text(content: "The number of the day is... ")
 ///             Text(color: Color::Green, weight: Weight::Bold, content: number.0.to_string())
 ///             Text(content: "!")

@@ -1,6 +1,3 @@
-mod r#box;
-pub use r#box::*;
-
 mod button;
 pub use button::*;
 
@@ -12,3 +9,6 @@ pub use text::*;
 
 mod text_input;
 pub use text_input::*;
+
+mod view;
+pub use view::*;

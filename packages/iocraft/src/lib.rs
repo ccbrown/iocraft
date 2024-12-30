@@ -25,7 +25,7 @@
 //!
 //! fn main() {
 //!     element! {
-//!         Box(
+//!         View(
 //!             border_style: BorderStyle::Round,
 //!             border_color: Color::Blue,
 //!         ) {
@@ -40,7 +40,7 @@
 //! elements in a React/SwiftUI-like syntax.
 //!
 //! `iocraft` provides a few built-in components in the [`components`] module, such as
-//! [`Box`](crate::components::Box), [`Text`](crate::components::Text), and
+//! [`View`](crate::components::View), [`Text`](crate::components::Text), and
 //! [`TextInput`](crate::components::TextInput), but you can also create your own using the
 //! [`macro@component`] macro.
 //!
@@ -124,20 +124,20 @@ mod flattened_exports {
     ///
     /// ```
     /// # use iocraft::prelude::*;
-    /// # fn my_element() -> Element<'static, Box> {
-    /// element!(Box)
+    /// # fn my_element() -> Element<'static, View> {
+    /// element!(View)
     /// # }
     /// ```
     ///
-    /// This will evaluate to an [`Element`]`<'static, `[`Box`](crate::components::Box)`>` with no properties set.
+    /// This will evaluate to an [`Element`]`<'static, `[`View`](crate::components::View)`>` with no properties set.
     ///
     /// To specify properties, you can add them in a parenthesized block after the type name:
     ///
     /// ```
     /// # use iocraft::prelude::*;
-    /// # fn my_element() -> Element<'static, Box> {
+    /// # fn my_element() -> Element<'static, View> {
     /// element! {
-    ///     Box(width: 80, height: 24, background_color: Color::Green)
+    ///     View(width: 80, height: 24, background_color: Color::Green)
     /// }
     /// # }
     /// ```
@@ -146,9 +146,9 @@ mod flattened_exports {
     ///
     /// ```
     /// # use iocraft::prelude::*;
-    /// # fn my_element() -> Element<'static, Box> {
+    /// # fn my_element() -> Element<'static, View> {
     /// element! {
-    ///     Box {
+    ///     View {
     ///         Text(content: "Hello, world!")
     ///     }
     /// }
@@ -160,9 +160,9 @@ mod flattened_exports {
     ///
     /// ```
     /// # use iocraft::prelude::*;
-    /// # fn my_element(show_greeting: bool) -> Element<'static, Box> {
+    /// # fn my_element(show_greeting: bool) -> Element<'static, View> {
     /// element! {
-    ///     Box {
+    ///     View {
     ///         #(if show_greeting {
     ///             Some(element! {
     ///                 Text(content: "Hello, world!")
@@ -183,11 +183,11 @@ mod flattened_exports {
     /// ```
     /// # use iocraft::prelude::*;
     /// # struct User { id: i32, name: String }
-    /// # fn my_element(users: Vec<User>) -> Element<'static, Box> {
+    /// # fn my_element(users: Vec<User>) -> Element<'static, View> {
     /// element! {
-    ///     Box {
+    ///     View {
     ///         #(users.iter().map(|user| element! {
-    ///             Box(key: user.id, flex_direction: FlexDirection::Column) {
+    ///             View(key: user.id, flex_direction: FlexDirection::Column) {
     ///                 Text(content: format!("Hello, {}!", user.name))
     ///             }
     ///         }))

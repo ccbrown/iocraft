@@ -33,13 +33,13 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     }
 
     element! {
-        Box(
+        View(
             flex_direction: FlexDirection::Column,
             padding: 2,
             align_items: AlignItems::Center
         ) {
             Text(content: "Use arrow keys to move. Press \"q\" to exit.")
-            Box(
+            View(
                 border_style: BorderStyle::Round,
                 border_color: Color::Green,
                 height: AREA_HEIGHT + 2,
@@ -47,7 +47,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             ) {
                 #(if should_exit.get() {
                     element! {
-                        Box(
+                        View(
                             width: 100pct,
                             height: 100pct,
                             justify_content: JustifyContent::Center,
@@ -58,7 +58,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     }
                 } else {
                     element! {
-                        Box(
+                        View(
                             padding_left: x.get(),
                             padding_top: y.get(),
                         ) {

@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use iocraft::{components::Box, AnyElement, Hooks};
+use iocraft::{components::View, AnyElement, Hooks};
 use iocraft_macros::{component, element, Props};
 
 #[component]
 fn MyComponent() -> impl Into<AnyElement<'static>> {
-    element!(Box)
+    element!(View)
 }
 
 #[derive(Default, Props)]
@@ -15,17 +15,17 @@ struct MyProps {
 
 #[component]
 fn MyComponentWithProps(_props: &mut MyProps) -> impl Into<AnyElement<'static>> {
-    element!(Box)
+    element!(View)
 }
 
 #[component]
 fn MyComponentWithHooks(_hooks: Hooks) -> impl Into<AnyElement<'static>> {
-    element!(Box)
+    element!(View)
 }
 
 #[component]
 fn MyComponentWithHooksRef(_hooks: &mut Hooks) -> impl Into<AnyElement<'static>> {
-    element!(Box)
+    element!(View)
 }
 
 #[derive(Props)]
@@ -37,7 +37,7 @@ struct MyGenericProps<T: Send + Sync, const U: usize> {
 fn MyComponentWithGenericProps<T: Send + Sync + 'static, const U: usize>(
     _props: &mut MyGenericProps<T, U>,
 ) -> impl Into<AnyElement<'static>> {
-    element!(Box)
+    element!(View)
 }
 
 fn check_component_traits<T: Send + Sync>() {}
@@ -53,5 +53,5 @@ fn MyComponentWithGenericPropsWhereClause<T, const U: usize>(
 where
     T: Send + Sync + 'static,
 {
-    element!(Box)
+    element!(View)
 }

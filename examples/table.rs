@@ -25,7 +25,7 @@ struct UsersTableProps<'a> {
 #[component]
 fn UsersTable<'a>(props: &UsersTableProps<'a>) -> impl Into<AnyElement<'a>> {
     element! {
-        Box(
+        View(
             margin_top: 1,
             margin_bottom: 1,
             flex_direction: FlexDirection::Column,
@@ -33,31 +33,31 @@ fn UsersTable<'a>(props: &UsersTableProps<'a>) -> impl Into<AnyElement<'a>> {
             border_style: BorderStyle::Round,
             border_color: Color::Cyan,
         ) {
-            Box(border_style: BorderStyle::Single, border_edges: Edges::Bottom, border_color: Color::Grey) {
-                Box(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
+            View(border_style: BorderStyle::Single, border_edges: Edges::Bottom, border_color: Color::Grey) {
+                View(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
                     Text(content: "Id", weight: Weight::Bold, decoration: TextDecoration::Underline)
                 }
 
-                Box(width: 40pct) {
+                View(width: 40pct) {
                     Text(content: "Name", weight: Weight::Bold, decoration: TextDecoration::Underline)
                 }
 
-                Box(width: 50pct) {
+                View(width: 50pct) {
                     Text(content: "Email", weight: Weight::Bold, decoration: TextDecoration::Underline)
                 }
             }
 
             #(props.users.map(|users| users.iter().enumerate().map(|(i, user)| element! {
-                Box(background_color: if i % 2 == 0 { None } else { Some(Color::DarkGrey) }) {
-                    Box(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
+                View(background_color: if i % 2 == 0 { None } else { Some(Color::DarkGrey) }) {
+                    View(width: 10pct, justify_content: JustifyContent::End, padding_right: 2) {
                         Text(content: user.id.to_string())
                     }
 
-                    Box(width: 40pct) {
+                    View(width: 40pct) {
                         Text(content: user.name.clone())
                     }
 
-                    Box(width: 50pct) {
+                    View(width: 50pct) {
                         Text(content: user.email.clone())
                     }
                 }

@@ -92,7 +92,7 @@ mod tests {
             exit(());
         }
 
-        element!(Box)
+        element!(View)
     }
 
     #[apply(test!)]

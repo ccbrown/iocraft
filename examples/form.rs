@@ -14,16 +14,16 @@ fn FormField(props: &FormFieldProps) -> impl Into<AnyElement<'static>> {
     };
 
     element! {
-        Box(
+        View(
             border_style: if props.has_focus { BorderStyle::Round } else { BorderStyle::None },
             border_color: Color::Blue,
             padding_left: if props.has_focus { 0 } else { 1 },
             padding_right: if props.has_focus { 0 } else { 1 },
         ) {
-            Box(width: 15) {
+            View(width: 15) {
                 Text(content: format!("{}: ", props.label))
             }
-            Box(
+            View(
                 background_color: Color::DarkGrey,
                 width: 30,
             ) {
@@ -71,15 +71,15 @@ fn Form<'a>(props: &mut FormProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement
             **last_name_out = last_name.to_string();
         }
         system.exit();
-        element!(Box)
+        element!(View)
     } else {
         element! {
-            Box(
+            View(
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 margin: 2,
             ) {
-                Box(
+                View(
                     padding_bottom: if focus == 0 { 1 } else { 2 },
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,

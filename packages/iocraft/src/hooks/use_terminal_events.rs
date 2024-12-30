@@ -50,13 +50,13 @@ mod private {
 ///     }
 ///
 ///     element! {
-///         Box(
+///         View(
 ///             flex_direction: FlexDirection::Column,
 ///             padding: 2,
 ///             align_items: AlignItems::Center
 ///         ) {
 ///             Text(content: "Use arrow keys to move. Press \"q\" to exit.")
-///             Box(
+///             View(
 ///                 border_style: BorderStyle::Round,
 ///                 border_color: Color::Green,
 ///                 height: AREA_HEIGHT + 2,
@@ -64,7 +64,7 @@ mod private {
 ///             ) {
 ///                 #(if should_exit.get() {
 ///                     element! {
-///                         Box(
+///                         View(
 ///                             width: 100pct,
 ///                             height: 100pct,
 ///                             justify_content: JustifyContent::Center,
@@ -75,7 +75,7 @@ mod private {
 ///                     }
 ///                 } else {
 ///                     element! {
-///                         Box(
+///                         View(
 ///                             padding_left: x.get(),
 ///                             padding_top: y.get(),
 ///                         ) {
@@ -206,7 +206,7 @@ mod tests {
             system.exit();
             element!(Text(content:"received event")).into_any()
         } else {
-            element!(Box).into_any()
+            element!(View).into_any()
         }
     }
 
@@ -249,14 +249,14 @@ mod tests {
             system.exit();
             element!(Text(content:"received click")).into_any()
         } else {
-            element!(Box(width: 10, height: 10)).into_any()
+            element!(View(width: 10, height: 10)).into_any()
         }
     }
 
     #[apply(test!)]
     async fn test_use_local_terminal_events() {
         let canvases: Vec<_> = element! {
-            Box(padding: 2) {
+            View(padding: 2) {
                 MyClickableComponent
             }
         }
