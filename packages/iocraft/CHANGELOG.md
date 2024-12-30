@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.5.3...iocraft-v0.6.0) - 2024-12-30
+
+### Added
+
+- [**breaking**] rename `Box` to `View` to avoid conflict (#56)
+
 ## [0.5.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.5.2...iocraft-v0.5.3) - 2024-12-28
 
 ### Fixed
