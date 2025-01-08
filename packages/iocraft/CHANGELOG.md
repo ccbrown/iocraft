@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.6.0...iocraft-v0.6.1) - 2025-01-08
+
+### Fixed
+
+- check if stdin is terminal (#59)
+
 ## [0.6.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.5.3...iocraft-v0.6.0) - 2024-12-30
 
 ### Added
