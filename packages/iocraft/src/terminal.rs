@@ -11,7 +11,7 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdout, Write},
+    io::{self, stdin, stdout, IsTerminal, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
@@ -120,6 +120,7 @@ trait TerminalImpl: Write + Send {
 }
 
 struct StdTerminal {
+    input_is_terminal: bool,
     dest: io::Stdout,
     fullscreen: bool,
     raw_mode_enabled: bool,
@@ -169,6 +170,10 @@ impl TerminalImpl for StdTerminal {
     }
 
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
+        if !self.input_is_terminal {
+            return Ok(stream::pending().boxed());
+        }
+
         self.set_raw_mode_enabled(true)?;
 
         Ok(EventStream::new()
@@ -207,6 +212,7 @@ impl StdTerminal {
         }
         Ok(Self {
             dest,
+            input_is_terminal: stdin().is_terminal(),
             fullscreen,
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
