@@ -271,8 +271,12 @@ impl Canvas {
                 // clear until end of line
                 write!(w, csi!("K"))?;
             }
-            if !omit_final_newline || y < self.cells.len() - 1 {
+            let is_final_line = y == self.cells.len() - 1;
+            if !omit_final_newline || !is_final_line {
                 if ansi {
+                    if is_final_line {
+                        write!(w, csi!("0m"))?;
+                    }
                     // add a carriage return in case we're in raw mode
                     w.write_all(b"\r\n")?;
                 } else {
@@ -280,7 +284,7 @@ impl Canvas {
                 }
             }
         }
-        if ansi {
+        if ansi && omit_final_newline {
             write!(w, csi!("0m"))?;
         }
         w.flush()?;
@@ -457,8 +461,8 @@ mod tests {
         write!(expected, csi!("K")).unwrap();
         write!(expected, "\r\n").unwrap();
         write!(expected, csi!("K")).unwrap();
-        write!(expected, "\r\n").unwrap();
         write!(expected, csi!("0m")).unwrap();
+        write!(expected, "\r\n").unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -555,8 +559,8 @@ mod tests {
         write!(expected, ".").unwrap();
 
         write!(expected, csi!("K")).unwrap();
-        write!(expected, "\r\n").unwrap();
         write!(expected, csi!("0m")).unwrap();
+        write!(expected, "\r\n").unwrap();
 
         assert_eq!(actual, expected);
     }
