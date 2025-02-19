@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.6.2...iocraft-v0.6.3) - 2025-02-19
+
+### Fixed
+
+- make properties named "key" a compile-time error
+
 ## [0.6.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.6.1...iocraft-v0.6.2) - 2025-01-20
 
 ### Fixed
