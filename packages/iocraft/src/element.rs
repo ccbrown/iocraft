@@ -269,7 +269,7 @@ pub trait ElementExt: private::Sealed + Sized {
     fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>>;
 }
 
-impl<'a> ElementExt for AnyElement<'a> {
+impl ElementExt for AnyElement<'_> {
     fn key(&self) -> &ElementKey {
         &self.key
     }
@@ -303,7 +303,7 @@ impl<'a> ElementExt for AnyElement<'a> {
     }
 }
 
-impl<'a> ElementExt for &mut AnyElement<'a> {
+impl ElementExt for &mut AnyElement<'_> {
     fn key(&self) -> &ElementKey {
         &self.key
     }
@@ -337,7 +337,7 @@ impl<'a> ElementExt for &mut AnyElement<'a> {
     }
 }
 
-impl<'a, T> ElementExt for Element<'a, T>
+impl<T> ElementExt for Element<'_, T>
 where
     T: Component + 'static,
 {
@@ -373,7 +373,7 @@ where
     }
 }
 
-impl<'a, T> ElementExt for &mut Element<'a, T>
+impl<T> ElementExt for &mut Element<'_, T>
 where
     T: Component + 'static,
 {

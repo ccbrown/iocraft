@@ -134,8 +134,95 @@ impl ToTokens for ParsedElement {
     }
 }
 
-// This is documented in the `iocraft` crate instead so that links to `iocraft` types resolve correctly.
-#[allow(missing_docs)]
+/// Used to declare an element and its properties.
+///
+/// Elements are declared starting with their type. All properties are optional, so the simplest
+/// use of this macro is just a type name:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn my_element() -> Element<'static, View> {
+/// element!(View)
+/// # }
+/// ```
+///
+/// This will evaluate to an `Element<'static, View>` with no properties set.
+///
+/// To specify properties, you can add them in a parenthesized block after the type name:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn my_element() -> Element<'static, View> {
+/// element! {
+///     View(width: 80, height: 24, background_color: Color::Green)
+/// }
+/// # }
+/// ```
+///
+/// If the element has a `children` property, you can pass one or more child elements in braces like so:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn my_element() -> Element<'static, View> {
+/// element! {
+///     View {
+///         Text(content: "Hello, world!")
+///     }
+/// }
+/// # }
+/// ```
+///
+/// Lastly, you can use Rust to conditionally add child elements via `#()` blocks that evaluate
+/// to any iterator type:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn my_element(show_greeting: bool) -> Element<'static, View> {
+/// element! {
+///     View {
+///         #(if show_greeting {
+///             Some(element! {
+///                 Text(content: "Hello, world!")
+///             })
+///         } else {
+///             None
+///         })
+///     }
+/// }
+/// # }
+/// ```
+///
+/// If you're rendering a dynamic UI, you will want to ensure that when adding multiple
+/// elements via an iterator a unique key is specified for each one. Otherwise, the elements
+/// may not correctly maintain their state across renders. This is done using the special `key`
+/// property, which can be given to any element:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # struct User { id: i32, name: String }
+/// # fn my_element(users: Vec<User>) -> Element<'static, View> {
+/// element! {
+///     View {
+///         #(users.iter().map(|user| element! {
+///             View(key: user.id, flex_direction: FlexDirection::Column) {
+///                 Text(content: format!("Hello, {}!", user.name))
+///             }
+///         }))
+///     }
+/// }
+/// # }
+/// ```
+///
+/// Note that this means that the `key` property is reserved and cannot be used for
+/// user-defined properties:
+///
+/// ```compile_fail
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct MyProps {
+///     key: i32,
+/// }
+/// ```
 #[proc_macro]
 pub fn element(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
