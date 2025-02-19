@@ -195,6 +195,17 @@ mod flattened_exports {
     /// }
     /// # }
     /// ```
+    ///
+    /// Note that this means that the `key` property is reserved and cannot be used for
+    /// user-defined properties:
+    ///
+    /// ```compile_fail
+    /// # use iocraft::prelude::*;
+    /// #[derive(Default, Props)]
+    /// struct MyProps {
+    ///     key: i32,
+    /// }
+    /// ```
     pub use iocraft_macros::element;
 
     pub use iocraft_macros::*;

@@ -149,6 +149,19 @@ struct ParsedProps {
 impl Parse for ParsedProps {
     fn parse(input: ParseStream) -> Result<Self> {
         let def: ItemStruct = input.parse()?;
+
+        // Make sure there are no props named "key", as that's a reserved name.
+        for field in &def.fields {
+            if let Some(ident) = &field.ident {
+                if ident == "key" {
+                    return Err(Error::new(
+                        ident.span(),
+                        "the `key` property name is reserved",
+                    ));
+                }
+            }
+        }
+
         Ok(Self { def })
     }
 }
