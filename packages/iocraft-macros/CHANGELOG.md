@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.1...iocraft-macros-v0.2.2) - 2025-02-19
+
+### Other
+
+- re-arrange element macro docs to work around docs.rs bug
+
 ## [0.2.1](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.0...iocraft-macros-v0.2.1) - 2025-02-19
 
 ### Fixed
