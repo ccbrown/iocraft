@@ -212,17 +212,6 @@ impl ToTokens for ParsedElement {
 /// }
 /// # }
 /// ```
-///
-/// Note that this means that the `key` property is reserved and cannot be used for
-/// user-defined properties:
-///
-/// ```compile_fail
-/// # use iocraft::prelude::*;
-/// #[derive(Default, Props)]
-/// struct MyProps {
-///     key: i32,
-/// }
-/// ```
 #[proc_macro]
 pub fn element(input: TokenStream) -> TokenStream {
     let element = parse_macro_input!(input as ParsedElement);
@@ -356,6 +345,17 @@ impl ToTokens for ParsedProps {
 /// Most importantly, this marks a struct as being
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
+///
+/// Compilation will also fail if the struct contains a "key" field, as that name is reserved to
+/// facilitate tracking state across renders:
+///
+/// ```compile_fail
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct MyProps {
+///     key: i32,
+/// }
+/// ```
 #[proc_macro_derive(Props)]
 pub fn derive_props(item: TokenStream) -> TokenStream {
     let props = parse_macro_input!(item as ParsedProps);
