@@ -52,7 +52,23 @@ use core::marker::PhantomData;
 /// ```
 ///
 /// If you are building a component for use in a library, you will typically also want to mark your
-/// props as `#[non_exhaustive]`.
+/// props as `#[non_exhaustive]` so that you can add new fields in the future without creating
+/// breaking changes.
+///
+/// # Reserved Names
+///
+/// An implicitly added "key" prop is used to maintain state across renders and should not be used
+/// as a field name (see the [`element!`](crate::element!) macro for details). The
+/// [`#[derive(Props)]`](derive@crate::Props) macro will give you an error at compile time if you
+/// attempt to use it:
+///
+/// ```compile_fail
+/// # use iocraft::prelude::*;
+/// #[derive(Default, Props)]
+/// struct MyProps {
+///     key: i32,
+/// }
+/// ```
 ///
 /// # Safety
 ///
