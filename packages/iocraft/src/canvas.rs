@@ -164,18 +164,20 @@ impl Canvas {
     /// Gets a subview of the canvas for writing.
     pub fn subview_mut(
         &mut self,
-        x: usize,
-        y: usize,
-        width: usize,
-        height: usize,
-        clip: bool,
+        x: isize,
+        y: isize,
+        clip_x: isize,
+        clip_y: isize,
+        clip_width: usize,
+        clip_height: usize,
     ) -> CanvasSubviewMut {
         CanvasSubviewMut {
             y,
             x,
-            width,
-            height,
-            clip,
+            clip_x,
+            clip_y,
+            clip_width,
+            clip_height,
             canvas: self,
         }
     }
@@ -318,27 +320,28 @@ impl Display for Canvas {
 /// Represents a writeable region of a [`Canvas`]. All coordinates provided to functions of this
 /// type are relative to the region's top-left corner.
 pub struct CanvasSubviewMut<'a> {
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-    clip: bool,
+    x: isize,
+    y: isize,
+    clip_x: isize,
+    clip_y: isize,
+    clip_width: usize,
+    clip_height: usize,
     canvas: &'a mut Canvas,
 }
 
 impl CanvasSubviewMut<'_> {
     /// Fills the region with the given color.
     pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
-        let mut left = self.x as isize + x;
-        let mut top = self.y as isize + y;
+        let mut left = self.x + x;
+        let mut top = self.y + y;
         let mut right = left + w as isize;
         let mut bottom = top + h as isize;
-        if self.clip {
-            left = left.max(self.x as isize);
-            top = top.max(self.y as isize);
-            right = right.min((self.x + self.width) as isize);
-            bottom = bottom.min((self.y + self.height) as isize);
-        }
+
+        left = left.max(self.clip_x).max(0);
+        top = top.max(self.clip_y).max(0);
+        right = right.min(self.clip_x + self.clip_width as isize).max(0);
+        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
+
         self.canvas.set_background_color(
             left as _,
             top as _,
@@ -350,16 +353,16 @@ impl CanvasSubviewMut<'_> {
 
     /// Removes text from the region.
     pub fn clear_text(&mut self, x: isize, y: isize, w: usize, h: usize) {
-        let mut left = self.x as isize + x;
-        let mut top = self.y as isize + y;
+        let mut left = self.x + x;
+        let mut top = self.y + y;
         let mut right = left + w as isize;
         let mut bottom = top + h as isize;
-        if self.clip {
-            left = left.max(self.x as isize);
-            top = top.max(self.y as isize);
-            right = right.min((self.x + self.width) as isize);
-            bottom = bottom.min((self.y + self.height) as isize);
-        }
+
+        left = left.max(self.clip_x).max(0);
+        top = top.max(self.clip_y).max(0);
+        right = right.min(self.clip_x + self.clip_width as isize).max(0);
+        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
+
         self.canvas.clear_text(
             left as _,
             top as _,
@@ -369,49 +372,45 @@ impl CanvasSubviewMut<'_> {
     }
 
     /// Writes text to the region.
-    pub fn set_text(&mut self, x: isize, mut y: isize, text: &str, style: CanvasTextStyle) {
-        let mut x = self.x as isize + x;
-        let min_x = if self.clip { self.x as isize } else { 0 };
+    pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
+        let mut x = self.x + x;
+        let min_x = self.clip_x.max(0);
         let mut to_skip = 0;
         if x < min_x {
             to_skip = min_x - x;
             x = min_x;
         }
-        let max_x = if self.clip {
-            (self.x + self.width) as isize - 1
-        } else {
-            self.canvas.width as isize - 1
-        };
+        let max_x = self.clip_x + self.clip_width as isize - 1;
         let horizontal_space = max_x - x + 1;
+        let min_y = self.clip_y.max(0);
+        let max_y = (self.clip_y + self.clip_height as isize).min(self.canvas.height() as _) - 1;
+        let mut y = self.y + y;
         for line in text.lines() {
-            if !self.clip || (y >= 0 && y < self.height as isize) {
-                let y = self.y as isize + y;
-                if y >= 0 && y < self.canvas.height() as _ {
-                    let mut skipped_width = 0;
-                    let mut taken_width = 0;
-                    self.canvas.set_text_row_chars(
-                        x as usize,
-                        y as usize,
-                        line.chars()
-                            .skip_while(|c| {
-                                if skipped_width < to_skip {
-                                    skipped_width += c.width().unwrap_or(0) as isize;
-                                    true
-                                } else {
-                                    false
-                                }
-                            })
-                            .take_while(|c| {
-                                if taken_width < horizontal_space {
-                                    taken_width += c.width().unwrap_or(0) as isize;
-                                    true
-                                } else {
-                                    false
-                                }
-                            }),
-                        style,
-                    );
-                }
+            if y >= min_y && y <= max_y {
+                let mut skipped_width = 0;
+                let mut taken_width = 0;
+                self.canvas.set_text_row_chars(
+                    x as usize,
+                    y as usize,
+                    line.chars()
+                        .skip_while(|c| {
+                            if skipped_width < to_skip {
+                                skipped_width += c.width().unwrap_or(0) as isize;
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                        .take_while(|c| {
+                            if taken_width < horizontal_space {
+                                taken_width += c.width().unwrap_or(0) as isize;
+                                true
+                            } else {
+                                false
+                            }
+                        }),
+                    style,
+                );
             }
             y += 1;
         }
@@ -430,7 +429,7 @@ mod tests {
         assert_eq!(canvas.height(), 3);
 
         canvas
-            .subview_mut(2, 0, 3, 2, true)
+            .subview_mut(2, 0, 2, 0, 3, 2)
             .set_background_color(0, 0, 5, 5, Color::Red);
 
         let mut actual = Vec::new();
@@ -474,9 +473,9 @@ mod tests {
         assert_eq!(canvas.height(), 1);
 
         canvas
-            .subview_mut(0, 0, 1, 1, true)
+            .subview_mut(0, 0, 0, 0, 1, 1)
             .set_text(0, 0, ".", CanvasTextStyle::default());
-        canvas.subview_mut(1, 0, 1, 1, true).set_text(
+        canvas.subview_mut(1, 0, 1, 0, 1, 1).set_text(
             0,
             0,
             ".",
@@ -487,7 +486,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        canvas.subview_mut(2, 0, 1, 1, true).set_text(
+        canvas.subview_mut(2, 0, 2, 0, 1, 1).set_text(
             0,
             0,
             ".",
@@ -497,7 +496,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        canvas.subview_mut(3, 0, 1, 1, true).set_text(
+        canvas.subview_mut(3, 0, 3, 0, 1, 1).set_text(
             0,
             0,
             ".",
@@ -507,7 +506,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        canvas.subview_mut(4, 0, 1, 1, true).set_text(
+        canvas.subview_mut(4, 0, 4, 0, 1, 1).set_text(
             0,
             0,
             ".",
@@ -516,7 +515,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        canvas.subview_mut(5, 0, 1, 1, true).set_text(
+        canvas.subview_mut(5, 0, 5, 0, 1, 1).set_text(
             0,
             0,
             ".",
@@ -571,7 +570,7 @@ mod tests {
         assert_eq!(canvas.width(), 10);
         assert_eq!(canvas.height(), 5);
 
-        canvas.subview_mut(2, 2, 4, 2, true).set_text(
+        canvas.subview_mut(2, 2, 2, 2, 4, 2).set_text(
             -2,
             -1,
             "line 1\nline 2\nline 3\nline 4",
@@ -586,11 +585,11 @@ mod tests {
     fn test_canvas_text_clearing() {
         let mut canvas = Canvas::new(10, 1);
         canvas
-            .subview_mut(0, 0, 10, 1, true)
+            .subview_mut(0, 0, 0, 0, 10, 1)
             .set_text(0, 0, "hello!", CanvasTextStyle::default());
         assert_eq!(canvas.to_string(), "hello!\n");
 
-        canvas.subview_mut(0, 0, 10, 1, true).clear_text(0, 0, 3, 1);
+        canvas.subview_mut(0, 0, 0, 0, 10, 1).clear_text(0, 0, 3, 1);
         assert_eq!(canvas.to_string(), "   lo!\n");
     }
 
@@ -599,7 +598,7 @@ mod tests {
         let mut canvas = Canvas::new(10, 3);
 
         canvas
-            .subview_mut(0, 0, 10, 3, true)
+            .subview_mut(0, 0, 0, 0, 10, 3)
             .set_text(0, 0, "hello!", CanvasTextStyle::default());
 
         let mut actual = Vec::new();

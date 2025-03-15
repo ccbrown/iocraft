@@ -17,6 +17,7 @@ To run any of the examples, use `cargo run --example NAME`. For example, to run 
 |[hello_world.rs](./hello_world.rs)<br />Hello, world!|![preview](./images/hello-world.png)|
 |[overlap.rs](./overlap.rs)<br />Uses absolute positioning to create overlapping elements.|![preview](./images/overlap.png)|
 |[progress_bar.rs](./progress_bar.rs)<br />Renders a dynamic progress bar which fills up and then exits.|![preview](./images/progress_bar.png)|
+|[scrolling.rs](./scrolling.rs)<br />Demonstrates using the overflow property to implement scrollable text.|![preview](./images/scrolling.png)|
 |[table.rs](./table.rs)<br />Displays a list of users provided by reference via properties.|![preview](./images/table.png)|
 |[use_input.rs](./use_input.rs)<br />Demonstrates using keyboard input to move a 👾.|![preview](./images/use_input.png)|
 |[use_output.rs](./use_output.rs)<br />Continuously logs text output above the rendered component.|![preview](./images/use_output.png)|

@@ -846,6 +846,24 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             /// See [the MDN documentation for justify-content](https://developer.mozilla.org/en-US/docs/Web/CSS/justify-content).
             pub justify_content: Option<::iocraft::JustifyContent>
         },
+        quote! {
+            /// Defines the behavior when content does not fit within the element's padding box.
+            ///
+            /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
+            pub overflow: Option<::iocraft::Overflow>
+        },
+        quote! {
+            /// Defines the behavior when content does not fit within the element's padding box in the horizontal direction.
+            ///
+            /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
+            pub overflow_x: Option<::iocraft::Overflow>
+        },
+        quote! {
+            /// Defines the behavior when content does not fit within the element's padding box in the vertical direction.
+            ///
+            /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
+            pub overflow_y: Option<::iocraft::Overflow>
+        },
     ]
     .map(|tokens| syn::Field::parse_named.parse2(tokens).unwrap());
 
@@ -859,7 +877,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             let struct_name = &ast.ident;
             let field_assignments = layout_style_fields.iter().map(|field| {
                 let field_name = &field.ident;
-                quote! { #field_name: self.#field_name }
+                quote! { ret.#field_name = self.#field_name; }
             });
 
             let where_clause = &ast.generics.where_clause;
@@ -892,9 +910,9 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                 impl #generics #struct_name #bracketed_generic_names #where_clause {
                     /// Returns the layout style based on the layout-related fields of this struct.
                     pub fn layout_style(&self) -> ::iocraft::LayoutStyle {
-                        ::iocraft::LayoutStyle{
-                            #(#field_assignments,)*
-                        }
+                        let mut ret: ::iocraft::LayoutStyle = Default::default();
+                        #(#field_assignments)*
+                        ret
                     }
                 }
             }
