@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.2...iocraft-macros-v0.2.3) - 2025-03-15
+
+### Added
+
+- fully implement overflow property, add scrolling example ([#70](https://github.com/ccbrown/iocraft/pull/70))
+
+### Other
+
+- polish up docs regarding key prop ([#66](https://github.com/ccbrown/iocraft/pull/66))
+
 ## [0.2.2](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.1...iocraft-macros-v0.2.2) - 2025-02-19
 
 ### Other
