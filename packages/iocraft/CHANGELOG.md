@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.6.4...iocraft-v0.7.0) - 2025-03-15
+
+### Added
+
+- fully implement overflow property, add scrolling example ([#70](https://github.com/ccbrown/iocraft/pull/70))
+
+### Fixed
+
+- negative top/left positions
+
+### Other
+
+- polish up docs regarding key prop ([#66](https://github.com/ccbrown/iocraft/pull/66))
+
 ## [0.6.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.6.3...iocraft-v0.6.4) - 2025-02-19
 
 ### Other
