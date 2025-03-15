@@ -266,8 +266,8 @@ impl ComponentDrawer<'_> {
         self.node_id = node_id;
         let layout = self.layout();
         self.node_position = Point {
-            x: self.node_position.x + layout.location.x as u16,
-            y: self.node_position.y + layout.location.y as u16,
+            x: (self.node_position.x as i16 + layout.location.x as i16).max(0) as u16,
+            y: (self.node_position.y as i16 + layout.location.y as i16).max(0) as u16,
         };
         self.node_size = Size {
             width: layout.size.width as u16,
