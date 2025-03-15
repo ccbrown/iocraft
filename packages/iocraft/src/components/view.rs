@@ -645,5 +645,46 @@ mod tests {
                 └──────────────────┘
             "},
         );
+
+        assert_eq!(
+            element! {
+                View(width: 20, height: 7, margin_top: 1, border_style: BorderStyle::Single) {
+                    View(width: 5, height: 3, position: Position::Absolute, top: -3) {
+                        Text(content: "foo\nbar")
+                    }
+                }
+            }
+            .to_string(),
+            indoc! {"
+                 bar
+                ┌──────────────────┐
+                │                  │
+                │                  │
+                │                  │
+                │                  │
+                │                  │
+                └──────────────────┘
+            "},
+        );
+
+        assert_eq!(
+            element! {
+                View(width: 20, height: 7, border_style: BorderStyle::Single, overflow: Overflow::Hidden) {
+                    View(position: Position::Absolute, top: -1, left: 17) {
+                        Text(content: "foo\nbar")
+                    }
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌──────────────────┐
+                │                 b│
+                │                  │
+                │                  │
+                │                  │
+                │                  │
+                └──────────────────┘
+            "},
+        );
     }
 }

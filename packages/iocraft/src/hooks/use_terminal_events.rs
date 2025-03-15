@@ -136,7 +136,7 @@ impl UseTerminalEvents for Hooks<'_, '_> {
 
 struct UseTerminalEventsImpl {
     events: Option<TerminalEvents>,
-    component_location: (Point<u16>, Size<u16>),
+    component_location: (Point<i16>, Size<u16>),
     in_component: bool,
     f: Box<dyn FnMut(TerminalEvent) + Send + 'static>,
 }
@@ -152,9 +152,9 @@ impl Hook for UseTerminalEventsImpl {
                 let (location, size) = self.component_location;
                 match event {
                     TerminalEvent::FullscreenMouse(event) => {
-                        if event.row >= location.y && event.column >= location.x {
-                            let row = event.row - location.y;
-                            let column = event.column - location.x;
+                        if event.row as i16 >= location.y && event.column as i16 >= location.x {
+                            let row = (event.row as i16 - location.y) as u16;
+                            let column = (event.column as i16 - location.x) as u16;
                             if row < size.height && column < size.width {
                                 (self.f)(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
                                     row,

@@ -846,6 +846,24 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             /// See [the MDN documentation for justify-content](https://developer.mozilla.org/en-US/docs/Web/CSS/justify-content).
             pub justify_content: Option<::iocraft::JustifyContent>
         },
+        quote! {
+            /// Defines the behavior when content does not fit within the element's padding box.
+            ///
+            /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
+            pub overflow: Option<::iocraft::Overflow>
+        },
+        quote! {
+            /// Defines the behavior when content does not fit within the element's padding box in the horizontal direction.
+            ///
+            /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
+            pub overflow_x: Option<::iocraft::Overflow>
+        },
+        quote! {
+            /// Defines the behavior when content does not fit within the element's padding box in the vertical direction.
+            ///
+            /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
+            pub overflow_y: Option<::iocraft::Overflow>
+        },
     ]
     .map(|tokens| syn::Field::parse_named.parse2(tokens).unwrap());
 
@@ -894,6 +912,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
                     pub fn layout_style(&self) -> ::iocraft::LayoutStyle {
                         ::iocraft::LayoutStyle{
                             #(#field_assignments,)*
+                            ..Default::default()
                         }
                     }
                 }

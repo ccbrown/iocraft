@@ -236,6 +236,8 @@ bitflags! {
 
 #[doc(hidden)]
 #[with_layout_style_props]
+#[non_exhaustive]
+#[derive(Default)]
 pub struct LayoutStyle {
     // fields added by proc macro, defined in ../macros/src/lib.rs
 }
@@ -277,6 +279,10 @@ impl From<LayoutStyle> for Style {
                 right: s.right.or(s.inset).into(),
                 top: s.top.or(s.inset).into(),
                 bottom: s.bottom.or(s.inset).into(),
+            },
+            overflow: geometry::Point {
+                x: s.overflow_x.or(s.overflow).unwrap_or_default(),
+                y: s.overflow_y.or(s.overflow).unwrap_or_default(),
             },
             position: s.position,
             flex_direction: s.flex_direction,

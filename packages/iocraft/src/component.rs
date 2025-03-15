@@ -203,7 +203,9 @@ impl InstantiatedComponent {
             self.component.draw(drawer);
         }
 
-        self.children.draw(drawer);
+        drawer.with_clip_rect_for_children(|drawer| {
+            self.children.draw(drawer);
+        });
 
         if self.has_transparent_layout {
             if let Some(child) = self.children.components.iter().next().as_ref() {

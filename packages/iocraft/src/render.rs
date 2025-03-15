@@ -19,7 +19,9 @@ use futures::{
     stream::{Stream, StreamExt},
 };
 use std::io;
-use taffy::{AvailableSpace, Display, Layout, NodeId, Point, Size, Style, TaffyTree};
+use taffy::{
+    AvailableSpace, Display, Layout, NodeId, Overflow, Point, Rect, Size, Style, TaffyTree,
+};
 
 pub(crate) struct UpdateContext<'a> {
     terminal: Option<&'a mut Terminal>,
@@ -218,8 +220,9 @@ struct DrawContext<'a> {
 /// utilize during the draw phase.
 pub struct ComponentDrawer<'a> {
     node_id: NodeId,
-    node_position: Point<u16>,
+    node_position: Point<i16>,
     node_size: Size<u16>,
+    clip_rect: Rect<u16>,
     context: DrawContext<'a>,
 }
 
@@ -233,24 +236,33 @@ impl ComponentDrawer<'_> {
             .expect("we should be able to get the layout")
     }
 
+    /// Gets the style of the current node.
+    pub fn style(&self) -> &Style {
+        self.context
+            .layout_engine
+            .style(self.node_id)
+            .expect("we should be able to get the style")
+    }
+
     /// Gets the size of the component.
     pub fn size(&self) -> Size<u16> {
         self.node_size
     }
 
     /// Gets the position of the component relative to the top left of the canvas.
-    pub fn canvas_position(&self) -> Point<u16> {
+    pub fn canvas_position(&self) -> Point<i16> {
         self.node_position
     }
 
     /// Gets the region of the canvas that the component should be drawn to.
     pub fn canvas(&mut self) -> CanvasSubviewMut {
         self.context.canvas.subview_mut(
-            self.node_position.x as usize,
-            self.node_position.y as usize,
-            self.node_size.width as usize,
-            self.node_size.height as usize,
-            true,
+            self.node_position.x as _,
+            self.node_position.y as _,
+            self.clip_rect.left as _,
+            self.clip_rect.top as _,
+            (self.clip_rect.right - self.clip_rect.left) as _,
+            (self.clip_rect.bottom - self.clip_rect.top) as _,
         )
     }
 
@@ -266,8 +278,8 @@ impl ComponentDrawer<'_> {
         self.node_id = node_id;
         let layout = self.layout();
         self.node_position = Point {
-            x: (self.node_position.x as i16 + layout.location.x as i16).max(0) as u16,
-            y: (self.node_position.y as i16 + layout.location.y as i16).max(0) as u16,
+            x: self.node_position.x + layout.location.x as i16,
+            y: self.node_position.y + layout.location.y as i16,
         };
         self.node_size = Size {
             width: layout.size.width as u16,
@@ -277,6 +289,44 @@ impl ComponentDrawer<'_> {
         self.node_id = old_node_id;
         self.node_position = old_node_position;
         self.node_size = old_node_size;
+    }
+
+    /// Prepares to begin drawing a node's children by shrinking the clipping rectangle if necessary.
+    pub(crate) fn with_clip_rect_for_children<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let overflow = self.style().overflow;
+        if overflow.x == Overflow::Visible && overflow.y == Overflow::Visible {
+            // No need to do anything.
+            f(self);
+            return;
+        }
+
+        let old_clip_rect = self.clip_rect;
+        let layout = self.layout();
+        if overflow.x != Overflow::Visible {
+            self.clip_rect.left = self
+                .clip_rect
+                .left
+                .max((self.node_position.x + layout.border.left as i16).max(0) as u16);
+            self.clip_rect.right = self.clip_rect.right.min(
+                (self.node_position.x + self.node_size.width as i16 - layout.border.right as i16)
+                    .max(0) as u16,
+            );
+        }
+        if overflow.y != Overflow::Visible {
+            self.clip_rect.top = self
+                .clip_rect
+                .top
+                .max((self.node_position.y + layout.border.top as i16).max(0) as u16);
+            self.clip_rect.bottom = self.clip_rect.bottom.min(
+                (self.node_position.y + self.node_size.height as i16 - layout.border.bottom as i16)
+                    .max(0) as u16,
+            );
+        }
+        f(self);
+        self.clip_rect = old_clip_rect;
     }
 }
 
@@ -384,6 +434,12 @@ impl<'a> Tree<'a> {
             node_size: Size {
                 width: root_layout.size.width as _,
                 height: root_layout.size.height as _,
+            },
+            clip_rect: Rect {
+                left: 0,
+                right: wrapper_layout.size.width as _,
+                top: 0,
+                bottom: wrapper_layout.size.height as _,
             },
             context: DrawContext {
                 layout_engine: &self.layout_engine,
