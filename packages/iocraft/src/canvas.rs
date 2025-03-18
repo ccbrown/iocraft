@@ -345,8 +345,8 @@ impl CanvasSubviewMut<'_> {
         self.canvas.set_background_color(
             left as _,
             top as _,
-            (right - left) as _,
-            (bottom - top) as _,
+            (right - left).max(0) as _,
+            (bottom - top).max(0) as _,
             color,
         );
     }
@@ -366,8 +366,8 @@ impl CanvasSubviewMut<'_> {
         self.canvas.clear_text(
             left as _,
             top as _,
-            (right - left) as _,
-            (bottom - top) as _,
+            (right - left).max(0) as _,
+            (bottom - top).max(0) as _,
         );
     }
 
