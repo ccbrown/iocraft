@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.0...iocraft-v0.7.1) - 2025-03-18
+
+### Other
+
+- Fix for overflow when scrolling out of bounds. ([#72](https://github.com/ccbrown/iocraft/pull/72))
+
 ## [0.7.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.6.4...iocraft-v0.7.0) - 2025-03-15
 
 ### Added
