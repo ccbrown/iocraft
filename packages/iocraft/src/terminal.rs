@@ -223,7 +223,7 @@ impl StdTerminal {
     fn set_raw_mode_enabled(&mut self, raw_mode_enabled: bool) -> io::Result<()> {
         if raw_mode_enabled != self.raw_mode_enabled {
             if raw_mode_enabled {
-                if terminal::supports_keyboard_enhancement()? {
+                if terminal::supports_keyboard_enhancement().unwrap_or(false) {
                     execute!(
                         self.dest,
                         event::PushKeyboardEnhancementFlags(
