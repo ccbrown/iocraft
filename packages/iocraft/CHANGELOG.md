@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.1...iocraft-v0.7.2) - 2025-03-20
+
+### Fixed
+
+- don't error if keyboard enhancement check times out
+
 ## [0.7.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.0...iocraft-v0.7.1) - 2025-03-18
 
 ### Other
