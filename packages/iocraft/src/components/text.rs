@@ -1,5 +1,6 @@
 use crate::{
-    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
+    render::MeasureFunc, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater,
+    Hooks, Props, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -80,7 +81,23 @@ pub struct Text {
 }
 
 impl Text {
-    fn wrap(
+    pub(crate) fn measure_func(content: String, text_wrap: TextWrap) -> MeasureFunc {
+        Box::new(move |known_size, available_space, _| {
+            let content = Text::wrap(&content, text_wrap, known_size.width, available_space.width);
+            let mut max_width = 0;
+            let mut num_lines = 0;
+            for line in content.lines() {
+                max_width = max_width.max(line.width());
+                num_lines += 1;
+            }
+            Size {
+                width: max_width as _,
+                height: num_lines.max(1) as _,
+            }
+        })
+    }
+
+    pub(crate) fn wrap(
         content: &str,
         text_wrap: TextWrap,
         known_width: Option<f32>,
@@ -99,7 +116,7 @@ impl Text {
         }
     }
 
-    fn align(content: String, align: TextAlign, width: usize) -> String {
+    pub(crate) fn align(content: String, align: TextAlign, width: usize) -> String {
         match align {
             TextAlign::Left => content,
             TextAlign::Right => content
@@ -146,25 +163,7 @@ impl Component for Text {
         self.content = props.content.clone();
         self.wrap = props.wrap;
         self.align = props.align;
-
-        {
-            let content = self.content.clone();
-            let text_wrap = props.wrap;
-            updater.set_measure_func(Box::new(move |known_size, available_space, _| {
-                let content =
-                    Self::wrap(&content, text_wrap, known_size.width, available_space.width);
-                let mut max_width = 0;
-                let mut num_lines = 0;
-                for line in content.lines() {
-                    max_width = max_width.max(line.width());
-                    num_lines += 1;
-                }
-                Size {
-                    width: max_width as _,
-                    height: num_lines.max(1) as _,
-                }
-            }));
-        }
+        updater.set_measure_func(Self::measure_func(self.content.clone(), props.wrap));
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
