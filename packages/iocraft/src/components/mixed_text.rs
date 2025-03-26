@@ -19,6 +19,9 @@ pub struct MixedTextContent {
 
     /// The text decoration.
     pub decoration: TextDecoration,
+
+    /// Whether to italicize the text.
+    pub italic: bool,
 }
 
 impl MixedTextContent {
@@ -45,6 +48,12 @@ impl MixedTextContent {
     /// Returns a new [`MixedTextContent`] with the given text decoration.
     pub fn decoration(mut self, decoration: TextDecoration) -> Self {
         self.decoration = decoration;
+        self
+    }
+
+    /// Returns a new [`MixedTextContent`] with italic text.
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
         self
     }
 }
@@ -136,6 +145,7 @@ impl Component for MixedText {
                 color: content.color,
                 weight: content.weight,
                 underline: content.decoration == TextDecoration::Underline,
+                italic: content.italic,
             };
             drawer.append_lines(text.lines(), style);
         }
@@ -154,7 +164,7 @@ mod tests {
             element! {
                 View(width: 14) {
                     MixedText(contents: vec![
-                        MixedTextContent::new("this is ").color(Color::Red).weight(Weight::Bold),
+                        MixedTextContent::new("this is ").color(Color::Red).weight(Weight::Bold).italic(),
                         MixedTextContent::new("a wrapping test").decoration(TextDecoration::Underline),
                     ])
                 }

@@ -64,6 +64,9 @@ pub struct CanvasTextStyle {
 
     /// Whether the text is underlined.
     pub underline: bool,
+
+    /// Whether the text is italicized.
+    pub italic: bool,
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -213,6 +216,9 @@ impl Canvas {
                         if !c.style.underline && text_style.underline {
                             needs_reset = true;
                         }
+                        if !c.style.italic && text_style.italic {
+                            needs_reset = true;
+                        }
                     } else if text_style.underline {
                         needs_reset = true;
                     }
@@ -250,6 +256,10 @@ impl Canvas {
 
                         if c.style.underline && !text_style.underline {
                             write!(w, csi!("{}m"), Attribute::Underlined.sgr())?;
+                        }
+
+                        if c.style.italic && !text_style.italic {
+                            write!(w, csi!("{}m"), Attribute::Italic.sgr())?;
                         }
 
                         text_style = c.style;
@@ -493,6 +503,7 @@ mod tests {
             CanvasTextStyle {
                 color: Some(Color::Red),
                 weight: Weight::Bold,
+                italic: true,
                 ..Default::default()
             },
         );
@@ -502,7 +513,7 @@ mod tests {
             ".",
             CanvasTextStyle {
                 color: Some(Color::Red),
-                weight: Weight::Light,
+                weight: Weight::Bold,
                 ..Default::default()
             },
         );
@@ -512,10 +523,20 @@ mod tests {
             ".",
             CanvasTextStyle {
                 color: Some(Color::Red),
+                weight: Weight::Light,
                 ..Default::default()
             },
         );
         canvas.subview_mut(5, 0, 5, 0, 1, 1).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Red),
+                ..Default::default()
+            },
+        );
+        canvas.subview_mut(6, 0, 6, 0, 1, 1).set_text(
             0,
             0,
             ".",
@@ -535,6 +556,12 @@ mod tests {
         write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
         write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
         write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
+        write!(expected, csi!("{}m"), Attribute::Italic.sgr()).unwrap();
         write!(expected, ".").unwrap();
 
         write!(expected, csi!("0m")).unwrap();

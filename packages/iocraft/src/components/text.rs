@@ -58,6 +58,9 @@ pub struct TextProps {
 
     /// The text decoration.
     pub decoration: TextDecoration,
+
+    /// Whether to italicize the text.
+    pub italic: bool,
 }
 
 /// `Text` is a component that renders a text string.
@@ -209,6 +212,7 @@ impl Component for Text {
             color: props.color,
             weight: props.weight,
             underline: props.decoration == TextDecoration::Underline,
+            italic: props.italic,
         };
         self.content = props.content.clone();
         self.wrap = props.wrap;
