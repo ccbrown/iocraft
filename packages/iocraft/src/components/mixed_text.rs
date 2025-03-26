@@ -164,7 +164,7 @@ mod tests {
             element! {
                 View(width: 14) {
                     MixedText(contents: vec![
-                        MixedTextContent::new("this is ").color(Color::Red).weight(Weight::Bold),
+                        MixedTextContent::new("this is ").color(Color::Red).weight(Weight::Bold).italic(),
                         MixedTextContent::new("a wrapping test").decoration(TextDecoration::Underline),
                     ])
                 }
