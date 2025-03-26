@@ -1,9 +1,8 @@
 use crate::{
-    components::text::{Text, TextAlign, TextDecoration, TextWrap},
+    components::text::{Text, TextAlign, TextDecoration, TextDrawer, TextWrap},
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 use taffy::AvailableSpace;
-use unicode_width::UnicodeWidthStr;
 
 /// A section of text in a [`MixedText`] component.
 #[non_exhaustive]
@@ -131,24 +130,14 @@ impl Component for MixedText {
             AvailableSpace::Definite(width),
         );
         let content = Text::align(content, self.align, width as _);
-        let mut x = 0;
-        let mut y = 0;
+        let mut drawer = TextDrawer::new(drawer, self.align != TextAlign::Left);
         for (text, content) in content.split('\u{200B}').zip(&self.contents) {
             let style = CanvasTextStyle {
                 color: content.color,
                 weight: content.weight,
                 underline: content.decoration == TextDecoration::Underline,
             };
-            let line_count = text.lines().count();
-            for (i, line) in text.lines().enumerate() {
-                drawer.canvas().set_text(x, y, line, style);
-                if i < line_count - 1 {
-                    y += 1;
-                    x = 0;
-                } else {
-                    x += line.width() as isize;
-                }
-            }
+            drawer.append_lines(text.lines(), style);
         }
     }
 }

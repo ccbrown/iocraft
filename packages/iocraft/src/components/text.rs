@@ -142,6 +142,56 @@ impl Text {
     }
 }
 
+pub(crate) struct TextDrawer<'a, 'b> {
+    x: isize,
+    y: isize,
+    drawer: &'a mut ComponentDrawer<'b>,
+    line_encountered_non_whitespace: bool,
+    skip_leading_whitespace: bool,
+}
+
+impl<'a, 'b> TextDrawer<'a, 'b> {
+    pub fn new(drawer: &'a mut ComponentDrawer<'b>, skip_leading_whitespace: bool) -> Self {
+        TextDrawer {
+            x: 0,
+            y: 0,
+            drawer,
+            line_encountered_non_whitespace: false,
+            skip_leading_whitespace,
+        }
+    }
+
+    pub fn append_lines<'c>(
+        &mut self,
+        lines: impl IntoIterator<Item = &'c str>,
+        style: CanvasTextStyle,
+    ) {
+        let mut lines = lines.into_iter().peekable();
+        while let Some(mut line) = lines.next() {
+            if self.skip_leading_whitespace && !self.line_encountered_non_whitespace {
+                let to_skip = line
+                    .chars()
+                    .position(|c| !c.is_whitespace())
+                    .unwrap_or(line.len());
+                let (whitespace, remaining) = line.split_at(to_skip);
+                self.x += whitespace.width() as isize;
+                line = remaining;
+                if !line.is_empty() {
+                    self.line_encountered_non_whitespace = true;
+                }
+            }
+            self.drawer.canvas().set_text(self.x, self.y, line, style);
+            if lines.peek().is_some() {
+                self.y += 1;
+                self.x = 0;
+                self.line_encountered_non_whitespace = false;
+            } else {
+                self.x += line.width() as isize;
+            }
+        }
+    }
+}
+
 impl Component for Text {
     type Props<'a> = TextProps;
 
@@ -175,13 +225,16 @@ impl Component for Text {
             AvailableSpace::Definite(width),
         );
         let content = Self::align(content, self.align, width as _);
-        drawer.canvas().set_text(0, 0, &content, self.style);
+        let mut drawer = TextDrawer::new(drawer, self.align != TextAlign::Left);
+        drawer.append_lines(content.lines(), self.style);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use crossterm::{csi, style::Attribute};
+    use std::io::Write;
 
     #[test]
     fn test_text() {
@@ -225,5 +278,34 @@ mod tests {
             .to_string(),
             "  this is an\nalignment test\n"
         );
+
+        // Make sure that when the text is not left-aligned, leading whitespace is not underlined.
+        {
+            let canvas = element! {
+                View(width: 16) {
+                    Text(content: "this is an alignment test", align: TextAlign::Center, decoration: TextDecoration::Underline)
+                }
+            }
+            .render(None);
+            let mut actual = Vec::new();
+            canvas.write_ansi(&mut actual).unwrap();
+
+            let mut expected = Vec::new();
+            write!(expected, csi!("0m")).unwrap();
+            write!(expected, "   ").unwrap();
+            write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+            write!(expected, "this is an").unwrap();
+            write!(expected, csi!("K")).unwrap();
+            write!(expected, "\r\n").unwrap();
+            write!(expected, csi!("0m")).unwrap();
+            write!(expected, " ").unwrap();
+            write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+            write!(expected, "alignment test").unwrap();
+            write!(expected, csi!("K")).unwrap();
+            write!(expected, csi!("0m")).unwrap();
+            write!(expected, "\r\n").unwrap();
+
+            assert_eq!(actual, expected);
+        }
     }
 }
