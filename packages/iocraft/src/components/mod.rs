@@ -4,6 +4,9 @@ pub use button::*;
 mod context_provider;
 pub use context_provider::*;
 
+mod mixed_text;
+pub use mixed_text::*;
+
 mod text;
 pub use text::*;
 

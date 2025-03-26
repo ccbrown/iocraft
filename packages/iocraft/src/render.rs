@@ -330,7 +330,10 @@ impl ComponentDrawer<'_> {
     }
 }
 
-type MeasureFunc = Box<dyn Fn(Size<Option<f32>>, Size<AvailableSpace>, &Style) -> Size<f32> + Send>;
+/// The measure function of the current component, which is invoked to calculate the area that the
+/// component's content should occupy.
+pub type MeasureFunc =
+    Box<dyn Fn(Size<Option<f32>>, Size<AvailableSpace>, &Style) -> Size<f32> + Send>;
 
 #[derive(Default)]
 pub(crate) struct LayoutEngineNodeContext {
