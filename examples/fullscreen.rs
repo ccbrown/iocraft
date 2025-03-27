@@ -34,8 +34,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
     element! {
         View(
-            // subtract one in case there's a scrollbar
-            width: width - 1,
+            width,
             height,
             background_color: Color::DarkGrey,
             border_style: BorderStyle::Double,
