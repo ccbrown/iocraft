@@ -203,6 +203,7 @@ impl Canvas {
             let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
             let row = &row[..last_non_empty.map_or(0, |i| i + 1)];
             let mut col = 0;
+            let mut did_clear_line = false;
             while col < row.len() {
                 let cell = &row[col];
 
@@ -267,11 +268,25 @@ impl Canvas {
                 }
 
                 if let Some(c) = &cell.character {
-                    write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
                     col += c.value.width().max(1);
                 } else {
-                    w.write_all(b" ")?;
                     col += 1;
+                }
+
+                if ansi && col >= self.width {
+                    // go ahead and clear until end of line. we need to do this before writing
+                    // the last character, because if we're at the end of the terminal row, the
+                    // cursor won't change position and the last character would be erased
+                    // if we did it later
+                    // see: https://github.com/ccbrown/iocraft/issues/83
+                    write!(w, csi!("K"))?;
+                    did_clear_line = true;
+                }
+
+                if let Some(c) = &cell.character {
+                    write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
+                } else {
+                    w.write_all(b" ")?;
                 }
             }
             if ansi {
@@ -280,8 +295,10 @@ impl Canvas {
                     write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
                     background_color = None;
                 }
-                // clear until end of line
-                write!(w, csi!("K"))?;
+                if !did_clear_line {
+                    // clear until end of line
+                    write!(w, csi!("K"))?;
+                }
             }
             let is_final_line = y == self.cells.len() - 1;
             if !omit_final_newline || !is_final_line {
@@ -642,6 +659,31 @@ mod tests {
         write!(expected, "\r\n").unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_ansi_erase_for_full_rows() {
+        let mut canvas = Canvas::new(10, 1);
+
+        canvas.subview_mut(0, 0, 0, 0, 10, 1).set_text(
+            0,
+            0,
+            "1234512345",
+            CanvasTextStyle::default(),
+        );
+
+        let mut actual = Vec::new();
+        canvas.write_ansi(&mut actual).unwrap();
+
+        let mut expected = Vec::new();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "123451234").unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, "5").unwrap();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "\r\n").unwrap();
 
         assert_eq!(actual, expected);
     }

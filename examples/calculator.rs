@@ -362,8 +362,7 @@ fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 
     element! {
         View(
-            // subtract one in case there's a scrollbar
-            width: width - 1,
+            width,
             height: height,
             background_color: theme.get().background_color(),
             flex_direction: FlexDirection::Column,
