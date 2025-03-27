@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.3...iocraft-v0.7.4) - 2025-03-27
+
+### Fixed
+
+- don't erase last col for fullscreen tuis ([#84](https://github.com/ccbrown/iocraft/pull/84))
+
 ## [0.7.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.2...iocraft-v0.7.3) - 2025-03-26
 
 ### Added
