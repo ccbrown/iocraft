@@ -113,24 +113,26 @@ impl UseTerminalEvents for Hooks<'_, '_> {
     where
         F: FnMut(TerminalEvent) + Send + 'static,
     {
-        self.use_hook(move || UseTerminalEventsImpl {
+        let h = self.use_hook(move || UseTerminalEventsImpl {
             events: None,
             component_location: Default::default(),
             in_component: false,
-            f: Box::new(f),
+            f: None,
         });
+        h.f = Some(Box::new(f));
     }
 
     fn use_local_terminal_events<F>(&mut self, f: F)
     where
         F: FnMut(TerminalEvent) + Send + 'static,
     {
-        self.use_hook(move || UseTerminalEventsImpl {
+        let h = self.use_hook(move || UseTerminalEventsImpl {
             events: None,
             component_location: Default::default(),
             in_component: true,
-            f: Box::new(f),
+            f: None,
         });
+        h.f = Some(Box::new(f));
     }
 }
 
@@ -138,7 +140,7 @@ struct UseTerminalEventsImpl {
     events: Option<TerminalEvents>,
     component_location: (Point<i16>, Size<u16>),
     in_component: bool,
-    f: Box<dyn FnMut(TerminalEvent) + Send + 'static>,
+    f: Option<Box<dyn FnMut(TerminalEvent) + Send + 'static>>,
 }
 
 impl Hook for UseTerminalEventsImpl {
@@ -156,20 +158,26 @@ impl Hook for UseTerminalEventsImpl {
                             let row = (event.row as i16 - location.y) as u16;
                             let column = (event.column as i16 - location.x) as u16;
                             if row < size.height && column < size.width {
-                                (self.f)(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
-                                    row,
-                                    column,
-                                    ..event
-                                }));
+                                if let Some(f) = &mut self.f {
+                                    f(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
+                                        row,
+                                        column,
+                                        ..event
+                                    }));
+                                }
                             }
                         }
                     }
                     TerminalEvent::Key(_) | TerminalEvent::Resize(..) => {
-                        (self.f)(event);
+                        if let Some(f) = &mut self.f {
+                            f(event);
+                        }
                     }
                 }
             } else {
-                (self.f)(event);
+                if let Some(f) = &mut self.f {
+                    f(event);
+                }
             }
         }
         Poll::Pending
