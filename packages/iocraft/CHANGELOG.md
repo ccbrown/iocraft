@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.4...iocraft-v0.7.5) - 2025-04-03
+
+### Fixed
+
+- allow use_terminal_events handlers to mutate
+
+### Other
+
+- lint fix
+
 ## [0.7.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.3...iocraft-v0.7.4) - 2025-03-27
 
 ### Fixed
