@@ -174,10 +174,8 @@ impl Hook for UseTerminalEventsImpl {
                         }
                     }
                 }
-            } else {
-                if let Some(f) = &mut self.f {
-                    f(event);
-                }
+            } else if let Some(f) = &mut self.f {
+                f(event);
             }
         }
         Poll::Pending
