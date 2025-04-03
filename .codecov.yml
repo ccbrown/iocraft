@@ -19,7 +19,9 @@ coverage:
     patch:
       default:
         informational: true
-    project: true
+    project:
+      default:
+        informational: true
 github_checks:
   annotations: true
 slack_app: true
