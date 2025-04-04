@@ -12,8 +12,8 @@ mod private {
     impl Sealed for crate::Hooks<'_, '_> {}
 }
 
-/// `UseFuture` is a hook that allows you to create a [`Handler`] which executes an asynchronous
-/// task that is bound to the lifetime of the component.
+/// `UseAsyncHandler` is a hook that allows you to create a [`Handler`] which executes an
+/// asynchronous task that is bound to the lifetime of the component.
 ///
 /// If the component is dropped, all executing tasks will also be dropped.
 pub trait UseAsyncHandler: private::Sealed {
