@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.5...iocraft-v0.7.6) - 2025-04-04
+
+### Other
+
+- fix UseAsyncHandler docs typo
+
 ## [0.7.5](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.4...iocraft-v0.7.5) - 2025-04-03
 
 ### Fixed
