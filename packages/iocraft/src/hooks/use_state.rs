@@ -2,6 +2,7 @@ use crate::{Hook, Hooks};
 use core::{
     cmp,
     fmt::{self, Debug, Display, Formatter},
+    hash::{Hash, Hasher},
     ops,
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -323,6 +324,12 @@ impl<T: ops::DivAssign<T> + Copy + Sync + Send + 'static> ops::DivAssign<T> for 
     }
 }
 
+impl<T: Hash + Sync + Send> Hash for State<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.read().hash(state)
+    }
+}
+
 impl<T: cmp::PartialEq<T> + Sync + Send + 'static> cmp::PartialEq<T> for State<T> {
     fn eq(&self, other: &T) -> bool {
         *self.read() == *other
@@ -374,19 +381,19 @@ mod tests {
 
         assert_eq!(state.to_string(), "43");
 
-        assert_eq!(state.clone() + 1, 44);
+        assert_eq!(state + 1, 44);
         state += 1;
         assert_eq!(state, 44);
 
-        assert_eq!(state.clone() - 1, 43);
+        assert_eq!(state - 1, 43);
         state -= 1;
         assert_eq!(state, 43);
 
-        assert_eq!(state.clone() * 2, 86);
+        assert_eq!(state * 2, 86);
         state *= 2;
         assert_eq!(state, 86);
 
-        assert_eq!(state.clone() / 2, 43);
+        assert_eq!(state / 2, 43);
         state /= 2;
         assert_eq!(state, 43);
 
@@ -396,7 +403,7 @@ mod tests {
 
         assert_eq!(*state.write(), 43);
 
-        let state_copy = state.clone();
+        let state_copy = state;
         assert_eq!(*state.read(), *state_copy.read());
     }
 
