@@ -35,7 +35,7 @@ mod private {
 /// }
 /// ```
 pub trait UseMemo: private::Sealed {
-    /// Returns a memoized value, recomputing it only if any of the dependency argument changes.
+    /// Returns a memoized value, recomputing it only if the dependency argument changes.
     ///
     /// Changes to the dependencies are detected solely via the [`Hash`](std::hash::Hash) trait, so this
     /// function will hash them but not store them.
