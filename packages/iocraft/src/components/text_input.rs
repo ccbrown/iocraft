@@ -35,7 +35,7 @@ trait UseSize<'a> {
 
 impl<'a> UseSize<'a> for Hooks<'a, '_> {
     fn use_size(&mut self) -> (u16, u16) {
-        self.use_hook(move || UseSizeImpl::default()).size
+        self.use_hook(UseSizeImpl::default).size
     }
 }
 
@@ -126,7 +126,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         + TEXT_DELIMITER;
 
     // Due to wrapping and cursor movement across lines, the cursor position when rendered may not be the same.
-    let text_width = size.0.max(1) as u16 - 1;
+    let text_width = size.0.max(1) - 1;
     let (display_cursor_row, display_cursor_col) = if wrap == TextWrap::NoWrap {
         (
             cursor_row.get(),
@@ -210,17 +210,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                             }
                         }
                         KeyCode::Up => {
-                            if multiline {
-                                if cursor_row.get() > 0 {
-                                    cursor_row.set(cursor_row.get() - 1);
-                                }
+                            if multiline && cursor_row.get() > 0 {
+                                cursor_row.set(cursor_row.get() - 1);
                             }
                         }
                         KeyCode::Down => {
-                            if multiline {
-                                if cursor_row.get() < value.lines().count() as u16 - 1 {
-                                    cursor_row.set(cursor_row.get() + 1);
-                                }
+                            if multiline && cursor_row.get() < value.lines().count() as u16 - 1 {
+                                cursor_row.set(cursor_row.get() + 1);
                             }
                         }
                         _ => {}
@@ -255,7 +251,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 
 fn display_cursor_row_col(delimited_value: &str, wrap: TextWrap, width: u16) -> (u16, u16) {
     let wrapped = Text::wrap(
-        &delimited_value,
+        delimited_value,
         wrap,
         None,
         AvailableSpace::Definite(width as _),
@@ -270,7 +266,7 @@ fn display_cursor_row_col(delimited_value: &str, wrap: TextWrap, width: u16) -> 
 
 fn row_cols(value: &str, row: u16) -> u16 {
     let row = value.lines().nth(row as usize).unwrap_or_default();
-    return row.width() as u16;
+    row.width() as u16
 }
 
 fn cursor_row_col(value: &str, offset: usize) -> (u16, u16) {
