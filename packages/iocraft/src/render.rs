@@ -682,6 +682,6 @@ mod tests {
         )
         .collect()
         .await;
-        assert!(canvases.len() > 0);
+        assert!(!canvases.is_empty());
     }
 }

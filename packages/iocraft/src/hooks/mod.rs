@@ -46,6 +46,8 @@ mod use_context;
 pub use use_context::*;
 mod use_future;
 pub use use_future::*;
+mod use_memo;
+pub use use_memo::*;
 mod use_output;
 pub use use_output::*;
 mod use_state;
