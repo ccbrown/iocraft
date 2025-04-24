@@ -24,4 +24,5 @@ coverage:
         informational: true
 github_checks:
   annotations: true
-slack_app: true
+ignore:
+  - 'packages/iocraft/src/unicode_linebreak'

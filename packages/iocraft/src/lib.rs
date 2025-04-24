@@ -102,8 +102,10 @@ mod hook;
 mod multimap;
 mod props;
 mod render;
+pub(crate) mod segmented_string;
 mod style;
 mod terminal;
+pub(crate) mod unicode_linebreak;
 
 mod flattened_exports {
     pub use crate::canvas::*;
