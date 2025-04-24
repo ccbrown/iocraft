@@ -1,8 +1,8 @@
 use crate::{
     components::text::{Text, TextAlign, TextDecoration, TextDrawer, TextWrap},
+    segmented_string::SegmentedString,
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
-use taffy::AvailableSpace;
 
 /// A section of text in a [`MixedText`] component.
 #[non_exhaustive]
@@ -97,7 +97,6 @@ pub struct MixedTextProps {
 /// ```
 #[derive(Default)]
 pub struct MixedText {
-    plaintext: String,
     contents: Vec<MixedTextContent>,
     wrap: TextWrap,
     align: TextAlign,
@@ -116,38 +115,56 @@ impl Component for MixedText {
         _hooks: Hooks,
         updater: &mut ComponentUpdater,
     ) {
-        // Join the text contents using a zero-width space for wrapping. We'll later split the text
-        // back into regions using those spaces.
-        self.plaintext = props
+        let plaintext = props
             .contents
             .iter()
-            .map(|content| content.text.replace("\u{200B}", ""))
+            .map(|content| content.text.as_str())
             .collect::<Vec<_>>()
-            .join("\u{200B}");
+            .join("");
         self.contents = props.contents.clone();
         self.wrap = props.wrap;
         self.align = props.align;
-        updater.set_measure_func(Text::measure_func(self.plaintext.clone(), props.wrap));
+        updater.set_measure_func(Text::measure_func(plaintext, props.wrap));
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
         let width = drawer.layout().size.width;
-        let content = Text::wrap(
-            &self.plaintext,
-            self.wrap,
-            None,
-            AvailableSpace::Definite(width),
-        );
-        let content = Text::align(content, self.align, width as _);
+        let segmented_string: SegmentedString = self
+            .contents
+            .iter()
+            .map(|content| content.text.as_str())
+            .collect();
+        let lines = segmented_string.wrap(match self.wrap {
+            TextWrap::Wrap => width as usize,
+            TextWrap::NoWrap => usize::MAX,
+        });
         let mut drawer = TextDrawer::new(drawer, self.align != TextAlign::Left);
-        for (text, content) in content.split('\u{200B}').zip(&self.contents) {
-            let style = CanvasTextStyle {
-                color: content.color,
-                weight: content.weight,
-                underline: content.decoration == TextDecoration::Underline,
-                italic: content.italic,
-            };
-            drawer.append_lines(text.lines(), style);
+        for mut line in lines {
+            if self.wrap == TextWrap::Wrap {
+                line.trim_end();
+            }
+            let padding = Text::alignment_padding(line.width, self.align, width as _);
+            if padding > 0 {
+                drawer.append_lines(
+                    [format!("{:width$}", "", width = padding).as_str()],
+                    CanvasTextStyle::default(),
+                );
+            }
+            let mut segments = line.segments.into_iter().peekable();
+            while let Some(segment) = segments.next() {
+                let content = &self.contents[segment.index];
+                let style = CanvasTextStyle {
+                    color: content.color,
+                    weight: content.weight,
+                    underline: content.decoration == TextDecoration::Underline,
+                    italic: content.italic,
+                };
+                if segments.peek().is_some() {
+                    drawer.append_lines([segment.text], style);
+                } else {
+                    drawer.append_lines([segment.text, ""], style);
+                }
+            }
         }
     }
 }

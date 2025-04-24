@@ -1,6 +1,6 @@
 use crate::{
-    render::MeasureFunc, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater,
-    Hooks, Props, Weight,
+    render::MeasureFunc, segmented_string::SegmentedString, CanvasTextStyle, Color, Component,
+    ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -100,7 +100,19 @@ impl Text {
         })
     }
 
-    pub(crate) fn wrap(
+    fn do_wrap(s: &str, width: usize) -> String {
+        let s: SegmentedString = s.into();
+        let mut ret = String::new();
+        for line in s.wrap(width) {
+            if !ret.is_empty() {
+                ret.push('\n');
+            }
+            ret.push_str(line.to_string().trim_end());
+        }
+        ret
+    }
+
+    fn wrap(
         content: &str,
         text_wrap: TextWrap,
         known_width: Option<f32>,
@@ -108,39 +120,40 @@ impl Text {
     ) -> String {
         match text_wrap {
             TextWrap::Wrap => match known_width {
-                Some(w) => textwrap::fill(content, w as usize),
+                Some(w) => Self::do_wrap(content, w as usize),
                 None => match available_width {
-                    AvailableSpace::Definite(w) => textwrap::fill(content, w as usize),
+                    AvailableSpace::Definite(w) => Self::do_wrap(content, w as usize),
                     AvailableSpace::MaxContent => content.to_string(),
-                    AvailableSpace::MinContent => textwrap::fill(content, 1),
+                    AvailableSpace::MinContent => Self::do_wrap(content, 1),
                 },
             },
             TextWrap::NoWrap => content.to_string(),
         }
     }
 
-    pub(crate) fn align(content: String, align: TextAlign, width: usize) -> String {
+    pub(crate) fn alignment_padding(line_width: usize, align: TextAlign, width: usize) -> usize {
+        match align {
+            TextAlign::Left => 0,
+            TextAlign::Right => width - line_width,
+            TextAlign::Center => width / 2 - line_width / 2,
+        }
+    }
+
+    fn align(content: String, align: TextAlign, width: usize) -> String {
         match align {
             TextAlign::Left => content,
-            TextAlign::Right => content
+            _ => content
                 .lines()
                 .map(|line| {
-                    let padding = width - line.width();
-                    format!("{:width$}{}", "", line, width = padding)
+                    format!(
+                        "{:width$}{}",
+                        "",
+                        line,
+                        width = Self::alignment_padding(line.width(), align, width)
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            TextAlign::Center => {
-                let padding = width / 2;
-                content
-                    .lines()
-                    .map(|line| {
-                        let padding = padding - line.width() / 2;
-                        format!("{:width$}{}", "", line, width = padding)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            }
         }
     }
 }
