@@ -5,11 +5,17 @@ use core::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+/// A `SegmentedString` is a string consisting of multiple segments, which don't have to be
+/// contiguous.
+///
+/// This is primarily used for wrapping text as the result will include information sufficient to
+/// map output regions to input data.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SegmentedString<'a> {
     segments: Vec<&'a str>,
 }
 
+/// A `SegmentedStringLine` is a line of text after wrapping.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SegmentedStringLine<'a> {
     pub segments: Vec<SegmentedStringLineSegment<'a>>,
@@ -22,6 +28,7 @@ impl<'a> SegmentedStringLine<'a> {
         self.segments.push(segment);
     }
 
+    /// Removes trailing whitespace from the line.
     pub fn trim_end(&mut self) {
         for i in (0..self.segments.len()).rev() {
             let segment = &mut self.segments[i];
@@ -46,6 +53,8 @@ impl Display for SegmentedStringLine<'_> {
     }
 }
 
+/// A `SegmentedStringLineSegment` is a segment making up part of a `SegmentedStringLine`, along
+/// with information about where it came from.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SegmentedStringLineSegment<'a> {
     pub text: &'a str,
@@ -119,6 +128,7 @@ impl<'a> SegmentedString<'a> {
         }
     }
 
+    /// Wraps the string into lines of a given width.
     pub fn wrap(&self, width: usize) -> Vec<SegmentedStringLine> {
         if self.segments.is_empty() {
             return vec![];

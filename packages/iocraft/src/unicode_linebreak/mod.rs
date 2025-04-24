@@ -87,7 +87,8 @@ pub fn split_at_safe(s: &str) -> (&str, &str) {
     let mut chars = s.char_indices().rev().scan(None, |state, (i, c)| {
         let cls = break_property(c as u32);
         let is_safe_pair = state
-            .replace(cls).is_some_and(|prev| is_safe_pair(cls, prev)); // Reversed since iterating backwards
+            .replace(cls)
+            .is_some_and(|prev| is_safe_pair(cls, prev)); // Reversed since iterating backwards
         Some((i, is_safe_pair))
     });
     chars.find(|&(_, is_safe_pair)| is_safe_pair);
