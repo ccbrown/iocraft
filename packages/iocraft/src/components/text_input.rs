@@ -65,7 +65,8 @@ impl TextBuffer {
         for line in lines {
             rows.push(TextBufferRow {
                 offset: line
-                    .segments.first()
+                    .segments
+                    .first()
                     .map(|s| s.offset)
                     .unwrap_or_else(|| rows.last().map_or(0, |r| r.offset)),
                 len: line.segments.first().map_or(0, |s| s.text.len()),
@@ -115,7 +116,8 @@ impl TextBuffer {
             self.text.len()
         } else {
             self.text[offset..]
-                .char_indices().nth(1)
+                .char_indices()
+                .nth(1)
                 .map_or(self.text.len(), |(i, _)| offset + i)
         }
     }
