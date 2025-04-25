@@ -191,19 +191,24 @@ impl<'a> SegmentedString<'a> {
                     current_line = SegmentedStringLine::default();
                 }
                 for segment in new_line_segments {
-                    let trailing_whitespace_width: usize = segment
+                    let trailing_whitespace_idx = segment
                         .text
-                        .chars()
+                        .char_indices()
                         .rev()
-                        .take_while(|c| c.is_whitespace())
-                        .map(|c| c.width().unwrap_or(0))
-                        .sum();
+                        .take_while(|(_, c)| c.is_whitespace())
+                        .last()
+                        .map(|(i, _)| i)
+                        .unwrap_or(segment.text.len());
+                    let trailing_whitespace_width = segment.text[trailing_whitespace_idx..].width();
 
                     if current_line.width + (segment.width - trailing_whitespace_width) > width {
                         // This segment is too wide, we need to forcefully break it
                         let mut w = 0;
                         let mut start_idx = 0;
                         for (idx, c) in segment.text.char_indices() {
+                            if idx >= trailing_whitespace_idx {
+                                break;
+                            }
                             let char_width = c.width().unwrap_or(0);
                             if w > 0 && w + char_width > width {
                                 // We have a full line
@@ -233,10 +238,18 @@ impl<'a> SegmentedString<'a> {
             }
         }
 
-        let has_trailing_newline = self.segments.last().is_some_and(|s| s.ends_with('\n'));
-        if has_trailing_newline {
-            // Add an empty line if the last segment ends with a newline
-            lines.push(SegmentedStringLine::default());
+        // Add another line if the last segment ends with a newline
+        {
+            let last_segment = &self.segments[self.segments.len() - 1];
+            let has_trailing_newline = last_segment.ends_with('\n');
+            if has_trailing_newline {
+                current_line.push_segment(self.new_segmented_string_line_segment(
+                    self.segments.len() - 1,
+                    last_segment.len(),
+                    last_segment.len(),
+                ));
+                lines.push(current_line);
+            }
         }
 
         for line in &mut lines {
@@ -311,6 +324,16 @@ mod tests {
                     }
                 ],
             );
+        }
+
+        {
+            let segmented_string = SegmentedString::from("foo bar");
+            let lines = segmented_string
+                .wrap(0)
+                .into_iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(lines, vec!["f", "o", "o ", "b", "a", "r"]);
         }
 
         {
