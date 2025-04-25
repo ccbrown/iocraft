@@ -298,7 +298,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         new_cursor_offset_hint.set(NewCursorOffsetHint::None);
     }
 
-    let (cursor_row, cursor_col) = buffer.row_column_for_offset(cursor_offset.get());
+    let (cursor_row, mut cursor_col) = buffer.row_column_for_offset(cursor_offset.get());
+
+    // If we're wrapping, don't let the cursor go past the visible area. No non-whitespace
+    // characters will extend that far.
+    if wrap == TextWrap::Wrap && cursor_col >= width && width > 0 {
+        cursor_col = width - 1;
+    }
 
     // Update the offset if the cursor is out of bounds.
     {
