@@ -1,12 +1,14 @@
 use crate::{
     component,
-    components::{text::TEXT_DELIMITER, Text, TextWrap, View},
+    components::{TextDrawer, TextWrap, View},
     element,
-    hooks::{UseState, UseTerminalEvents},
-    AnyElement, Color, ComponentDrawer, Handler, Hook, Hooks, KeyCode, KeyEvent, KeyEventKind,
-    Overflow, Position, Props, Size, TerminalEvent,
+    hooks::{UseMemo, UseState, UseTerminalEvents},
+    segmented_string::SegmentedString,
+    AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Handler,
+    Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, LayoutStyle, Overflow, Position, Props, Size,
+    TerminalEvent,
 };
-use taffy::AvailableSpace;
+use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// The props which can be passed to the [`TextInput`] component.
@@ -25,8 +27,11 @@ pub struct TextInputProps {
     /// The handler to invoke when the value changes.
     pub on_change: Handler<'static, String>,
 
-    /// If true, the input will fill 100% of its container and handle multiline input.
+    /// If true, the input will fill 100% of the height of its container and handle multiline input.
     pub multiline: bool,
+
+    /// The color to make the cursor. Defaults to gray.
+    pub cursor_color: Option<Color>,
 }
 
 trait UseSize<'a> {
@@ -36,6 +41,163 @@ trait UseSize<'a> {
 impl<'a> UseSize<'a> for Hooks<'a, '_> {
     fn use_size(&mut self) -> (u16, u16) {
         self.use_hook(UseSizeImpl::default).size
+    }
+}
+
+struct TextBufferRow {
+    offset: usize,
+    len: usize,
+    width: usize,
+}
+
+#[derive(Default)]
+struct TextBuffer {
+    text: String,
+    rows: Vec<TextBufferRow>,
+}
+
+impl TextBuffer {
+    fn new<S: Into<String>>(text: S, width: usize) -> Self {
+        let text = text.into();
+        let s = SegmentedString::from(text.as_str());
+        let lines = s.wrap(width);
+        let mut rows: Vec<TextBufferRow> = Vec::with_capacity(lines.len());
+        for line in lines {
+            rows.push(TextBufferRow {
+                offset: line
+                    .segments.first()
+                    .map(|s| s.offset)
+                    .unwrap_or_else(|| rows.last().map_or(0, |r| r.offset)),
+                len: line.segments.first().map_or(0, |s| s.text.len()),
+                width: line.width,
+            });
+        }
+        Self { rows, text }
+    }
+
+    fn row_column_for_offset(&self, offset: usize) -> (u16, u16) {
+        for (i, row) in self.rows.iter().enumerate() {
+            if offset >= row.offset {
+                let offset_in_row = offset - row.offset;
+                if offset_in_row <= row.len {
+                    let col = self.text[row.offset..offset].width() as u16;
+                    return (i as _, col);
+                }
+            }
+        }
+        (
+            self.rows.len() as _,
+            self.rows.last().map_or(0, |r| r.width as _),
+        )
+    }
+
+    fn lines(&self) -> impl Iterator<Item = &str> {
+        self.rows.iter().map(move |row| {
+            let start = row.offset;
+            let end = start + row.len;
+            &self.text[start..end]
+        })
+    }
+
+    fn left_of_offset(&self, offset: usize) -> usize {
+        if offset == 0 {
+            0
+        } else {
+            self.text[..offset]
+                .char_indices()
+                .last()
+                .map_or(0, |(i, _)| i)
+        }
+    }
+
+    fn right_of_offset(&self, offset: usize) -> usize {
+        if offset >= self.text.len() {
+            self.text.len()
+        } else {
+            self.text[offset..]
+                .char_indices().nth(1)
+                .map_or(self.text.len(), |(i, _)| offset + i)
+        }
+    }
+
+    fn offset_for_closest_column_in_row(&self, row: u16, col: u16) -> usize {
+        let row = &self.rows[row as usize];
+        let col = col as usize;
+        if col >= row.width {
+            row.offset + row.len
+        } else {
+            let mut width = 0;
+            for (idx, c) in self.text[row.offset..].char_indices() {
+                if width >= col {
+                    return row.offset + idx;
+                }
+                width += c.width().unwrap_or(0);
+            }
+            row.offset + row.len
+        }
+    }
+
+    fn above_offset(&self, offset: usize, col_preference: Option<u16>) -> usize {
+        let (row, col) = self.row_column_for_offset(offset);
+        if row == 0 {
+            return offset;
+        }
+        self.offset_for_closest_column_in_row(row - 1, col_preference.unwrap_or(col))
+    }
+
+    fn below_offset(&self, offset: usize, col_preference: Option<u16>) -> usize {
+        let (row, col) = self.row_column_for_offset(offset);
+        if row as usize + 1 >= self.rows.len() {
+            return offset;
+        }
+        self.offset_for_closest_column_in_row(row + 1, col_preference.unwrap_or(col))
+    }
+}
+
+#[derive(Default, Props)]
+struct TextBufferViewProps {
+    color: Option<Color>,
+    buffer: Arc<TextBuffer>,
+}
+
+#[derive(Default)]
+struct TextBufferView {
+    text_style: CanvasTextStyle,
+    buffer: Arc<TextBuffer>,
+}
+
+impl Component for TextBufferView {
+    type Props<'a> = TextBufferViewProps;
+
+    fn new(_props: &Self::Props<'_>) -> Self {
+        Self::default()
+    }
+
+    fn update(
+        &mut self,
+        props: &mut Self::Props<'_>,
+        _hooks: Hooks,
+        updater: &mut ComponentUpdater,
+    ) {
+        self.text_style = CanvasTextStyle {
+            color: props.color,
+            ..Default::default()
+        };
+        self.buffer = props.buffer.clone();
+        updater.set_layout_style(
+            LayoutStyle {
+                position: Position::Absolute,
+                top: 0.into(),
+                left: 0.into(),
+                ..Default::default()
+            }
+            .into(),
+        );
+    }
+
+    fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+        let mut drawer = TextDrawer::new(drawer, false);
+        drawer.append_lines(self.buffer.lines(), self.text_style);
     }
 }
 
@@ -53,7 +215,7 @@ impl Hook for UseSizeImpl {
 
 /// `TextInput` is a component that can receive text input from the user.
 ///
-/// It will fill the available space and display the current value. Typically, you will want to
+/// It will fill the available width and display the current value. Typically, you will want to
 /// render it in a [`View`](crate::components::View) component of the desired text field size.
 ///
 /// # Example
@@ -88,72 +250,72 @@ impl Hook for UseSizeImpl {
 /// ```
 #[component]
 pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyElement<'static>> {
-    let mut prev_value = hooks.use_state(|| "".to_string());
-    let mut cursor_row = hooks.use_state(|| 0);
-    let mut cursor_col = hooks.use_state(|| 0);
-    let mut new_cursor_offset_hint = hooks.use_state(|| NewCursorOffsetHint::None);
-    let mut offset_row = hooks.use_state(|| 0);
-    let mut offset_col = hooks.use_state(|| 0);
-    let size = hooks.use_size();
-    let has_focus = props.has_focus;
     let multiline = props.multiline;
+    let has_focus = props.has_focus;
     let wrap = if multiline {
         TextWrap::Wrap
     } else {
         TextWrap::NoWrap
     };
 
-    let mut cursor_offset = cursor_offset(&prev_value.read(), cursor_row.get(), cursor_col.get());
+    let mut prev_value = hooks.use_state(|| "".to_string());
+    let mut cursor_offset = hooks.use_state(|| 0usize);
+    let mut new_cursor_offset_hint = hooks.use_state(|| NewCursorOffsetHint::None);
+    let mut scroll_offset_row = hooks.use_state(|| 0u16);
+    let mut scroll_offset_col = hooks.use_state(|| 0u16);
+    let mut vertical_movement_col_preference = hooks.use_state(|| None);
+    let (width, height) = hooks.use_size();
+
+    let max_text_width = if wrap == TextWrap::Wrap {
+        // Reserve the last column for the cursor.
+        width.max(1) - 1
+    } else {
+        usize::MAX as _
+    };
+
+    let buffer = hooks.use_memo(
+        {
+            let text = props.value.clone();
+            move || Arc::new(TextBuffer::new(text, max_text_width as _))
+        },
+        (&props.value, max_text_width, multiline),
+    );
 
     // Update the cursor position if the value has changed.
     if props.value.as_str() != prev_value.read().as_str() {
-        cursor_offset = new_cursor_offset(
+        let new_cursor_offset = new_cursor_offset(
             &prev_value.read(),
-            cursor_offset,
+            cursor_offset.get(),
             &props.value,
             new_cursor_offset_hint.get(),
         );
-        let (row, col) = cursor_row_col(&props.value, cursor_offset);
-        cursor_row.set(row);
-        cursor_col.set(col);
+        if cursor_offset != new_cursor_offset {
+            cursor_offset.set(new_cursor_offset);
+        }
         prev_value.set(props.value.clone());
         new_cursor_offset_hint.set(NewCursorOffsetHint::None);
     }
 
-    let delimited_value = props.value[..cursor_offset].to_string()
-        + TEXT_DELIMITER
-        + &props.value[cursor_offset..]
-        + TEXT_DELIMITER;
+    let (cursor_row, cursor_col) = buffer.row_column_for_offset(cursor_offset.get());
 
-    // Due to wrapping and cursor movement across lines, the cursor position when rendered may not be the same.
-    let text_width = size.0.max(1) - 1;
-    let (display_cursor_row, display_cursor_col) = if wrap == TextWrap::NoWrap {
-        (
-            cursor_row.get(),
-            cursor_col
-                .get()
-                .min(row_cols(&props.value, cursor_row.get())),
-        )
-    } else {
-        display_cursor_row_col(&delimited_value, wrap, text_width)
-    };
-
-    // Update the offset if the displayed cursor is out of bounds.
+    // Update the offset if the cursor is out of bounds.
     {
-        if display_cursor_row >= offset_row.get() + size.1 {
-            offset_row.set(display_cursor_row - size.1 + 1);
-        } else if display_cursor_row < offset_row.get() {
-            offset_row.set(display_cursor_row);
+        if cursor_row >= scroll_offset_row.get() + height {
+            scroll_offset_row.set(cursor_row - height + 1);
+        } else if cursor_row < scroll_offset_row.get() {
+            scroll_offset_row.set(cursor_row as _);
         }
-        if display_cursor_col >= offset_col.get() + size.0 {
-            offset_col.set(display_cursor_col - size.0 + 1);
-        } else if display_cursor_col < offset_col.get() {
-            offset_col.set(display_cursor_col);
+        if cursor_col >= scroll_offset_col.get() + width {
+            scroll_offset_col.set(cursor_col - width + 1);
+        } else if cursor_col < scroll_offset_col.get() {
+            scroll_offset_col.set(cursor_col as _);
         }
     }
 
     hooks.use_terminal_events({
+        let buffer = buffer.clone();
         let mut value = props.value.clone();
+        let mut temp_cursor_offset = cursor_offset.get();
         let mut on_change = props.on_change.take();
         move |event| {
             if !has_focus {
@@ -164,62 +326,73 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 TerminalEvent::Key(KeyEvent { code, kind, .. })
                     if kind != KeyEventKind::Release =>
                 {
+                    let mut clear_vertical_movement_col_preference = true;
+
                     match code {
                         KeyCode::Char(c) => {
-                            value.insert(cursor_offset, c);
-                            cursor_offset += c.len_utf8();
+                            value.insert(temp_cursor_offset, c);
+                            temp_cursor_offset += c.len_utf8();
                             on_change(value.clone());
                         }
                         KeyCode::Backspace => {
-                            if cursor_offset > 0 {
-                                cursor_offset -=
-                                    value[..cursor_offset].chars().last().unwrap().len_utf8();
-                                value.remove(cursor_offset);
+                            if temp_cursor_offset > 0 {
+                                temp_cursor_offset -= value[..temp_cursor_offset]
+                                    .chars()
+                                    .last()
+                                    .unwrap()
+                                    .len_utf8();
+                                value.remove(temp_cursor_offset);
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Backspace);
                         }
                         KeyCode::Delete => {
-                            if cursor_offset < value.len() {
-                                value.remove(cursor_offset);
+                            if temp_cursor_offset < value.len() {
+                                value.remove(temp_cursor_offset);
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Deletion);
                         }
-                        KeyCode::Enter => {
-                            if multiline {
-                                value.insert(cursor_offset, '\n');
-                                cursor_offset += 1;
-                                on_change(value.clone());
-                            }
+                        KeyCode::Enter if multiline => {
+                            value.insert(temp_cursor_offset, '\n');
+                            temp_cursor_offset += 1;
+                            on_change(value.clone());
                         }
                         KeyCode::Left => {
-                            if cursor_col.get() > 0 {
-                                cursor_col.set(
-                                    cursor_col.get().min(row_cols(&value, cursor_row.get())) - 1,
-                                );
-                            }
+                            cursor_offset.set(buffer.left_of_offset(cursor_offset.get()));
                         }
                         KeyCode::Right => {
-                            let row = value
-                                .lines()
-                                .nth(cursor_row.get() as usize)
-                                .unwrap_or_default();
-                            if cursor_col.get() < row.width() as u16 {
-                                cursor_col.set(cursor_col.get() + 1);
-                            }
+                            cursor_offset.set(buffer.right_of_offset(cursor_offset.get()));
                         }
-                        KeyCode::Up => {
-                            if multiline && cursor_row.get() > 0 {
-                                cursor_row.set(cursor_row.get() - 1);
+                        KeyCode::Up if multiline => {
+                            clear_vertical_movement_col_preference = false;
+                            if vertical_movement_col_preference.get().is_none() {
+                                let (_, col) = buffer.row_column_for_offset(cursor_offset.get());
+                                vertical_movement_col_preference.set(Some(col));
                             }
+                            cursor_offset.set(buffer.above_offset(
+                                cursor_offset.get(),
+                                vertical_movement_col_preference.get(),
+                            ));
                         }
-                        KeyCode::Down => {
-                            if multiline && cursor_row.get() < value.lines().count() as u16 - 1 {
-                                cursor_row.set(cursor_row.get() + 1);
+                        KeyCode::Down if multiline => {
+                            clear_vertical_movement_col_preference = false;
+                            if vertical_movement_col_preference.get().is_none() {
+                                let (_, col) = buffer.row_column_for_offset(cursor_offset.get());
+                                vertical_movement_col_preference.set(Some(col));
                             }
+                            cursor_offset.set(buffer.below_offset(
+                                cursor_offset.get(),
+                                vertical_movement_col_preference.get(),
+                            ));
                         }
-                        _ => {}
+                        _ => {
+                            clear_vertical_movement_col_preference = false;
+                        }
+                    }
+
+                    if clear_vertical_movement_col_preference {
+                        vertical_movement_col_preference.set(None);
                     }
                 }
                 _ => {}
@@ -229,94 +402,21 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 
     element! {
         View(overflow: Overflow::Hidden, width: 100pct, height: if multiline { Size::Percent(100.0) } else { Size::Length(1) }, position: Position::Relative) {
-            View(position: Position::Absolute, top: -(offset_row.get() as i32), left: -(offset_col.get() as i32), width: 100pct) {
+            View(position: Position::Absolute, top: -(scroll_offset_row.get() as i32), left: -(scroll_offset_col.get() as i32)) {
                 #(if has_focus {
                     Some(element! {
-                        View(position: Position::Absolute, top: display_cursor_row, left: display_cursor_col, width: 1, height: 1, background_color: Color::Grey)
+                        View(position: Position::Absolute, top: cursor_row, left: cursor_col, width: 1, height: 1, background_color: props.cursor_color.unwrap_or(Color::Grey))
                     })
                 } else {
                     None
                 })
-                View(width: Size::Length(text_width as _)) {
-                    Text(
-                        content: &delimited_value,
-                        color: props.color,
-                        wrap,
-                    )
-                }
+                TextBufferView(
+                    buffer,
+                    color: props.color,
+                )
             }
         }
     }
-}
-
-fn display_cursor_row_col(delimited_value: &str, wrap: TextWrap, width: u16) -> (u16, u16) {
-    let wrapped = Text::wrap(
-        delimited_value,
-        wrap,
-        None,
-        AvailableSpace::Definite(width as _),
-    );
-    for (i, line) in wrapped.lines().enumerate() {
-        if let Some(offset) = line.find(TEXT_DELIMITER) {
-            return (i as u16, line[..offset].width() as u16);
-        }
-    }
-    unreachable!("there should always be a line containing the delimiter");
-}
-
-fn row_cols(value: &str, row: u16) -> u16 {
-    let row = value.lines().nth(row as usize).unwrap_or_default();
-    row.width() as u16
-}
-
-fn cursor_row_col(value: &str, offset: usize) -> (u16, u16) {
-    let mut row = 0;
-    let mut col = 0;
-    let mut current_offset = 0;
-
-    for c in value.chars() {
-        if current_offset >= offset {
-            break;
-        }
-        if c == '\n' {
-            row += 1;
-            col = 0;
-        } else {
-            col += c.width().unwrap_or(1) as u16;
-        }
-        current_offset += c.len_utf8();
-    }
-
-    (row, col)
-}
-
-fn cursor_offset(value: &str, row: u16, col: u16) -> usize {
-    if row == 0 && col == 0 {
-        return 0;
-    }
-
-    let mut offset = 0;
-    let mut current_row = 0;
-    let mut current_col = 0;
-
-    for c in value.chars() {
-        if c == '\n' {
-            if current_row == row {
-                break;
-            }
-            current_row += 1;
-            current_col = 0;
-        } else {
-            current_col += c.width().unwrap_or(1) as u16;
-        }
-
-        offset += c.len_utf8();
-        if current_row == row && current_col >= col {
-            break;
-        }
-    }
-
-    offset
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -400,6 +500,27 @@ mod tests {
         }
     }
 
+    #[component]
+    fn MyMultilineComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let mut value = hooks.use_state(|| "".to_string());
+
+        if value.read().contains("!") {
+            system.exit();
+        }
+
+        element! {
+            View(height: 3, width: 11, padding_left: 1) {
+                TextInput(
+                    has_focus: true,
+                    value: value.to_string(),
+                    on_change: move |new_value| value.set(new_value),
+                    multiline: true,
+                )
+            }
+        }
+    }
+
     #[apply(test!)]
     async fn test_text_input() {
         let actual = element!(MyComponent)
@@ -471,56 +592,78 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[test]
-    fn test_cursor_offset() {
-        assert_eq!(cursor_offset("foo", 0, 0), 0);
-        assert_eq!(cursor_offset("foo", 0, 1), 1);
-        assert_eq!(cursor_offset("foo", 0, 6), 3);
-        assert_eq!(cursor_offset("foo\nbar", 0, 6), 3);
-        assert_eq!(cursor_offset("日本", 0, 2), 3);
+    #[apply(test!)]
+    async fn test_text_input_multiline_newline() {
+        let actual = element!(MyMultilineComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('f'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('f'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('o'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('o'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('o'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('o'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('\n'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('\n'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('!'))),
+                ],
+            )))
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .await;
+        let expected = vec!["\n\n\n", "  \n\n\n", " foo\n ! \n\n"];
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_display_cursor_row_col() {
+    fn test_text_buffer_cursor_movement() {
+        let buffer = TextBuffer::new("foo\nbar baz", 10);
+        assert_eq!(buffer.left_of_offset(2), 1);
+        assert_eq!(buffer.right_of_offset(2), 3);
+        assert_eq!(buffer.above_offset(2, None), 2);
+        assert_eq!(buffer.below_offset(2, None), 6);
+        assert_eq!(buffer.below_offset(2, Some(5)), 9);
+        assert_eq!(buffer.above_offset(5, None), 1);
+        assert_eq!(buffer.below_offset(5, None), 5);
+        assert_eq!(buffer.above_offset(5, Some(6)), 3);
+    }
+
+    #[test]
+    fn test_test_buffer_row_column_for_offset() {
         assert_eq!(
-            display_cursor_row_col(
-                &format!("foo bar b{}azqux", TEXT_DELIMITER),
-                TextWrap::Wrap,
-                10
-            ),
+            TextBuffer::new("一二!", 10).row_column_for_offset(7),
+            (0, 5)
+        );
+
+        assert_eq!(
+            TextBuffer::new("foo bar bazqux", 10).row_column_for_offset(9),
             (1, 1)
         );
 
         assert_eq!(
-            display_cursor_row_col(&format!("1234512345{}", TEXT_DELIMITER), TextWrap::Wrap, 10),
+            TextBuffer::new("1234512345", 10).row_column_for_offset(10),
             (0, 10)
         );
 
         assert_eq!(
-            display_cursor_row_col(
-                &format!("12345123451{}", TEXT_DELIMITER),
-                TextWrap::Wrap,
-                10
-            ),
+            TextBuffer::new("12345123451", 10).row_column_for_offset(11),
             (1, 1)
         );
 
         assert_eq!(
-            display_cursor_row_col(
-                &format!("asd asd asd{}", TEXT_DELIMITER),
-                TextWrap::Wrap,
-                10
-            ),
+            TextBuffer::new("asd asd asd", 10).row_column_for_offset(11),
             (1, 3)
         );
 
         assert_eq!(
-            display_cursor_row_col(
-                &format!("12345123 5 {}", TEXT_DELIMITER),
-                TextWrap::Wrap,
-                10
-            ),
-            (1, 2)
+            TextBuffer::new("12345123 5 ", 10).row_column_for_offset(11),
+            (0, 11)
+        );
+
+        assert_eq!(
+            TextBuffer::new("asd\n", 10).row_column_for_offset(4),
+            (1, 0)
         );
     }
 
