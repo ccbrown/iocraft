@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.6...iocraft-v0.7.7) - 2025-04-25
+
+### Fixed
+
+- don't let multiline input scroll horizontally ([#96](https://github.com/ccbrown/iocraft/pull/96))
+
+### Other
+
+- rewrite text input, add cursor and multiline support ([#92](https://github.com/ccbrown/iocraft/pull/92))
+- implement text wrapping to be more robust for advanced cases ([#95](https://github.com/ccbrown/iocraft/pull/95))
+- fix doc typo
+- add UseMemo hook ([#93](https://github.com/ccbrown/iocraft/pull/93))
+
 ## [0.7.6](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.5...iocraft-v0.7.6) - 2025-04-04
 
 ### Other
