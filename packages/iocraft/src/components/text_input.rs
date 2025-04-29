@@ -44,6 +44,18 @@ impl<'a> UseSize<'a> for Hooks<'a, '_> {
     }
 }
 
+#[derive(Default)]
+struct UseSizeImpl {
+    size: (u16, u16),
+}
+
+impl Hook for UseSizeImpl {
+    fn pre_component_draw(&mut self, drawer: &mut ComponentDrawer) {
+        let s = drawer.size();
+        self.size = (s.width, s.height);
+    }
+}
+
 struct TextBufferRow {
     offset: usize,
     len: usize,
@@ -203,18 +215,6 @@ impl Component for TextBufferView {
     }
 }
 
-#[derive(Default)]
-struct UseSizeImpl {
-    size: (u16, u16),
-}
-
-impl Hook for UseSizeImpl {
-    fn pre_component_draw(&mut self, drawer: &mut ComponentDrawer) {
-        let s = drawer.size();
-        self.size = (s.width, s.height);
-    }
-}
-
 /// `TextInput` is a component that can receive text input from the user.
 ///
 /// It will fill the available width and display the current value. Typically, you will want to
@@ -280,7 +280,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
             let text = props.value.clone();
             move || Arc::new(TextBuffer::new(text, max_text_width as _))
         },
-        (&props.value, max_text_width, multiline),
+        (&props.value, max_text_width),
     );
 
     // Update the cursor position if the value has changed.

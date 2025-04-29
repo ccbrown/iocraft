@@ -42,6 +42,8 @@
 
 mod use_async_handler;
 pub use use_async_handler::*;
+mod use_const;
+pub use use_const::*;
 mod use_context;
 pub use use_context::*;
 mod use_future;
