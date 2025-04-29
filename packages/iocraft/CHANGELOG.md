@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.7...iocraft-v0.7.8) - 2025-04-29
+
+### Added
+
+- add fragment component and use_const hook ([#98](https://github.com/ccbrown/iocraft/pull/98))
+
 ## [0.7.7](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.6...iocraft-v0.7.7) - 2025-04-25
 
 ### Fixed
