@@ -20,19 +20,21 @@ struct Character {
 static mut HANDLES_VS16_INCORRECTLY: bool = false;
 static INIT_HANDLES_VS16_INCORRECTLY: Once = Once::new();
 
-// Apple's Terminal incorrectly only advances the cursor one space for emoji with VS16, so we need
-// to add whitespace to compensate.
+// Some terminals incorrectly only advance the cursor one space for emoji with VS16, so we need to
+// add whitespace to compensate.
 //
 // https://www.jeffquast.com/post/ucs-detect-test-results/
 // https://darrenburns.net/posts/emoji-in-the-terminal/
 //
-// Windows and iTerm2 seem to do the right thing. Hopefully one day we'll be able to remove this hack.
+// Windows and iTerm2 seem to do the right thing. We add exceptions below for the ones that don't.
+// Hopefully one day we'll be able to remove this hack.
 pub(crate) fn handles_vs16_incorrectly() -> bool {
     unsafe {
         INIT_HANDLES_VS16_INCORRECTLY.call_once(|| {
             HANDLES_VS16_INCORRECTLY = env::var("TERM_PROGRAM")
                 .map(|s| s == "Apple_Terminal")
-                .unwrap_or(false);
+                .unwrap_or(false)
+                || env::var("GNOME_TERMINAL_SCREEN").is_ok_and(|v| !v.is_empty())
         });
         HANDLES_VS16_INCORRECTLY
     }
