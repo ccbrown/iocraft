@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.8...iocraft-v0.7.9) - 2025-05-07
+
+### Fixed
+
+- add gnome to list of bad vs16 terminals ([#101](https://github.com/ccbrown/iocraft/pull/101))
+
 ## [0.7.8](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.7...iocraft-v0.7.8) - 2025-04-29
 
 ### Added
