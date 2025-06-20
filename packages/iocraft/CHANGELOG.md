@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.10](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.9...iocraft-v0.7.10) - 2025-06-20
+
+### Fixed
+
+- TextInput initial value scroll offset ([#105](https://github.com/ccbrown/iocraft/pull/105))
+
 ## [0.7.9](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.8...iocraft-v0.7.9) - 2025-05-07
 
 ### Fixed
