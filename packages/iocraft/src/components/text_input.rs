@@ -307,7 +307,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     }
 
     // Update the offset if the cursor is out of bounds.
-    {
+    if width > 0 && height > 0 {
         if cursor_row >= scroll_offset_row.get() + height {
             scroll_offset_row.set(cursor_row - height + 1);
         } else if cursor_row < scroll_offset_row.get() {
@@ -488,10 +488,15 @@ mod tests {
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
+    #[derive(Default, Props)]
+    struct MyComponentProps {
+        initial_value: String,
+    }
+
     #[component]
-    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn MyComponent(mut hooks: Hooks, props: &MyComponentProps) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let mut value = hooks.use_state(|| "".to_string());
+        let mut value = hooks.use_state(|| props.initial_value.clone());
 
         if value.read().contains("!") {
             system.exit();
@@ -547,6 +552,24 @@ mod tests {
             .collect::<Vec<_>>()
             .await;
         let expected = vec!["\n", "  \n", " foo! \n"];
+        assert_eq!(actual, expected);
+    }
+
+    #[apply(test!)]
+    async fn test_text_input_initial_value() {
+        let actual = element! {
+            MyComponent(initial_value: "foo")
+        }
+        .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+            vec![
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Release, KeyCode::Char('!'))),
+            ],
+        )))
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .await;
+        let expected = vec![" foo \n", " foo! \n"];
         assert_eq!(actual, expected);
     }
 
