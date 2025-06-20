@@ -551,7 +551,7 @@ mod tests {
             .map(|c| c.to_string())
             .collect::<Vec<_>>()
             .await;
-        let expected = vec!["\n", "  \n", " foo! \n"];
+        let expected = vec!["  \n", " foo! \n"];
         assert_eq!(actual, expected);
     }
 
@@ -599,7 +599,7 @@ mod tests {
             .map(|c| c.to_string())
             .collect::<Vec<_>>()
             .await;
-        let expected = vec!["\n", "  \n", " xxxxxxxx! \n"];
+        let expected = vec!["  \n", " xxxxxxxx! \n"];
         assert_eq!(actual, expected);
     }
 
@@ -619,7 +619,7 @@ mod tests {
             .map(|c| c.to_string())
             .collect::<Vec<_>>()
             .await;
-        let expected = vec!["\n", "  \n", " 一二! \n"];
+        let expected = vec!["  \n", " 一二! \n"];
         assert_eq!(actual, expected);
     }
 
@@ -643,7 +643,7 @@ mod tests {
             .map(|c| c.to_string())
             .collect::<Vec<_>>()
             .await;
-        let expected = vec!["\n\n\n", "  \n\n\n", " foo\n ! \n\n"];
+        let expected = vec!["  \n\n\n", " foo\n ! \n\n"];
         assert_eq!(actual, expected);
     }
 
