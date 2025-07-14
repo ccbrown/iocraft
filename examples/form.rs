@@ -65,8 +65,6 @@ fn Form<'a>(props: &mut FormProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement
                 }
                 KeyCode::BackTab => focus.set((focus + 3) % 4),
                 KeyCode::Tab => focus.set((focus + 1) % 4),
-                KeyCode::Up if focus != 2 => focus.set((focus + 3) % 4),
-                KeyCode::Down if focus != 2 => focus.set((focus + 1) % 4),
                 _ => {}
             }
         }
