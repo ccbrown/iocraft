@@ -138,3 +138,5 @@ pub mod prelude {
 
 // So we can use our own macros.
 extern crate self as iocraft;
+
+pub use crossterm;

@@ -1,6 +1,9 @@
 use chrono::Local;
-use iocraft::prelude::*;
-use std::time::Duration;
+use iocraft::{
+    crossterm::{queue, terminal},
+    prelude::*,
+};
+use std::{backtrace::Backtrace, time::Duration};
 
 #[component]
 fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
@@ -60,5 +63,17 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
 }
 
 fn main() {
+    // try to add some panic!() somewhere in the component for test
+    // when the panic is triggered, we will restore the original terminal
+    // so that the panic info and backtrace can be correctly shown
+    std::panic::set_hook(Box::new(|info| {
+        let mut dest = std::io::stdout();
+        queue!(dest, terminal::LeaveAlternateScreen).unwrap();
+        terminal::disable_raw_mode().unwrap();
+        let bt = Backtrace::capture();
+        println!("panic info: {:?}", info);
+        println!("{}", bt);
+    }));
+
     smol::block_on(element!(Example).fullscreen()).unwrap();
 }
