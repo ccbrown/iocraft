@@ -1,9 +1,10 @@
 use chrono::Local;
-use iocraft::{
-    crossterm::{queue, terminal},
-    prelude::*,
-};
-use std::{backtrace::Backtrace, time::Duration};
+use iocraft::prelude::*;
+use std::{backtrace::Backtrace, cell::Cell, time::Duration};
+
+thread_local! {
+    static BACKTRACE: Cell<Option<Backtrace>> = const { Cell::new(None) };
+}
 
 #[component]
 fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
@@ -24,6 +25,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             TerminalEvent::Key(KeyEvent { code, kind, .. }) if kind != KeyEventKind::Release => {
                 match code {
                     KeyCode::Char('q') => should_exit.set(true),
+                    KeyCode::Char('p') => panic!("oh, no!"),
                     _ => {}
                 }
             }
@@ -57,7 +59,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             ) {
                 Text(content: format!("Current Time: {}", time.get().format("%r")))
             }
-            Text(content: "Press \"q\" to quit.")
+            Text(content: "Press \"q\" to quit. \"p\" to panic")
         }
     }
 }
@@ -66,14 +68,17 @@ fn main() {
     // try to add some panic!() somewhere in the component for test
     // when the panic is triggered, we will restore the original terminal
     // so that the panic info and backtrace can be correctly shown
-    std::panic::set_hook(Box::new(|info| {
-        let mut dest = std::io::stdout();
-        queue!(dest, terminal::LeaveAlternateScreen).unwrap();
-        terminal::disable_raw_mode().unwrap();
-        let bt = Backtrace::capture();
-        println!("panic info: {:?}", info);
-        println!("{}", bt);
+    std::panic::set_hook(Box::new(|_| {
+        let trace = Backtrace::capture();
+        BACKTRACE.with(move |b| b.set(Some(trace)));
     }));
 
-    smol::block_on(element!(Example).fullscreen()).unwrap();
+    if std::panic::catch_unwind(|| {
+        smol::block_on(element!(Example).fullscreen()).unwrap();
+    })
+    .is_err()
+    {
+        let b = BACKTRACE.with(|b| b.take()).unwrap();
+        println!("panic:\n\n{b}");
+    }
 }
