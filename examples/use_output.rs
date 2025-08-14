@@ -10,6 +10,10 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             smol::Timer::after(Duration::from_secs(1)).await;
             stdout.println("Hello from iocraft to stdout!");
             stderr.println("  And hello to stderr too!");
+            stdout.print("Using print: ");
+            stdout.print("part1 ");
+            stdout.print("part2 ");
+            stdout.println("done!");
         }
     });
 
