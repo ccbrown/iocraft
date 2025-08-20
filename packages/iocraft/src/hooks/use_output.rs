@@ -3,6 +3,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+use crossterm::{cursor, queue};
 use std::sync::{Arc, Mutex};
 
 mod private {
@@ -25,24 +26,20 @@ mod private {
 ///     let (stdout, stderr) = hooks.use_output();
 ///
 ///     hooks.use_future(async move {
-///         loop {
+///         stdout.println("Hello from iocraft to stdout!");
+///         stderr.println("  And hello to stderr too!");
+///
+///         stdout.print("Working...");
+///         for _ in 0..5 {
 ///             smol::Timer::after(Duration::from_secs(1)).await;
-///             stdout.println("Hello from iocraft to stdout!");
-///             stderr.println("  And hello to stderr too!");
-///
-///             // Using print without newline
-///             stdout.print("Progress: ");
-///             stdout.println("50%");
-///
-///             // Using print for stderr
-///             stderr.print("Error: ");
-///             stderr.println("Something went wrong");
+///             stdout.print(".");
 ///         }
+///         stdout.println("\nDone!");
 ///     });
 ///
 ///     element! {
 ///         View(border_style: BorderStyle::Round, border_color: Color::Green) {
-///             Text(content: "Hello, use_stdio!")
+///             Text(content: "Hello, use_output!")
 ///         }
 ///     }
 /// }
@@ -70,6 +67,7 @@ enum Message {
 struct UseOutputState {
     queue: Vec<Message>,
     waker: Option<Waker>,
+    appended_newline: Option<u16>,
 }
 
 impl UseOutputState {
@@ -77,8 +75,15 @@ impl UseOutputState {
         if self.queue.is_empty() {
             return;
         }
+
         updater.clear_terminal_output();
+        if let Some(col) = self.appended_newline {
+            let _ = queue!(std::io::stdout(), cursor::MoveUp(1), cursor::MoveRight(col));
+        }
+
         let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
+        let mut needs_extra_newline = self.appended_newline.is_some();
+
         for msg in self.queue.drain(..) {
             match msg {
                 Message::Stdout(msg) => {
@@ -87,9 +92,13 @@ impl UseOutputState {
                     } else {
                         println!("{}", msg)
                     }
+                    needs_extra_newline = false;
                 }
                 Message::StdoutNoNewline(msg) => {
-                    print!("{}", msg)
+                    print!("{}", msg);
+                    if !msg.is_empty() {
+                        needs_extra_newline = !msg.ends_with('\n');
+                    }
                 }
                 Message::Stderr(msg) => {
                     if needs_carriage_returns {
@@ -97,11 +106,30 @@ impl UseOutputState {
                     } else {
                         eprintln!("{}", msg)
                     }
+                    needs_extra_newline = false;
                 }
                 Message::StderrNoNewline(msg) => {
-                    eprint!("{}", msg)
+                    eprint!("{}", msg);
+                    if !msg.is_empty() {
+                        needs_extra_newline = !msg.ends_with('\n');
+                    }
                 }
             }
+        }
+
+        if needs_extra_newline {
+            if let Ok(pos) = cursor::position() {
+                self.appended_newline = Some(pos.0);
+                if needs_carriage_returns {
+                    print!("\r\n");
+                } else {
+                    println!();
+                }
+            } else {
+                self.appended_newline = None;
+            }
+        } else {
+            self.appended_newline = None;
         }
     }
 }
