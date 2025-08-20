@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.11](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.10...iocraft-v0.7.11) - 2025-08-20
+
+### Added
+
+- automatically append newline as needed for use_output ([#124](https://github.com/ccbrown/iocraft/pull/124))
+- add `print` methods for stdout without newlines ([#122](https://github.com/ccbrown/iocraft/pull/122))
+
 ## [0.7.10](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.9...iocraft-v0.7.10) - 2025-06-20
 
 ### Fixed
