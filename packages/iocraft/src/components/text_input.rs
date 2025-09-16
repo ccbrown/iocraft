@@ -5,8 +5,8 @@ use crate::{
     hooks::{UseMemo, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Handler,
-    Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, LayoutStyle, Overflow, Position, Props, Size,
-    TerminalEvent,
+    Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
+    Props, Size, TerminalEvent,
 };
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -331,8 +331,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
             }
 
             match event {
-                TerminalEvent::Key(KeyEvent { code, kind, .. })
-                    if kind != KeyEventKind::Release =>
+                TerminalEvent::Key(KeyEvent {
+                    code,
+                    kind,
+                    modifiers,
+                    ..
+                }) if kind != KeyEventKind::Release
+                    && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                 {
                     let mut clear_vertical_movement_col_preference = true;
 
