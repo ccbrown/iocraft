@@ -112,10 +112,14 @@ impl Stream for TerminalEvents {
 }
 
 trait TerminalImpl: Write + Send {
-    fn size(&self) -> Option<(u16, u16)>;
+    fn refresh_size(&mut self) {}
+    fn size(&self) -> Option<(u16, u16)> {
+        None
+    }
+
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
-    fn write_canvas(&mut self, canvas: &Canvas, terminal_height: Option<u16>) -> io::Result<()>;
+    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
 }
 
@@ -126,7 +130,7 @@ struct StdTerminal {
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
     prev_canvas_height: u16,
-    prev_terminal_height: Option<u16>,
+    size: Option<(u16, u16)>,
 }
 
 impl Write for StdTerminal {
@@ -140,8 +144,12 @@ impl Write for StdTerminal {
 }
 
 impl TerminalImpl for StdTerminal {
+    fn refresh_size(&mut self) {
+        self.size = terminal::size().ok()
+    }
+
     fn size(&self) -> Option<(u16, u16)> {
-        terminal::size().ok()
+        self.size
     }
 
     fn is_raw_mode_enabled(&self) -> bool {
@@ -154,8 +162,8 @@ impl TerminalImpl for StdTerminal {
         }
 
         if !self.fullscreen {
-            if let Some(prev_terminal_height) = self.prev_terminal_height {
-                if self.prev_canvas_height >= prev_terminal_height {
+            if let Some(size) = self.size {
+                if self.prev_canvas_height >= size.1 {
                     // We have to clear the entire terminal to avoid leaving artifacts.
                     // See: https://github.com/ccbrown/iocraft/issues/118
                     return queue!(
@@ -175,9 +183,8 @@ impl TerminalImpl for StdTerminal {
         )
     }
 
-    fn write_canvas(&mut self, canvas: &Canvas, terminal_height: Option<u16>) -> io::Result<()> {
+    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
         self.prev_canvas_height = canvas.height() as _;
-        self.prev_terminal_height = terminal_height;
         if self.fullscreen {
             canvas.write_ansi_without_final_newline(self)?;
         } else {
@@ -234,7 +241,7 @@ impl StdTerminal {
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_height: 0,
-            prev_terminal_height: None,
+            size: None,
         })
     }
 
@@ -347,10 +354,6 @@ impl Write for MockTerminal {
 }
 
 impl TerminalImpl for MockTerminal {
-    fn size(&self) -> Option<(u16, u16)> {
-        None
-    }
-
     fn is_raw_mode_enabled(&self) -> bool {
         false
     }
@@ -359,7 +362,7 @@ impl TerminalImpl for MockTerminal {
         Ok(())
     }
 
-    fn write_canvas(&mut self, canvas: &Canvas, _terminal_height: Option<u16>) -> io::Result<()> {
+    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
         let _ = self.output.unbounded_send(canvas.clone());
         Ok(())
     }
@@ -405,6 +408,10 @@ impl Terminal {
         self.inner.is_raw_mode_enabled()
     }
 
+    pub fn refresh_size(&mut self) {
+        self.inner.refresh_size()
+    }
+
     pub fn size(&self) -> Option<(u16, u16)> {
         self.inner.size()
     }
@@ -413,12 +420,8 @@ impl Terminal {
         self.inner.clear_canvas()
     }
 
-    pub fn write_canvas(
-        &mut self,
-        canvas: &Canvas,
-        terminal_height: Option<u16>,
-    ) -> io::Result<()> {
-        self.inner.write_canvas(canvas, terminal_height)
+    pub fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+        self.inner.write_canvas(canvas)
     }
 
     pub fn received_ctrl_c(&self) -> bool {
@@ -494,6 +497,6 @@ mod tests {
         assert!(!terminal.received_ctrl_c());
         assert!(!terminal.is_raw_mode_enabled());
         let canvas = Canvas::new(10, 1);
-        terminal.write_canvas(&canvas, None).unwrap();
+        terminal.write_canvas(&canvas).unwrap();
     }
 }
