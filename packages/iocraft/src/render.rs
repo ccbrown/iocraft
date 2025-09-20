@@ -459,9 +459,10 @@ impl<'a> Tree<'a> {
     async fn terminal_render_loop(&mut self, mut term: Terminal) -> io::Result<()> {
         let mut prev_canvas: Option<Canvas> = None;
         loop {
-            let width = term.width().map(|w| w as usize);
+            term.refresh_size();
+            let terminal_size = term.size();
             execute!(term, terminal::BeginSynchronizedUpdate,)?;
-            let output = self.render(width, Some(&mut term));
+            let output = self.render(terminal_size.map(|(w, _)| w as usize), Some(&mut term));
             if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas) {
                 if !output.did_clear_terminal_output {
                     term.clear_canvas()?;

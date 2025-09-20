@@ -112,7 +112,11 @@ impl Stream for TerminalEvents {
 }
 
 trait TerminalImpl: Write + Send {
-    fn width(&self) -> Option<u16>;
+    fn refresh_size(&mut self) {}
+    fn size(&self) -> Option<(u16, u16)> {
+        None
+    }
+
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
@@ -126,6 +130,7 @@ struct StdTerminal {
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
     prev_canvas_height: u16,
+    size: Option<(u16, u16)>,
 }
 
 impl Write for StdTerminal {
@@ -139,8 +144,12 @@ impl Write for StdTerminal {
 }
 
 impl TerminalImpl for StdTerminal {
-    fn width(&self) -> Option<u16> {
-        terminal::size().ok().map(|(w, _)| w)
+    fn refresh_size(&mut self) {
+        self.size = terminal::size().ok()
+    }
+
+    fn size(&self) -> Option<(u16, u16)> {
+        self.size
     }
 
     fn is_raw_mode_enabled(&self) -> bool {
@@ -151,6 +160,21 @@ impl TerminalImpl for StdTerminal {
         if self.prev_canvas_height == 0 {
             return Ok(());
         }
+
+        if !self.fullscreen {
+            if let Some(size) = self.size {
+                if self.prev_canvas_height >= size.1 {
+                    // We have to clear the entire terminal to avoid leaving artifacts.
+                    // See: https://github.com/ccbrown/iocraft/issues/118
+                    return queue!(
+                        self.dest,
+                        terminal::Clear(terminal::ClearType::Purge),
+                        cursor::MoveTo(0, 0),
+                    );
+                }
+            }
+        }
+
         let lines_to_rewind = self.prev_canvas_height - if self.fullscreen { 1 } else { 0 };
         queue!(
             self.dest,
@@ -217,6 +241,7 @@ impl StdTerminal {
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_height: 0,
+            size: None,
         })
     }
 
@@ -329,10 +354,6 @@ impl Write for MockTerminal {
 }
 
 impl TerminalImpl for MockTerminal {
-    fn width(&self) -> Option<u16> {
-        None
-    }
-
     fn is_raw_mode_enabled(&self) -> bool {
         false
     }
@@ -387,8 +408,12 @@ impl Terminal {
         self.inner.is_raw_mode_enabled()
     }
 
-    pub fn width(&self) -> Option<u16> {
-        self.inner.width()
+    pub fn refresh_size(&mut self) {
+        self.inner.refresh_size()
+    }
+
+    pub fn size(&self) -> Option<(u16, u16)> {
+        self.inner.size()
     }
 
     pub fn clear_canvas(&mut self) -> io::Result<()> {
