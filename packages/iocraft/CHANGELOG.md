@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.12](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.11...iocraft-v0.7.12) - 2025-09-20
+
+### Fixed
+
+- purge terminal on vertical overflow ([#134](https://github.com/ccbrown/iocraft/pull/134))
+- make TextInput ignore modified keys ([#132](https://github.com/ccbrown/iocraft/pull/132))
+
 ## [0.7.11](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.10...iocraft-v0.7.11) - 2025-08-20
 
 ### Added
