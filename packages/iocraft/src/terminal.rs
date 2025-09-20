@@ -112,10 +112,10 @@ impl Stream for TerminalEvents {
 }
 
 trait TerminalImpl: Write + Send {
-    fn width(&self) -> Option<u16>;
+    fn size(&self) -> Option<(u16, u16)>;
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
-    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
+    fn write_canvas(&mut self, canvas: &Canvas, terminal_height: Option<u16>) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
 }
 
@@ -126,6 +126,7 @@ struct StdTerminal {
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
     prev_canvas_height: u16,
+    prev_terminal_height: Option<u16>,
 }
 
 impl Write for StdTerminal {
@@ -139,8 +140,8 @@ impl Write for StdTerminal {
 }
 
 impl TerminalImpl for StdTerminal {
-    fn width(&self) -> Option<u16> {
-        terminal::size().ok().map(|(w, _)| w)
+    fn size(&self) -> Option<(u16, u16)> {
+        terminal::size().ok()
     }
 
     fn is_raw_mode_enabled(&self) -> bool {
@@ -151,6 +152,21 @@ impl TerminalImpl for StdTerminal {
         if self.prev_canvas_height == 0 {
             return Ok(());
         }
+
+        if !self.fullscreen {
+            if let Some(prev_terminal_height) = self.prev_terminal_height {
+                if self.prev_canvas_height >= prev_terminal_height {
+                    // We have to clear the entire terminal to avoid leaving artifacts.
+                    // See: https://github.com/ccbrown/iocraft/issues/118
+                    return queue!(
+                        self.dest,
+                        terminal::Clear(terminal::ClearType::Purge),
+                        cursor::MoveTo(0, 0),
+                    );
+                }
+            }
+        }
+
         let lines_to_rewind = self.prev_canvas_height - if self.fullscreen { 1 } else { 0 };
         queue!(
             self.dest,
@@ -159,8 +175,9 @@ impl TerminalImpl for StdTerminal {
         )
     }
 
-    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+    fn write_canvas(&mut self, canvas: &Canvas, terminal_height: Option<u16>) -> io::Result<()> {
         self.prev_canvas_height = canvas.height() as _;
+        self.prev_terminal_height = terminal_height;
         if self.fullscreen {
             canvas.write_ansi_without_final_newline(self)?;
         } else {
@@ -217,6 +234,7 @@ impl StdTerminal {
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_height: 0,
+            prev_terminal_height: None,
         })
     }
 
@@ -329,7 +347,7 @@ impl Write for MockTerminal {
 }
 
 impl TerminalImpl for MockTerminal {
-    fn width(&self) -> Option<u16> {
+    fn size(&self) -> Option<(u16, u16)> {
         None
     }
 
@@ -341,7 +359,7 @@ impl TerminalImpl for MockTerminal {
         Ok(())
     }
 
-    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+    fn write_canvas(&mut self, canvas: &Canvas, _terminal_height: Option<u16>) -> io::Result<()> {
         let _ = self.output.unbounded_send(canvas.clone());
         Ok(())
     }
@@ -387,16 +405,20 @@ impl Terminal {
         self.inner.is_raw_mode_enabled()
     }
 
-    pub fn width(&self) -> Option<u16> {
-        self.inner.width()
+    pub fn size(&self) -> Option<(u16, u16)> {
+        self.inner.size()
     }
 
     pub fn clear_canvas(&mut self) -> io::Result<()> {
         self.inner.clear_canvas()
     }
 
-    pub fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
-        self.inner.write_canvas(canvas)
+    pub fn write_canvas(
+        &mut self,
+        canvas: &Canvas,
+        terminal_height: Option<u16>,
+    ) -> io::Result<()> {
+        self.inner.write_canvas(canvas, terminal_height)
     }
 
     pub fn received_ctrl_c(&self) -> bool {
@@ -472,6 +494,6 @@ mod tests {
         assert!(!terminal.received_ctrl_c());
         assert!(!terminal.is_raw_mode_enabled());
         let canvas = Canvas::new(10, 1);
-        terminal.write_canvas(&canvas).unwrap();
+        terminal.write_canvas(&canvas, None).unwrap();
     }
 }
