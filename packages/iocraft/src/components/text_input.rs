@@ -2,7 +2,7 @@ use crate::{
     component,
     components::{TextDrawer, TextWrap, View},
     element,
-    hooks::{UseMemo, UseState, UseTerminalEvents},
+    hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Handler,
     Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
@@ -10,6 +10,68 @@ use crate::{
 };
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+/// A handle which can be used for imperative control of a [`TextInput`] component.
+///
+/// # Example
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # #[component]
+/// # fn FormField(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+/// # let mut value = hooks.use_state(|| "".to_string());
+/// # let initial_cursor_position = 0;
+/// let mut handle = hooks.use_ref_default::<TextInputHandle>();
+///
+/// hooks.use_effect(
+///     move || handle.write().set_cursor_offset(initial_cursor_position),
+///     (),
+/// );
+///
+/// element! {
+///     View(
+///         background_color: Color::DarkGrey,
+///         width: 30,
+///     ) {
+///         TextInput(
+///             has_focus: true,
+///             value: value.to_string(),
+///             on_change: move |new_value| value.set(new_value),
+///             handle,
+///         )
+///     }
+/// }
+/// # }
+/// ```
+#[derive(Default)]
+pub struct TextInputHandle {
+    inner: Option<TextInputHandleInner>,
+}
+
+struct TextInputHandleInner {
+    cursor_offset: State<usize>,
+    requested_cursor_offset: State<Option<usize>>,
+}
+
+impl TextInputHandle {
+    /// Sets the cursor position to the specified offset.
+    ///
+    /// The offset is in bytes, not characters.
+    pub fn set_cursor_offset(&mut self, offset: usize) {
+        if let Some(inner) = &mut self.inner {
+            inner.requested_cursor_offset.set(Some(offset));
+        }
+    }
+
+    /// Gets the current cursor offset.
+    ///
+    /// The offset is in bytes, not characters.
+    pub fn cursor_offset(&self) -> usize {
+        self.inner
+            .as_ref()
+            .map_or(0, |inner| inner.cursor_offset.get())
+    }
+}
 
 /// The props which can be passed to the [`TextInput`] component.
 #[non_exhaustive]
@@ -32,6 +94,9 @@ pub struct TextInputProps {
 
     /// The color to make the cursor. Defaults to gray.
     pub cursor_color: Option<Color>,
+
+    /// An optional handle which can be used for imperative control of the input.
+    pub handle: Option<Ref<TextInputHandle>>,
 }
 
 trait UseSize<'a> {
@@ -262,11 +327,21 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 
     let mut prev_value = hooks.use_state(|| "".to_string());
     let mut cursor_offset = hooks.use_state(|| 0usize);
+    let mut requested_cursor_offset = hooks.use_state(|| None);
     let mut new_cursor_offset_hint = hooks.use_state(|| NewCursorOffsetHint::None);
     let mut scroll_offset_row = hooks.use_state(|| 0u16);
     let mut scroll_offset_col = hooks.use_state(|| 0u16);
     let mut vertical_movement_col_preference = hooks.use_state(|| None);
     let (width, height) = hooks.use_size();
+
+    if let Some(handle_ref) = props.handle.as_mut() {
+        handle_ref.set(TextInputHandle {
+            inner: Some(TextInputHandleInner {
+                cursor_offset,
+                requested_cursor_offset,
+            }),
+        });
+    }
 
     let max_text_width = if wrap == TextWrap::Wrap {
         // Reserve the last column for the cursor.
@@ -296,6 +371,14 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         }
         prev_value.set(props.value.clone());
         new_cursor_offset_hint.set(NewCursorOffsetHint::None);
+    }
+
+    // Update the cursor position if the user requested it.
+    if let Some(requested) = requested_cursor_offset.get() {
+        if cursor_offset != requested {
+            cursor_offset.set(requested.min(props.value.len()));
+        }
+        requested_cursor_offset.set(None);
     }
 
     let (cursor_row, mut cursor_col) = buffer.row_column_for_offset(cursor_offset.get());
