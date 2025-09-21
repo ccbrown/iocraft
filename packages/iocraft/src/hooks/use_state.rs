@@ -49,6 +49,13 @@ pub trait UseState: private::Sealed {
     where
         T: Unpin + Sync + Send + 'static,
         F: FnOnce() -> T;
+
+    /// Creates a new state with its initial value default constructed.
+    ///
+    /// When the state changes, the component will be re-rendered.
+    fn use_state_default<T>(&mut self) -> State<T>
+    where
+        T: Default + Unpin + Sync + Send + 'static;
 }
 
 impl UseState for Hooks<'_, '_> {
@@ -59,6 +66,13 @@ impl UseState for Hooks<'_, '_> {
     {
         self.use_hook(move || UseStateImpl::new(initial_value()))
             .state
+    }
+
+    fn use_state_default<T>(&mut self) -> State<T>
+    where
+        T: Default + Unpin + Sync + Send + 'static,
+    {
+        self.use_state(T::default)
     }
 }
 
@@ -170,8 +184,17 @@ impl<T: Sync + Send + 'static> Copy for State<T> {}
 
 impl<T: Copy + Sync + Send + 'static> State<T> {
     /// Gets a copy of the current value of the state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the owner of the state has been dropped.
     pub fn get(&self) -> T {
         *self.read()
+    }
+
+    /// Gets a copy of the current value of the state, if its owner has not been dropped.
+    pub fn try_get(&self) -> Option<T> {
+        self.try_read().map(|v| *v)
     }
 }
 
@@ -325,8 +348,8 @@ impl<T: ops::DivAssign<T> + Copy + Sync + Send + 'static> ops::DivAssign<T> for 
 }
 
 impl<T: Hash + Sync + Send> Hash for State<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.read().hash(state)
+    fn hash<H: Hasher>(&self, hash: &mut H) {
+        self.read().hash(hash)
     }
 }
 
