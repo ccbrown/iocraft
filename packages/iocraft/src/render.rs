@@ -261,8 +261,8 @@ impl ComponentDrawer<'_> {
             self.node_position.y as _,
             self.clip_rect.left as _,
             self.clip_rect.top as _,
-            (self.clip_rect.right - self.clip_rect.left) as _,
-            (self.clip_rect.bottom - self.clip_rect.top) as _,
+            self.clip_rect.right.saturating_sub(self.clip_rect.left) as _,
+            self.clip_rect.bottom.saturating_sub(self.clip_rect.top) as _,
         )
     }
 
@@ -684,5 +684,18 @@ mod tests {
         .collect()
         .await;
         assert!(!canvases.is_empty());
+    }
+
+    #[test]
+    fn test_negative_dimensions() {
+        let actual = element! {
+            View(width: 10, height: 5, position: Position::Relative) {
+                View(position: Position::Absolute, left: 10, top: 10, right: 10, bottom: 10, overflow: Overflow::Hidden) {
+                    Text(content: "Hello!")
+                }
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "\n\n\n\n\n",);
     }
 }
