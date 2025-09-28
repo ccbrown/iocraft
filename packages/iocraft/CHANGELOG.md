@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.13](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.12...iocraft-v0.7.13) - 2025-09-28
+
+### Added
+
+- use_ref, use_effect, and imperative TextInput control ([#136](https://github.com/ccbrown/iocraft/pull/136))
+- additional state convenience methods
+
+### Fixed
+
+- underflow under certain absolute positioning circumstances ([#138](https://github.com/ccbrown/iocraft/pull/138))
+
 ## [0.7.12](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.11...iocraft-v0.7.12) - 2025-09-20
 
 ### Fixed
