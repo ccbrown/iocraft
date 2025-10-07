@@ -13,7 +13,6 @@ use core::{
     pin::Pin,
     task::{self, Poll},
 };
-use crossterm::{execute, terminal};
 use futures::{
     future::{select, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
@@ -461,16 +460,18 @@ impl<'a> Tree<'a> {
         loop {
             term.refresh_size();
             let terminal_size = term.size();
-            execute!(term, terminal::BeginSynchronizedUpdate,)?;
-            let output = self.render(terminal_size.map(|(w, _)| w as usize), Some(&mut term));
-            if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas) {
-                if !output.did_clear_terminal_output {
-                    term.clear_canvas()?;
+            term.synchronized_update(|mut term| {
+                let output = self.render(terminal_size.map(|(w, _)| w as usize), Some(&mut term));
+                if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas)
+                {
+                    if !output.did_clear_terminal_output {
+                        term.clear_canvas()?;
+                    }
+                    term.write_canvas(&output.canvas)?;
                 }
-                term.write_canvas(&output.canvas)?;
-            }
-            prev_canvas = Some(output.canvas);
-            execute!(term, terminal::EndSynchronizedUpdate)?;
+                prev_canvas = Some(output.canvas);
+                Ok(())
+            })?;
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }

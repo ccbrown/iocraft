@@ -428,6 +428,16 @@ impl Terminal {
         self.received_ctrl_c
     }
 
+    /// Wraps a series of terminal updates in a synchronized update block, making sure to end the
+    /// synchronized update even if there is an error or panic.
+    pub fn synchronized_update<F>(&mut self, f: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut Self) -> io::Result<()>,
+    {
+        let t = SynchronizedUpdate::begin(self)?;
+        f(t.inner)
+    }
+
     pub async fn wait(&mut self) {
         match &mut self.event_stream {
             Some(event_stream) => {
@@ -481,6 +491,25 @@ impl Write for Terminal {
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
+    }
+}
+
+/// Synchronized update terminal guard.
+/// Enters synchronized update on creation, exits when dropped.
+pub(crate) struct SynchronizedUpdate<'a> {
+    inner: &'a mut Terminal,
+}
+
+impl<'a> SynchronizedUpdate<'a> {
+    pub fn begin(terminal: &'a mut Terminal) -> io::Result<Self> {
+        execute!(terminal, terminal::BeginSynchronizedUpdate)?;
+        Ok(Self { inner: terminal })
+    }
+}
+
+impl Drop for SynchronizedUpdate<'_> {
+    fn drop(&mut self) {
+        let _ = execute!(self.inner, terminal::EndSynchronizedUpdate);
     }
 }
 
