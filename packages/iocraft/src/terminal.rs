@@ -282,7 +282,7 @@ impl Drop for StdTerminal {
         if self.fullscreen {
             let _ = queue!(self.dest, terminal::LeaveAlternateScreen);
         }
-        let _ = execute!(self.dest, cursor::Show, terminal::EndSynchronizedUpdate);
+        let _ = execute!(self.dest, cursor::Show);
     }
 }
 
