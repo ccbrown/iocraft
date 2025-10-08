@@ -231,15 +231,6 @@ impl Canvas {
                         text_style = CanvasTextStyle::default();
                     }
 
-                    if cell.background_color != background_color {
-                        write!(
-                            w,
-                            csi!("{}m"),
-                            Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
-                        )?;
-                        background_color = cell.background_color;
-                    }
-
                     if let Some(c) = &cell.character {
                         if c.style.color != text_style.color {
                             write!(
@@ -281,8 +272,25 @@ impl Canvas {
                     // cursor won't change position and the last character would be erased
                     // if we did it later
                     // see: https://github.com/ccbrown/iocraft/issues/83
+
+                    // make sure to reset the background before clearing
+                    // see: https://github.com/ccbrown/iocraft/issues/142
+                    if background_color.is_some() {
+                        write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
+                        background_color = None;
+                    }
+
                     write!(w, csi!("K"))?;
                     did_clear_line = true;
+                }
+
+                if ansi && cell.background_color != background_color {
+                    write!(
+                        w,
+                        csi!("{}m"),
+                        Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
+                    )?;
+                    background_color = cell.background_color;
                 }
 
                 if let Some(c) = &cell.character {
@@ -489,6 +497,90 @@ mod tests {
         write!(expected, csi!("K")).unwrap();
         write!(expected, "\r\n").unwrap();
         write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_canvas_full_background_color() {
+        let mut canvas = Canvas::new(6, 3);
+        assert_eq!(canvas.width(), 6);
+        assert_eq!(canvas.height(), 3);
+
+        canvas
+            .subview_mut(0, 0, 0, 0, 6, 6)
+            .set_background_color(0, 0, 6, 6, Color::Red);
+
+        let mut actual = Vec::new();
+        canvas.write_ansi(&mut actual).unwrap();
+
+        // the important thing here is that the background color is reset before each line is
+        // cleared and before each newline
+        // see: https://github.com/ccbrown/iocraft/issues/142
+
+        let mut expected = Vec::new();
+
+        // line 1
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "     ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, " ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        // line 2
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "     ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, " ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        // line 3
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "     ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, " ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
