@@ -1,6 +1,6 @@
 [package]
 name = "iocraft"
-version = "0.7.13"
+version = "0.7.14"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Create beautifully crafted CLI programs and text output with a declarative React-like Rust API."
