@@ -10,7 +10,7 @@ mod private {
 /// `UseComponentRect` is a hook that returns the current component canvas position and size.
 ///
 /// See [`ComponentDrawer::canvas_position`] and [`ComponentDrawer::size`] for more info.
-pub trait UseComponentRect<'a> {
+pub trait UseComponentRect<'a>: private::Sealed {
     /// Returns the curent component canvas position and size in form of a [`Rect`].
     fn use_component_rect(&mut self) -> Rect<u16>;
 }
