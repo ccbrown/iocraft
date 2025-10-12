@@ -12,12 +12,12 @@ mod private {
     impl Sealed for crate::Hooks<'_, '_> {}
 }
 
-/// `UseAsyncHandler` is a hook that allows you to create a [`Handler`] which executes an
+/// `UseAsyncHandler` is a hook that allows you to create a [`RefHandler`] which executes an
 /// asynchronous task that is bound to the lifetime of the component.
 ///
 /// If the component is dropped, all executing tasks will also be dropped.
 pub trait UseAsyncHandler: private::Sealed {
-    /// Returns a [`Handler`] which when invoked will execute the given function and drive the
+    /// Returns a [`RefHandler`] which when invoked will execute the given function and drive the
     /// resulting future to completion.
     fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> RefHandler<T>
     where
