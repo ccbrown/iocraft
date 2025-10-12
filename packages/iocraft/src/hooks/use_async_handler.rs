@@ -1,4 +1,4 @@
-use crate::{Handler, Hook, Hooks};
+use crate::{Hook, Hooks, RefHandler};
 use core::{
     future::Future,
     pin::Pin,
@@ -12,27 +12,27 @@ mod private {
     impl Sealed for crate::Hooks<'_, '_> {}
 }
 
-/// `UseAsyncHandler` is a hook that allows you to create a [`Handler`] which executes an
+/// `UseAsyncHandler` is a hook that allows you to create a [`RefHandler`] which executes an
 /// asynchronous task that is bound to the lifetime of the component.
 ///
 /// If the component is dropped, all executing tasks will also be dropped.
 pub trait UseAsyncHandler: private::Sealed {
-    /// Returns a [`Handler`] which when invoked will execute the given function and drive the
+    /// Returns a [`RefHandler`] which when invoked will execute the given function and drive the
     /// resulting future to completion.
-    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> Handler<'static, T>
+    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> RefHandler<T>
     where
-        Fun: FnMut(T) -> Fut + Send + Sync + 'static,
+        Fun: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static;
 }
 
 impl UseAsyncHandler for Hooks<'_, '_> {
-    fn use_async_handler<T, Fun, Fut>(&mut self, mut f: Fun) -> Handler<'static, T>
+    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> RefHandler<T>
     where
-        Fun: FnMut(T) -> Fut + Send + Sync + 'static,
+        Fun: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
         let handler_impl_state = self.use_hook(UseAsyncHandlerImpl::default).state.clone();
-        Handler::<T>::from(move |value| {
+        RefHandler::<T>::from(move |value| {
             let mut state = handler_impl_state
                 .lock()
                 .expect("we should be able to lock the mutex");
@@ -82,7 +82,7 @@ mod tests {
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
         let mut should_exit = hooks.use_state(|| false);
-        let mut exit = hooks.use_async_handler(move |_| async move {
+        let exit = hooks.use_async_handler(move |_| async move {
             should_exit.set(true);
         });
 

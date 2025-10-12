@@ -211,7 +211,7 @@ fn Weather(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let mut state = hooks.use_state(|| WeatherState::Init);
     let mut should_exit = hooks.use_state(|| false);
 
-    let mut load = hooks.use_async_handler(move |_: ()| async move {
+    let load = hooks.use_async_handler(move |_: ()| async move {
         state.set(WeatherState::Loading);
         state.set(WeatherState::Loaded(WeatherData::fetch().await));
     });
