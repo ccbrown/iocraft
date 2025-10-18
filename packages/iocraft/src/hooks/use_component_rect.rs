@@ -1,3 +1,7 @@
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 use taffy::Rect;
 
 use crate::{
@@ -10,38 +14,59 @@ mod private {
     impl Sealed for crate::Hooks<'_, '_> {}
 }
 
+/// [`Ref`] with component's drawer rect.
+pub type ComponentRectRef = Ref<Option<Rect<u16>>>;
+
 /// `UseComponentRect` is a hook that returns the current component's canvas position and size
-///  from the previous frame.
+///  from the previous frame, or `None` if it's the first frame.
 ///
 /// See [`ComponentDrawer::canvas_position`] and [`ComponentDrawer::size`] for more info.
-///
-/// <div class="warning">For the first time rendering, it will return exactly (0, 0, 0, 0) rectangle !</div>
 pub trait UseComponentRect<'a>: private::Sealed {
     /// Returns the curent component canvas position and size in form of a [`Rect`].
-    fn use_component_rect(&mut self) -> Ref<Rect<u16>>;
+    fn use_component_rect(&mut self) -> ComponentRectRef;
 }
 
 impl<'a> UseComponentRect<'a> for Hooks<'a, '_> {
-    fn use_component_rect(&mut self) -> Ref<Rect<u16>> {
+    fn use_component_rect(&mut self) -> ComponentRectRef {
         let rect = self.use_ref_default();
-        self.use_hook(|| UseComponentRectImpl { rect }).rect
+        self.use_hook(move || UseComponentRectImpl {
+            rect,
+            is_changed: false,
+        })
+        .rect
     }
 }
 
 struct UseComponentRectImpl {
-    rect: Ref<Rect<u16>>,
+    rect: ComponentRectRef,
+    is_changed: bool,
 }
 
 impl Hook for UseComponentRectImpl {
+    fn poll_change(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+        if self.is_changed {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+
     fn pre_component_draw(&mut self, drawer: &mut ComponentDrawer) {
         let size = drawer.size();
         let position = drawer.canvas_position();
-        self.rect.set(Rect {
+        let rect = Rect {
             left: position.x as u16,
             right: position.x as u16 + size.width,
             top: position.y as u16,
             bottom: position.y as u16 + size.height,
-        });
+        };
+
+        if self.rect.get() != Some(rect) {
+            self.rect.set(Some(rect));
+            self.is_changed = true;
+        } else if self.rect.get().is_some() {
+            self.is_changed = false;
+        }
     }
 }
 
@@ -55,18 +80,16 @@ mod tests {
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let mut frame = hooks.use_state(|| 0);
         let rect = hooks.use_component_rect().get();
 
-        // Notice that we have to wait one frame for the correct size and position.
-        if frame.get() >= 1 {
-            system.exit();
-        }
-        frame += 1;
+        let Some(rect) = rect else {
+            return element! { Text(content: "00:00:00:00") };
+        };
+
+        system.exit();
 
         element! {
             Text(content: format!("{}:{}:{}:{}", rect.left, rect.right, rect.top, rect.bottom))
-
         }
     }
 
@@ -84,6 +107,6 @@ mod tests {
         .map(|c| c.to_string())
         .collect::<Vec<_>>()
         .await;
-        assert_eq!(actual.last().unwrap().trim(), "17:24:25:26");
+        assert_eq!(actual.last().unwrap().trim(), "15:26:25:26");
     }
 }
