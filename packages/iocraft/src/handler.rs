@@ -92,7 +92,7 @@ impl<T: Clone + Send + Sync + 'static> Handler<T> {
 
 impl<T: Clone + Send + Sync + 'static> From<Handler<T>> for HandlerMut<'static, T> {
     fn from(handler: Handler<T>) -> Self {
-        Self::from(move |value| handler.1.clone()(value))
+        Self::from(move |value| handler.1(value))
     }
 }
 
