@@ -1,13 +1,13 @@
 use core::{mem, ops::Deref};
 use std::{ops::DerefMut, sync::Arc};
 
-/// `Handler` is a type representing an optional event handler, commonly used for component properties.
+/// `HandlerMut` is a type representing an optional event handler, commonly used for component properties.
 ///
-/// Any function that takes a single argument and returns `()` can be converted into a `Handler`,
+/// Any function that takes a single argument and returns `()` can be converted into a `HandlerMut`,
 /// and it can be invoked using function call syntax.
-pub struct Handler<'a, T>(bool, Box<dyn FnMut(T) + Send + Sync + 'a>);
+pub struct HandlerMut<'a, T>(bool, Box<dyn FnMut(T) + Send + Sync + 'a>);
 
-impl<T> Handler<'_, T> {
+impl<T> HandlerMut<'_, T> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
@@ -19,13 +19,13 @@ impl<T> Handler<'_, T> {
     }
 }
 
-impl<T> Default for Handler<'_, T> {
+impl<T> Default for HandlerMut<'_, T> {
     fn default() -> Self {
         Self(false, Box::new(|_| {}))
     }
 }
 
-impl<'a, T, F> From<F> for Handler<'a, T>
+impl<'a, T, F> From<F> for HandlerMut<'a, T>
 where
     F: FnMut(T) + Send + Sync + 'a,
 {
@@ -34,7 +34,7 @@ where
     }
 }
 
-impl<'a, T: 'a> Deref for Handler<'a, T> {
+impl<'a, T: 'a> Deref for HandlerMut<'a, T> {
     type Target = dyn FnMut(T) + Send + Sync + 'a;
 
     fn deref(&self) -> &Self::Target {
@@ -42,24 +42,24 @@ impl<'a, T: 'a> Deref for Handler<'a, T> {
     }
 }
 
-impl<'a, T: 'a> DerefMut for Handler<'a, T> {
+impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.1.as_mut()
     }
 }
 
-/// Immutable variant of [`Handler`]: it lacks function to mutate captured values, but can be cloned.
+/// Immutable variant of [`HandlerMut`]: it lacks function to mutate captured values, but can be cloned.
 #[derive(Clone)]
-pub struct RefHandler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
+pub struct Handler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
 
-impl<T> RefHandler<T> {
+impl<T> Handler<T> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
     }
 }
 
-impl<T> Deref for RefHandler<T> {
+impl<T> Deref for Handler<T> {
     type Target = dyn Fn(T) + Send + Sync + 'static;
 
     fn deref(&self) -> &Self::Target {
@@ -67,13 +67,13 @@ impl<T> Deref for RefHandler<T> {
     }
 }
 
-impl<T> Default for RefHandler<T> {
+impl<T> Default for Handler<T> {
     fn default() -> Self {
         Self(false, Arc::new(|_| {}))
     }
 }
 
-impl<T, F> From<F> for RefHandler<T>
+impl<T, F> From<F> for Handler<T>
 where
     F: Fn(T) + Send + Sync + 'static,
 {
@@ -82,16 +82,16 @@ where
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> RefHandler<T> {
+impl<T: Clone + Send + Sync + 'static> Handler<T> {
     /// Creates a new async handler that uses a constant value for it's input.
-    pub fn bind(&self, value: T) -> RefHandler<()> {
+    pub fn bind(&self, value: T) -> Handler<()> {
         let handler = self.clone();
-        RefHandler::from(move |_| handler(value.clone()))
+        Handler::from(move |_| handler(value.clone()))
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> From<RefHandler<T>> for Handler<'static, T> {
-    fn from(handler: RefHandler<T>) -> Self {
+impl<T: Clone + Send + Sync + 'static> From<Handler<T>> for HandlerMut<'static, T> {
+    fn from(handler: Handler<T>) -> Self {
         Self::from(move |value| handler.1.clone()(value))
     }
 }
@@ -102,12 +102,12 @@ mod tests {
 
     #[test]
     fn test_handler() {
-        let mut handler = Handler::<i32>::default();
+        let mut handler = HandlerMut::<i32>::default();
         handler(0);
         handler(0);
         assert!(handler.is_default());
 
-        let mut handler = Handler::from(|value| {
+        let mut handler = HandlerMut::from(|value| {
             assert_eq!(value, 42);
         });
         handler(42);
@@ -117,12 +117,12 @@ mod tests {
 
     #[test]
     fn test_async_handler() {
-        let handler = RefHandler::<i32>::default();
+        let handler = Handler::<i32>::default();
         handler(0);
         handler(0);
         assert!(handler.is_default());
 
-        let handler = RefHandler::from(|value| {
+        let handler = Handler::from(|value| {
             assert_eq!(value, 42);
         });
         handler(42);

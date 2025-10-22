@@ -134,7 +134,7 @@ fn Screen(hooks: Hooks, props: &ScreenProps) -> impl Into<AnyElement<'static>> {
 struct CalculatorButtonProps {
     label: String,
     style: Option<ButtonStyle>,
-    on_click: Handler<'static, ()>,
+    on_click: HandlerMut<'static, ()>,
 }
 
 #[component]

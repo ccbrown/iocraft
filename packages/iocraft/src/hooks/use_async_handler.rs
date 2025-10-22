@@ -1,4 +1,4 @@
-use crate::{Hook, Hooks, RefHandler};
+use crate::{Handler, Hook, Hooks};
 use core::{
     future::Future,
     pin::Pin,
@@ -19,20 +19,20 @@ mod private {
 pub trait UseAsyncHandler: private::Sealed {
     /// Returns a [`RefHandler`] which when invoked will execute the given function and drive the
     /// resulting future to completion.
-    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> RefHandler<T>
+    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> Handler<T>
     where
         Fun: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static;
 }
 
 impl UseAsyncHandler for Hooks<'_, '_> {
-    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> RefHandler<T>
+    fn use_async_handler<T, Fun, Fut>(&mut self, f: Fun) -> Handler<T>
     where
         Fun: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
         let handler_impl_state = self.use_hook(UseAsyncHandlerImpl::default).state.clone();
-        RefHandler::<T>::from(move |value| {
+        Handler::<T>::from(move |value| {
             let mut state = handler_impl_state
                 .lock()
                 .expect("we should be able to lock the mutex");
