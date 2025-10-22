@@ -48,7 +48,7 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
     }
 }
 
-/// Immutable variant of [`HandlerMut`]: it lacks function to mutate captured values, but can be cloned.
+/// Immutable variant of [`HandlerMut`]: it lacks ability to mutate captured variables, but can be cloned.
 #[derive(Clone)]
 pub struct Handler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
 
@@ -83,7 +83,7 @@ where
 }
 
 impl<T: Clone + Send + Sync + 'static> Handler<T> {
-    /// Creates a new async handler that uses a constant value for it's input.
+    /// Creates a new `Handler` that uses a constant value for it's input.
     pub fn bind(&self, value: T) -> Handler<()> {
         let handler = self.clone();
         Handler::from(move |_| handler(value.clone()))
