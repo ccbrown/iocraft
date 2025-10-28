@@ -48,7 +48,35 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
     }
 }
 
-/// Immutable variant of [`HandlerMut`]: it lacks ability to mutate captured variables, but can be cloned.
+/// Immutable event handler, which lacks ability to mutate captured variables, but can be cloned.
+///
+/// For component properties consider using [`HandlerMut`] over this, as [`Handler`] is more restrictive.
+/// Just as [`Fn`] can be used where an [`FnMut`] is expected, [`Handler`] can be used where a [`HandlerMut`]
+/// is expected via [`From`] or [`Handler::bind`].
+///
+/// # Example
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// # fn foo(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+/// let mut counter = hooks.use_state(|| 0_i32);
+///
+/// let counter_handler: Handler<_> = hooks.use_async_handler(move |n| async move {
+///     counter += n;
+/// });
+///
+/// element! {
+///     Fragment {
+///         Button(handler: counter_handler.bind(1), has_focus: true) {
+///             Text(content: "[ +1 ]")
+///         }
+///         Button(handler: counter_handler.bind(-1)) {
+///             Text(content: "[ -1 ]")
+///         }
+///     }
+/// }
+/// # }
+/// ```
 #[derive(Clone)]
 pub struct Handler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
 
