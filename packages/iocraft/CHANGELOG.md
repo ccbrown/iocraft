@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.14...iocraft-v0.8.0) - 2025-10-28
+
+### Added
+
+- add clonable immutable Handler ([#146](https://github.com/ccbrown/iocraft/pull/146))
+
 ## [0.7.14](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.13...iocraft-v0.7.14) - 2025-10-08
 
 ### Fixed
