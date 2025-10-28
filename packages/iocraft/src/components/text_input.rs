@@ -4,7 +4,7 @@ use crate::{
     element,
     hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
-    AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Handler,
+    AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, HandlerMut,
     Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
     Props, Size, TerminalEvent,
 };
@@ -87,7 +87,7 @@ pub struct TextInputProps {
     pub has_focus: bool,
 
     /// The handler to invoke when the value changes.
-    pub on_change: Handler<'static, String>,
+    pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
     pub multiline: bool,
