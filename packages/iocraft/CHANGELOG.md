@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.15](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.14...iocraft-v0.7.15) - 2025-11-02
+
+### Added
+
+- allow disabling ctrl-c handling ([#149](https://github.com/ccbrown/iocraft/pull/149))
+- add clonable immutable Handler ([#146](https://github.com/ccbrown/iocraft/pull/146))
+
+### Fixed
+
+- make fullscreen() future return type more specific
+
 ## [0.7.14](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.13...iocraft-v0.7.14) - 2025-10-08
 
 ### Fixed
