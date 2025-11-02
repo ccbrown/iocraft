@@ -379,6 +379,7 @@ pub(crate) struct Terminal {
     event_stream: Option<BoxStream<'static, TerminalEvent>>,
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
     received_ctrl_c: bool,
+    ignore_ctrl_c: bool,
 }
 
 impl Terminal {
@@ -401,7 +402,12 @@ impl Terminal {
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
+            ignore_ctrl_c: false,
         }
+    }
+
+    pub fn ignore_ctrl_c(&mut self) {
+        self.ignore_ctrl_c = true;
     }
 
     pub fn is_raw_mode_enabled(&self) -> bool {
@@ -442,16 +448,18 @@ impl Terminal {
         match &mut self.event_stream {
             Some(event_stream) => {
                 while let Some(event) = event_stream.next().await {
-                    if let TerminalEvent::Key(KeyEvent {
-                        code: KeyCode::Char('c'),
-                        kind: KeyEventKind::Press,
-                        modifiers: KeyModifiers::CONTROL,
-                    }) = event
-                    {
-                        self.received_ctrl_c = true;
-                    }
-                    if self.received_ctrl_c {
-                        return;
+                    if !self.ignore_ctrl_c {
+                        if let TerminalEvent::Key(KeyEvent {
+                            code: KeyCode::Char('c'),
+                            kind: KeyEventKind::Press,
+                            modifiers: KeyModifiers::CONTROL,
+                        }) = event
+                        {
+                            self.received_ctrl_c = true;
+                        }
+                        if self.received_ctrl_c {
+                            return;
+                        }
                     }
                     self.subscribers.retain(|subscriber| {
                         if let Some(subscriber) = subscriber.upgrade() {

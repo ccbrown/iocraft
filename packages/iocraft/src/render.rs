@@ -490,7 +490,7 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
     tree.render(max_width, None).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E>(mut e: E, term: Terminal) -> io::Result<()>
+pub(crate) async fn terminal_render_loop<E>(e: &mut E, term: Terminal) -> io::Result<()>
 where
     E: ElementExt,
 {
@@ -520,7 +520,7 @@ impl Stream for MockTerminalRenderLoop<'_> {
 }
 
 pub(crate) fn mock_terminal_render_loop<'a, E>(
-    e: E,
+    e: &'a mut E,
     config: MockTerminalConfig,
 ) -> MockTerminalRenderLoop<'a>
 where
@@ -585,7 +585,7 @@ mod tests {
     #[apply(test!)]
     async fn test_terminal_render_loop() {
         let canvases: Vec<_> =
-            mock_terminal_render_loop(element!(MyComponent), MockTerminalConfig::default())
+            mock_terminal_render_loop(&mut element!(MyComponent), MockTerminalConfig::default())
                 .collect()
                 .await;
         let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
@@ -604,7 +604,7 @@ mod tests {
     #[apply(test!)]
     async fn test_terminal_render_loop_send() {
         let (term, _output) = Terminal::mock(MockTerminalConfig::default());
-        await_send_future(terminal_render_loop(element!(MyComponent), term)).await;
+        await_send_future(terminal_render_loop(&mut element!(MyComponent), term)).await;
     }
 
     #[component]
@@ -679,7 +679,7 @@ mod tests {
     #[apply(test!)]
     async fn test_async_ticker_container() {
         let canvases: Vec<_> = mock_terminal_render_loop(
-            element!(AsyncTickerContainer),
+            &mut element!(AsyncTickerContainer),
             MockTerminalConfig::default(),
         )
         .collect()

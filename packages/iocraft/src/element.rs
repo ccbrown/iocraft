@@ -12,6 +12,7 @@ use std::{
     future::Future,
     hash::Hash,
     io::{self, stderr, stdout, IsTerminal, Write},
+    pin::Pin,
     sync::Arc,
 };
 
@@ -217,12 +218,18 @@ pub trait ElementExt: private::Sealed + Sized {
         }
     }
 
-    /// Renders the element in a loop, allowing it to be dynamic and interactive.
+    /// Returns a future which renders the element in a loop, allowing it to be dynamic and
+    /// interactive.
     ///
-    /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
-    /// a file, this will probably not produce the desired result. You can determine whether stdout
+    /// This method should only be used when stdio is a TTY terminal. If for example, stdout is a
+    /// file, this will probably not produce the desired result. You can determine whether stdout
     /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
-    fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
+    ///
+    /// The behavior of the render loop can be configured via the methods on the returned future
+    /// before awaiting it.
+    fn render_loop(&mut self) -> RenderLoopFuture<'_, Self> {
+        RenderLoopFuture::new(self)
+    }
 
     /// Renders the element in a loop using a mock terminal, allowing you to simulate terminal
     /// events for testing purposes.
@@ -259,14 +266,126 @@ pub trait ElementExt: private::Sealed + Sized {
     fn mock_terminal_render_loop(
         &mut self,
         config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas>;
+    ) -> impl Stream<Item = Canvas> {
+        mock_terminal_render_loop(self, config)
+    }
 
     /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
     ///
-    /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
-    /// a file, this will probably not produce the desired result. You can determine whether stdout
+    /// This method should only be used when stdio is a TTY terminal. If for example, stdout is a
+    /// file, this will probably not produce the desired result. You can determine whether stdout
     /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
-    fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>>;
+    ///
+    /// This is equivalent to `self.render_loop().fullscreen()`.
+    fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>> {
+        self.render_loop().fullscreen()
+    }
+}
+
+#[derive(Default)]
+enum RenderLoopFutureState<'a, E: ElementExt> {
+    #[default]
+    Empty,
+    Init {
+        fullscreen: bool,
+        ignore_ctrl_c: bool,
+        element: &'a mut E,
+    },
+    Running(Pin<Box<dyn Future<Output = io::Result<()>> + 'a>>),
+}
+
+/// A future that renders an element in a loop, allowing it to be dynamic and interactive.
+///
+/// This is created by the [`ElementExt::render_loop`] method.
+///
+/// Before awaiting the future, you can use its methods to configure its behavior.
+pub struct RenderLoopFuture<'a, E: ElementExt + 'a> {
+    state: RenderLoopFutureState<'a, E>,
+}
+
+impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
+    pub(crate) fn new(element: &'a mut E) -> Self {
+        Self {
+            state: RenderLoopFutureState::Init {
+                fullscreen: false,
+                ignore_ctrl_c: false,
+                element,
+            },
+        }
+    }
+
+    /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
+    ///
+    /// This method should only be used when stdio is a TTY terminal. If for example, stdout is a
+    /// file, this will probably not produce the desired result. You can determine whether stdout
+    /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
+    pub fn fullscreen(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { fullscreen, .. } => {
+                *fullscreen = true;
+            }
+            _ => panic!("fullscreen() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// If the terminal is in raw mode, Ctrl-C presses will not trigger the usual interrupt
+    /// signals. By default, if the terminal is in raw mode for any reason, iocraft will listen for
+    /// Ctrl-C and stop the render loop in response. If you would like to prevent this behavior and
+    /// implement your own handling for Ctrl-C, you can call this method.
+    pub fn ignore_ctrl_c(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { ignore_ctrl_c, .. } => {
+                *ignore_ctrl_c = true;
+            }
+            _ => panic!("ignore_ctrl_c() must be called before polling the future"),
+        }
+        self
+    }
+}
+
+impl<'a, E: ElementExt + 'a> Future for RenderLoopFuture<'a, E> {
+    type Output = io::Result<()>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        loop {
+            match &mut self.state {
+                RenderLoopFutureState::Init { .. } => {
+                    let (fullscreen, ignore_ctrl_c, element) =
+                        match std::mem::replace(&mut self.state, RenderLoopFutureState::Empty) {
+                            RenderLoopFutureState::Init {
+                                fullscreen,
+                                ignore_ctrl_c,
+                                element,
+                            } => (fullscreen, ignore_ctrl_c, element),
+                            _ => unreachable!(),
+                        };
+                    let mut terminal = match if fullscreen {
+                        Terminal::fullscreen()
+                    } else {
+                        Terminal::new()
+                    } {
+                        Ok(t) => t,
+                        Err(e) => return std::task::Poll::Ready(Err(e)),
+                    };
+                    if ignore_ctrl_c {
+                        terminal.ignore_ctrl_c();
+                    }
+                    let fut = Box::pin(terminal_render_loop(element, terminal));
+                    self.state = RenderLoopFutureState::Running(fut);
+                }
+                RenderLoopFutureState::Running(fut) => {
+                    return fut.as_mut().poll(cx);
+                }
+                RenderLoopFutureState::Empty => {
+                    panic!("polled after completion");
+                }
+            }
+        }
+    }
 }
 
 impl ElementExt for AnyElement<'_> {
@@ -286,21 +405,6 @@ impl ElementExt for AnyElement<'_> {
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(self, config)
-    }
-
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::fullscreen()?).await
-    }
 }
 
 impl ElementExt for &mut AnyElement<'_> {
@@ -319,21 +423,6 @@ impl ElementExt for &mut AnyElement<'_> {
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(&mut **self, max_width)
-    }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(&mut **self, config)
-    }
-
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::fullscreen()?).await
     }
 }
 
@@ -357,20 +446,6 @@ where
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(self, config)
-    }
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::fullscreen()?).await
-    }
 }
 
 impl<T> ElementExt for &mut Element<'_, T>
@@ -392,21 +467,6 @@ where
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(&mut **self, max_width)
-    }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(&mut **self, config)
-    }
-
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::fullscreen()?).await
     }
 }
 
