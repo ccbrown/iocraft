@@ -277,7 +277,7 @@ pub trait ElementExt: private::Sealed + Sized {
     /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
     ///
     /// This is equivalent to `self.render_loop().fullscreen()`.
-    fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>> {
+    fn fullscreen(&mut self) -> RenderLoopFuture<'_, Self> {
         self.render_loop().fullscreen()
     }
 }
