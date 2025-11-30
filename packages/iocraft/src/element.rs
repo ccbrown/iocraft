@@ -291,7 +291,7 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
         ignore_ctrl_c: bool,
         element: &'a mut E,
     },
-    Running(Pin<Box<dyn Future<Output = io::Result<()>> + 'a>>),
+    Running(Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'a>>),
 }
 
 /// A future that renders an element in a loop, allowing it to be dynamic and interactive.
@@ -344,7 +344,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
     }
 }
 
-impl<'a, E: ElementExt + 'a> Future for RenderLoopFuture<'a, E> {
+impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
     type Output = io::Result<()>;
 
     fn poll(
@@ -473,6 +473,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use futures::Future;
 
     #[allow(clippy::unnecessary_mut_passed)]
     #[test]
@@ -500,5 +501,14 @@ mod tests {
         let mut any_element_ref: AnyElement = (&mut view_element).into();
         any_element_ref.print();
         any_element_ref.eprint();
+    }
+
+    #[test]
+    fn test_render_loop_future() {
+        fn assert_send<F: Future + Send>(_f: F) {}
+
+        let mut element = element!(View);
+        let render_loop_future = element.render_loop();
+        assert_send(render_loop_future);
     }
 }
