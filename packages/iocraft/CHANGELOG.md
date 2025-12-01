@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.16](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.15...iocraft-v0.7.16) - 2025-11-30
+
+### Fixed
+
+- make render_loop Send again ([#151](https://github.com/ccbrown/iocraft/pull/151))
+
 ## [0.7.15](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.14...iocraft-v0.7.15) - 2025-11-02
 
 ### Added
