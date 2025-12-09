@@ -1,4 +1,4 @@
-use crate::canvas::Canvas;
+use crate::{canvas::Canvas, element::Output};
 use crossterm::{
     cursor,
     event::{self, Event, EventStream},
@@ -11,12 +11,47 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdin, stdout, IsTerminal, Write},
+    io::{self, stderr, stdin, stdout, IsTerminal, LineWriter, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
 };
+
+/// Configuration for output handles used by the render loop.
+pub struct TerminalConfig {
+    /// The stdout handle for hook output.
+    pub stdout: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// The stderr handle for hook output.
+    pub stderr: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// Which handle to render the TUI to.
+    pub render_to: Output,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            stdout: Arc::new(Mutex::new(Box::new(stdout()))),
+            stderr: Arc::new(Mutex::new(Box::new(LineWriter::new(stderr())))),
+            render_to: Output::default(),
+        }
+    }
+}
+
+/// A writer that delegates to a shared handle.
+struct SharedWriter {
+    inner: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+impl Write for SharedWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.lock().unwrap().write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.lock().unwrap().flush()
+    }
+}
 
 // Re-exports for basic types.
 pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers, MouseEventKind};
@@ -123,9 +158,9 @@ trait TerminalImpl: Write + Send {
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
 }
 
-struct StdTerminal {
+struct StdTerminal<W: Write + Send> {
     input_is_terminal: bool,
-    dest: io::Stdout,
+    dest: W,
     fullscreen: bool,
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
@@ -133,7 +168,7 @@ struct StdTerminal {
     size: Option<(u16, u16)>,
 }
 
-impl Write for StdTerminal {
+impl<W: Write + Send> Write for StdTerminal<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.dest.write(buf)
     }
@@ -143,7 +178,7 @@ impl Write for StdTerminal {
     }
 }
 
-impl TerminalImpl for StdTerminal {
+impl<W: Write + Send> TerminalImpl for StdTerminal<W> {
     fn refresh_size(&mut self) {
         self.size = terminal::size().ok()
     }
@@ -224,12 +259,8 @@ impl TerminalImpl for StdTerminal {
     }
 }
 
-impl StdTerminal {
-    fn new(fullscreen: bool) -> io::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut dest = stdout();
+impl<W: Write + Send> StdTerminal<W> {
+    fn new(mut dest: W, fullscreen: bool) -> io::Result<Self> {
         queue!(dest, cursor::Hide)?;
         if fullscreen {
             queue!(dest, terminal::EnterAlternateScreen)?;
@@ -276,7 +307,7 @@ impl StdTerminal {
     }
 }
 
-impl Drop for StdTerminal {
+impl<W: Write + Send> Drop for StdTerminal<W> {
     fn drop(&mut self) {
         let _ = self.set_raw_mode_enabled(false);
         if self.fullscreen {
@@ -380,30 +411,52 @@ pub(crate) struct Terminal {
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
     received_ctrl_c: bool,
     ignore_ctrl_c: bool,
+    terminal_config: TerminalConfig,
 }
 
 impl Terminal {
     pub fn new() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(false)?))
+        Self::with_terminal_config(TerminalConfig::default(), false)
     }
 
     pub fn fullscreen() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(true)?))
+        Self::with_terminal_config(TerminalConfig::default(), true)
+    }
+
+    pub fn with_terminal_config(
+        terminal_config: TerminalConfig,
+        fullscreen: bool,
+    ) -> io::Result<Self> {
+        let writer = SharedWriter {
+            inner: match terminal_config.render_to {
+                Output::Stdout => terminal_config.stdout.clone(),
+                Output::Stderr => terminal_config.stderr.clone(),
+            },
+        };
+        Ok(Self::new_with_impl(
+            StdTerminal::new(writer, fullscreen)?,
+            terminal_config,
+        ))
     }
 
     pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
         let (term, output) = MockTerminal::new(config);
-        (Self::new_with_impl(term), output)
+        (Self::new_with_impl(term, TerminalConfig::default()), output)
     }
 
-    fn new_with_impl<T: TerminalImpl + 'static>(inner: T) -> Self {
+    fn new_with_impl<T: TerminalImpl + 'static>(inner: T, terminal_config: TerminalConfig) -> Self {
         Self {
             inner: Box::new(inner),
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
             ignore_ctrl_c: false,
+            terminal_config,
         }
+    }
+
+    pub fn terminal_config(&self) -> &TerminalConfig {
+        &self.terminal_config
     }
 
     pub fn ignore_ctrl_c(&mut self) {

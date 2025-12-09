@@ -1,10 +1,13 @@
-use crate::{ComponentUpdater, Hook, Hooks};
+use crate::{element::Output, ComponentUpdater, Hook, Hooks};
 use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 use crossterm::{cursor, queue};
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+};
 
 mod private {
     pub trait Sealed {}
@@ -76,41 +79,78 @@ impl UseOutputState {
             return;
         }
 
-        updater.clear_terminal_output();
-        if let Some(col) = self.appended_newline {
-            let _ = queue!(std::io::stdout(), cursor::MoveUp(1), cursor::MoveRight(col));
+        // Check if we have a terminal - if not, messages stay queued
+        if updater.terminal_config().is_none() {
+            return;
         }
 
+        updater.clear_terminal_output();
         let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
+
+        let terminal_config = updater.terminal_config().unwrap();
+        let stdout = &terminal_config.stdout;
+        let stderr = &terminal_config.stderr;
+        let render_to = terminal_config.render_to;
+
+        let render_handle = match render_to {
+            Output::Stdout => stdout,
+            Output::Stderr => stderr,
+        };
+
+        if let Some(col) = self.appended_newline {
+            let _ = queue!(
+                render_handle.lock().unwrap(),
+                cursor::MoveUp(1),
+                cursor::MoveRight(col)
+            );
+        }
         let mut needs_extra_newline = self.appended_newline.is_some();
 
         for msg in self.queue.drain(..) {
+            // Cursor manipulation only works when message output matches the render target
+            let msg_matches_render = matches!(
+                (&msg, render_to),
+                (
+                    Message::Stdout(_) | Message::StdoutNoNewline(_),
+                    Output::Stdout
+                ) | (
+                    Message::Stderr(_) | Message::StderrNoNewline(_),
+                    Output::Stderr
+                )
+            );
+
             match msg {
                 Message::Stdout(msg) => {
-                    if needs_carriage_returns {
-                        print!("{}\r\n", msg)
+                    let formatted = if needs_carriage_returns {
+                        format!("{}\r\n", msg)
                     } else {
-                        println!("{}", msg)
+                        format!("{}\n", msg)
+                    };
+                    let _ = stdout.lock().unwrap().write_all(formatted.as_bytes());
+                    if msg_matches_render {
+                        needs_extra_newline = false;
                     }
-                    needs_extra_newline = false;
                 }
                 Message::StdoutNoNewline(msg) => {
-                    print!("{}", msg);
-                    if !msg.is_empty() {
+                    let _ = stdout.lock().unwrap().write_all(msg.as_bytes());
+                    if msg_matches_render && !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
                 Message::Stderr(msg) => {
-                    if needs_carriage_returns {
-                        eprint!("{}\r\n", msg)
+                    let formatted = if needs_carriage_returns {
+                        format!("{}\r\n", msg)
                     } else {
-                        eprintln!("{}", msg)
+                        format!("{}\n", msg)
+                    };
+                    let _ = stderr.lock().unwrap().write_all(formatted.as_bytes());
+                    if msg_matches_render {
+                        needs_extra_newline = false;
                     }
-                    needs_extra_newline = false;
                 }
                 Message::StderrNoNewline(msg) => {
-                    eprint!("{}", msg);
-                    if !msg.is_empty() {
+                    let _ = stderr.lock().unwrap().write_all(msg.as_bytes());
+                    if msg_matches_render && !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
@@ -120,11 +160,8 @@ impl UseOutputState {
         if needs_extra_newline {
             if let Ok(pos) = cursor::position() {
                 self.appended_newline = Some(pos.0);
-                if needs_carriage_returns {
-                    print!("\r\n");
-                } else {
-                    println!();
-                }
+                let newline = if needs_carriage_returns { "\r\n" } else { "\n" };
+                let _ = render_handle.lock().unwrap().write_all(newline.as_bytes());
             } else {
                 self.appended_newline = None;
             }

@@ -5,7 +5,9 @@ use crate::{
     element::ElementExt,
     multimap::AppendOnlyMultimap,
     props::AnyProps,
-    terminal::{MockTerminalConfig, MockTerminalOutputStream, Terminal, TerminalEvents},
+    terminal::{
+        MockTerminalConfig, MockTerminalOutputStream, TerminalConfig, Terminal, TerminalEvents,
+    },
 };
 use core::{
     any::Any,
@@ -81,6 +83,11 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
             }
             self.context.did_clear_terminal_output = true;
         }
+    }
+
+    /// Returns the output configuration, if running in a terminal render loop.
+    pub fn terminal_config(&self) -> Option<&TerminalConfig> {
+        self.context.terminal.as_ref().map(|t| t.terminal_config())
     }
 
     #[doc(hidden)]
