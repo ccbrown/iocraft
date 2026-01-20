@@ -93,6 +93,7 @@
 // The exception is the modules that represent collections of types, namely hooks and components.
 // Those types will remain in their modules for the public API.
 
+mod any_key;
 mod canvas;
 mod component;
 mod context;

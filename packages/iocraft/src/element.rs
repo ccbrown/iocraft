@@ -1,10 +1,10 @@
 use crate::{
+    any_key::AnyKey,
     component::{Component, ComponentHelper, ComponentHelperExt},
     mock_terminal_render_loop,
     props::AnyProps,
     render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
-use any_key::AnyHash;
 use crossterm::terminal;
 use futures::Stream;
 use std::{
@@ -61,7 +61,7 @@ where
 /// Used to identify an element within the scope of its parent. This is used to minimize the number
 /// of times components are destroyed and recreated from render-to-render.
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ElementKey(Arc<Box<dyn AnyHash + Send + Sync>>);
+pub struct ElementKey(Arc<Box<dyn AnyKey + Send + Sync>>);
 
 impl ElementKey {
     /// Constructs a new key.
