@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.17](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.16...iocraft-v0.7.17) - 2026-01-20
+
+### Other
+
+- eliminate any_key dependency ([#154](https://github.com/ccbrown/iocraft/pull/154))
+
 ## [0.7.16](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.15...iocraft-v0.7.16) - 2025-11-30
 
 ### Fixed
