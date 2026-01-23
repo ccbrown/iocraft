@@ -3,9 +3,7 @@ use crate::{
     component::{Component, ComponentHelper, ComponentHelperExt},
     mock_terminal_render_loop,
     props::AnyProps,
-    render,
-    terminal::TerminalConfig,
-    terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
+    render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
 use crossterm::terminal;
 use futures::Stream;
@@ -463,17 +461,18 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                             _ => unreachable!(),
                         };
                     let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
-                    let terminal_config = TerminalConfig {
-                        stdout: Arc::new(Mutex::new(
-                            stdout_writer.unwrap_or_else(|| Box::new(stdout())),
-                        )),
-                        // Unlike stdout, stderr is unbuffered by default in the standard library
-                        stderr: Arc::new(Mutex::new(
-                            stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr()))),
-                        )),
-                        render_to: output,
+                    let stdout_handle = Arc::new(Mutex::new(
+                        stdout_writer.unwrap_or_else(|| Box::new(stdout())),
+                    ));
+                    // Unlike stdout, stderr is unbuffered by default in the standard library
+                    let stderr_handle = Arc::new(Mutex::new(
+                        stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr()))),
+                    ));
+                    let render_handle = match output {
+                        Output::Stdout => stdout_handle.clone(),
+                        Output::Stderr => stderr_handle.clone(),
                     };
-                    let mut terminal = match Terminal::with_terminal_config(terminal_config, fullscreen, effective_mouse_capture) {
+                    let mut terminal = match Terminal::with_render_handle(render_handle, fullscreen, effective_mouse_capture) {
                         Ok(t) => t,
                         Err(e) => return std::task::Poll::Ready(Err(e)),
                     };
@@ -485,7 +484,13 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                     if ignore_ctrl_c {
                         terminal.ignore_ctrl_c();
                     }
-                    let fut = Box::pin(terminal_render_loop(element, terminal));
+                    let fut = Box::pin(terminal_render_loop(
+                        element,
+                        terminal,
+                        stdout_handle,
+                        stderr_handle,
+                        output,
+                    ));
                     self.state = RenderLoopFutureState::Running(fut);
                 }
                 RenderLoopFutureState::Running(fut) => {
