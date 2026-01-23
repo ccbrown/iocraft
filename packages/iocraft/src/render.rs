@@ -2,12 +2,10 @@ use crate::{
     canvas::{Canvas, CanvasSubviewMut},
     component::{ComponentHelperExt, Components, InstantiatedComponent},
     context::{Context, ContextStack, SystemContext},
-    element::ElementExt,
+    element::{ElementExt, Output},
     multimap::AppendOnlyMultimap,
     props::AnyProps,
-    terminal::{
-        MockTerminalConfig, MockTerminalOutputStream, TerminalConfig, Terminal, TerminalEvents,
-    },
+    terminal::{MockTerminalConfig, MockTerminalOutputStream, Terminal, TerminalEvents},
 };
 use core::{
     any::Any,
@@ -20,6 +18,7 @@ use futures::{
     stream::{Stream, StreamExt},
 };
 use std::io;
+use std::sync::{Arc, Mutex};
 use taffy::{
     AvailableSpace, Display, Layout, NodeId, Overflow, Point, Rect, Size, Style, TaffyTree,
 };
@@ -85,9 +84,9 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
         }
     }
 
-    /// Returns the output configuration, if running in a terminal render loop.
-    pub fn terminal_config(&self) -> Option<&TerminalConfig> {
-        self.context.terminal.as_ref().map(|t| t.terminal_config())
+    /// Returns whether we're running in a terminal render loop.
+    pub(crate) fn is_terminal_render_loop(&self) -> bool {
+        self.context.terminal.is_some()
     }
 
     #[doc(hidden)]
@@ -362,7 +361,13 @@ struct RenderOutput {
 }
 
 impl<'a> Tree<'a> {
-    fn new(mut props: AnyProps<'a>, helper: Box<dyn ComponentHelperExt>) -> Self {
+    fn new(
+        mut props: AnyProps<'a>,
+        helper: Box<dyn ComponentHelperExt>,
+        stdout: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
+        stderr: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
+        render_to: Output,
+    ) -> Self {
         let mut layout_engine = TaffyTree::new();
         let root_node_id = layout_engine
             .new_leaf_with_context(Style::default(), LayoutEngineNodeContext::default())
@@ -375,7 +380,7 @@ impl<'a> Tree<'a> {
             wrapper_node_id,
             root_component: InstantiatedComponent::new(root_node_id, props.borrow(), helper),
             root_component_props: props,
-            system_context: SystemContext::new(),
+            system_context: SystemContext::new(stdout, stderr, render_to),
         }
     }
 
@@ -493,16 +498,29 @@ impl<'a> Tree<'a> {
 
 pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canvas {
     let h = e.helper();
-    let mut tree = Tree::new(e.props_mut(), h);
+    let system_context = SystemContext::new_default();
+    let mut tree = Tree::new(
+        e.props_mut(),
+        h,
+        system_context.stdout(),
+        system_context.stderr(),
+        system_context.render_to(),
+    );
     tree.render(max_width, None).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E>(e: &mut E, term: Terminal) -> io::Result<()>
+pub(crate) async fn terminal_render_loop<E>(
+    e: &mut E,
+    term: Terminal,
+    stdout: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
+    stderr: Arc<Mutex<Box<dyn std::io::Write + Send>>>,
+    render_to: Output,
+) -> io::Result<()>
 where
     E: ElementExt,
 {
     let h = e.helper();
-    let mut tree = Tree::new(e.props_mut(), h);
+    let mut tree = Tree::new(e.props_mut(), h, stdout, stderr, render_to);
     tree.terminal_render_loop(term).await
 }
 
@@ -534,8 +552,16 @@ where
     E: ElementExt + 'a,
 {
     let (term, output) = Terminal::mock(config);
+    let system_context = SystemContext::new_default();
     MockTerminalRenderLoop {
-        render_loop: terminal_render_loop(e, term).boxed_local(),
+        render_loop: terminal_render_loop(
+            e,
+            term,
+            system_context.stdout(),
+            system_context.stderr(),
+            system_context.render_to(),
+        )
+        .boxed_local(),
         render_loop_is_done: false,
         output,
     }

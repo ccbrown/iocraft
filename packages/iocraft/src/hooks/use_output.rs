@@ -1,4 +1,4 @@
-use crate::{element::Output, ComponentUpdater, Hook, Hooks};
+use crate::{context::SystemContext, element::Output, ComponentUpdater, Hook, Hooks};
 use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
@@ -80,21 +80,21 @@ impl UseOutputState {
         }
 
         // Check if we have a terminal - if not, messages stay queued
-        if updater.terminal_config().is_none() {
+        if !updater.is_terminal_render_loop() {
             return;
         }
 
         updater.clear_terminal_output();
         let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
 
-        let terminal_config = updater.terminal_config().unwrap();
-        let stdout = &terminal_config.stdout;
-        let stderr = &terminal_config.stderr;
-        let render_to = terminal_config.render_to;
+        let system = updater.get_context::<SystemContext>().unwrap();
+        let stdout = system.stdout();
+        let stderr = system.stderr();
+        let render_to = system.render_to();
 
         let render_handle = match render_to {
-            Output::Stdout => stdout,
-            Output::Stderr => stderr,
+            Output::Stdout => &stdout,
+            Output::Stderr => &stderr,
         };
 
         if let Some(col) = self.appended_newline {

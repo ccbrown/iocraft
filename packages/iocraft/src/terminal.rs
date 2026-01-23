@@ -1,4 +1,4 @@
-use crate::{canvas::Canvas, element::Output};
+use crate::canvas::Canvas;
 use crossterm::{
     cursor,
     event::{self, Event, EventStream},
@@ -11,32 +11,12 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stderr, stdin, stdout, IsTerminal, LineWriter, Write},
+    io::{self, stdin, stdout, IsTerminal, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
 };
-
-/// Configuration for output handles used by the render loop.
-pub struct TerminalConfig {
-    /// The stdout handle for hook output.
-    pub stdout: Arc<Mutex<Box<dyn Write + Send>>>,
-    /// The stderr handle for hook output.
-    pub stderr: Arc<Mutex<Box<dyn Write + Send>>>,
-    /// Which handle to render the TUI to.
-    pub render_to: Output,
-}
-
-impl Default for TerminalConfig {
-    fn default() -> Self {
-        Self {
-            stdout: Arc::new(Mutex::new(Box::new(stdout()))),
-            stderr: Arc::new(Mutex::new(Box::new(LineWriter::new(stderr())))),
-            render_to: Output::default(),
-        }
-    }
-}
 
 /// A writer that delegates to a shared handle.
 struct SharedWriter {
@@ -411,52 +391,32 @@ pub(crate) struct Terminal {
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
     received_ctrl_c: bool,
     ignore_ctrl_c: bool,
-    terminal_config: TerminalConfig,
 }
 
 impl Terminal {
-    pub fn new() -> io::Result<Self> {
-        Self::with_terminal_config(TerminalConfig::default(), false)
-    }
-
-    pub fn fullscreen() -> io::Result<Self> {
-        Self::with_terminal_config(TerminalConfig::default(), true)
-    }
-
-    pub fn with_terminal_config(
-        terminal_config: TerminalConfig,
+    pub fn with_render_handle(
+        render_handle: Arc<Mutex<Box<dyn Write + Send>>>,
         fullscreen: bool,
     ) -> io::Result<Self> {
         let writer = SharedWriter {
-            inner: match terminal_config.render_to {
-                Output::Stdout => terminal_config.stdout.clone(),
-                Output::Stderr => terminal_config.stderr.clone(),
-            },
+            inner: render_handle,
         };
-        Ok(Self::new_with_impl(
-            StdTerminal::new(writer, fullscreen)?,
-            terminal_config,
-        ))
+        Ok(Self::new_with_impl(StdTerminal::new(writer, fullscreen)?))
     }
 
     pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
         let (term, output) = MockTerminal::new(config);
-        (Self::new_with_impl(term, TerminalConfig::default()), output)
+        (Self::new_with_impl(term), output)
     }
 
-    fn new_with_impl<T: TerminalImpl + 'static>(inner: T, terminal_config: TerminalConfig) -> Self {
+    fn new_with_impl<T: TerminalImpl + 'static>(inner: T) -> Self {
         Self {
             inner: Box::new(inner),
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
             ignore_ctrl_c: false,
-            terminal_config,
         }
-    }
-
-    pub fn terminal_config(&self) -> &TerminalConfig {
-        &self.terminal_config
     }
 
     pub fn ignore_ctrl_c(&mut self) {
@@ -577,12 +537,15 @@ impl Drop for SynchronizedUpdate<'_> {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_std_terminal() {
         // There's unfortunately not much here we can really test, but we'll do our best.
         // TODO: Is there a library we can use to emulate terminal input/output?
-        let mut terminal = Terminal::new().unwrap();
+        let render_handle: Arc<Mutex<Box<dyn std::io::Write + Send>>> =
+            Arc::new(Mutex::new(Box::new(std::io::stdout())));
+        let mut terminal = Terminal::with_render_handle(render_handle, false).unwrap();
         assert!(!terminal.is_raw_mode_enabled());
         assert!(!terminal.received_ctrl_c());
         assert!(!terminal.is_raw_mode_enabled());
