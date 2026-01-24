@@ -22,29 +22,29 @@ use taffy::{
     AvailableSpace, Display, Layout, NodeId, Overflow, Point, Rect, Size, Style, TaffyTree,
 };
 
-pub(crate) struct UpdateContext<'a> {
-    terminal: Option<&'a mut Terminal>,
+pub(crate) struct UpdateContext<'a, 'w> {
+    terminal: Option<&'a mut Terminal<'w>>,
     layout_engine: &'a mut LayoutEngine,
     did_clear_terminal_output: bool,
 }
 
 /// Provides information and operations that low level component implementations may need to
 /// utilize during the update phase.
-pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a> {
+pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a, 'w> {
     node_id: NodeId,
     transparent_layout: bool,
     children: &'a mut Components,
     unattached_child_node_ids: &'a mut Vec<NodeId>,
-    context: &'a mut UpdateContext<'b>,
+    context: &'a mut UpdateContext<'b, 'w>,
     component_context_stack: &'a mut ContextStack<'c>,
 }
 
-impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
+impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
     pub(crate) fn new(
         node_id: NodeId,
         children: &'a mut Components,
         unattached_child_node_ids: &'a mut Vec<NodeId>,
-        context: &'a mut UpdateContext<'b>,
+        context: &'a mut UpdateContext<'b, 'w>,
         component_context_stack: &'a mut ContextStack<'c>,
     ) -> Self {
         Self {
@@ -84,7 +84,7 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
     }
 
     /// Returns a mutable reference to the terminal, if we're in a terminal render loop.
-    pub(crate) fn terminal_mut(&mut self) -> Option<&mut Terminal> {
+    pub(crate) fn terminal_mut(&mut self) -> Option<&mut Terminal<'w>> {
         self.context.terminal.as_deref_mut()
     }
 
@@ -377,10 +377,10 @@ impl<'a> Tree<'a> {
         }
     }
 
-    fn render(
+    fn render<'w>(
         &mut self,
         max_width: Option<usize>,
-        terminal: Option<&mut Terminal>,
+        terminal: Option<&mut Terminal<'w>>,
     ) -> RenderOutput {
         let mut wrapper_child_node_ids = vec![self.root_component.node_id()];
         let did_clear_terminal_output = {
@@ -460,7 +460,7 @@ impl<'a> Tree<'a> {
         }
     }
 
-    async fn terminal_render_loop(&mut self, mut term: Terminal) -> io::Result<()> {
+    async fn terminal_render_loop(&mut self, mut term: Terminal<'_>) -> io::Result<()> {
         let mut prev_canvas: Option<Canvas> = None;
         loop {
             term.refresh_size();
@@ -495,7 +495,7 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
     tree.render(max_width, None).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E>(e: &mut E, term: Terminal) -> io::Result<()>
+pub(crate) async fn terminal_render_loop<'a, E>(e: &mut E, term: Terminal<'a>) -> io::Result<()>
 where
     E: ElementExt,
 {
