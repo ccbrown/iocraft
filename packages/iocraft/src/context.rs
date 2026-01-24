@@ -1,42 +1,17 @@
-use crate::element::Output;
 use core::{
     any::Any,
     cell::{Ref, RefCell, RefMut},
     mem,
 };
-use std::{
-    io::{self, stderr, stdout, LineWriter, Write},
-    sync::{Arc, Mutex},
-};
 
 /// The system context, which is always available to all components.
 pub struct SystemContext {
     should_exit: bool,
-    stdout: Arc<Mutex<Box<dyn Write + Send>>>,
-    stderr: Arc<Mutex<Box<dyn Write + Send>>>,
-    render_to: Output,
 }
 
 impl SystemContext {
-    pub(crate) fn new(
-        stdout: Arc<Mutex<Box<dyn Write + Send>>>,
-        stderr: Arc<Mutex<Box<dyn Write + Send>>>,
-        render_to: Output,
-    ) -> Self {
-        Self {
-            should_exit: false,
-            stdout,
-            stderr,
-            render_to,
-        }
-    }
-
-    pub(crate) fn new_default() -> Self {
-        Self::new(
-            Arc::new(Mutex::new(Box::new(stdout()))),
-            Arc::new(Mutex::new(Box::new(LineWriter::new(stderr())))),
-            Output::default(),
-        )
+    pub(crate) fn new() -> Self {
+        Self { should_exit: false }
     }
 
     /// If called from a component that is being dynamically rendered, this will cause the render
@@ -47,21 +22,6 @@ impl SystemContext {
 
     pub(crate) fn should_exit(&self) -> bool {
         self.should_exit
-    }
-
-    /// Returns the stdout handle.
-    pub fn stdout(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
-        self.stdout.clone()
-    }
-
-    /// Returns the stderr handle.
-    pub fn stderr(&self) -> Arc<Mutex<Box<dyn Write + Send>>> {
-        self.stderr.clone()
-    }
-
-    /// Returns which handle the TUI is being rendered to.
-    pub fn render_to(&self) -> Output {
-        self.render_to
     }
 }
 
