@@ -141,10 +141,10 @@ fn clear_canvas_inline(dest: &mut (impl Write + ?Sized), prev_canvas_height: u16
     }
 }
 
-struct StdTerminal {
+struct StdTerminal<'a> {
     input_is_terminal: bool,
-    stdout: Box<dyn Write + Send>,
-    stderr: Box<dyn Write + Send>,
+    stdout: Box<dyn Write + Send + 'a>,
+    stderr: Box<dyn Write + Send + 'a>,
     fullscreen: bool,
     mouse_capture: bool,
     raw_mode_enabled: bool,
@@ -153,7 +153,7 @@ struct StdTerminal {
     size: Option<(u16, u16)>,
 }
 
-impl Write for StdTerminal {
+impl Write for StdTerminal<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.stdout.write(buf)
     }
@@ -163,7 +163,7 @@ impl Write for StdTerminal {
     }
 }
 
-impl TerminalImpl for StdTerminal {
+impl TerminalImpl for StdTerminal<'_> {
     fn refresh_size(&mut self) {
         self.size = terminal::size().ok()
     }
@@ -257,10 +257,10 @@ impl TerminalImpl for StdTerminal {
     }
 }
 
-impl StdTerminal {
+impl<'a> StdTerminal<'a> {
     fn new(
-        stdout: Box<dyn Write + Send>,
-        stderr: Box<dyn Write + Send>,
+        stdout: Box<dyn Write + Send + 'a>,
+        stderr: Box<dyn Write + Send + 'a>,
         fullscreen: bool,
         mouse_capture: bool,
     ) -> io::Result<Self> {
@@ -310,7 +310,7 @@ impl StdTerminal {
     }
 }
 
-impl Drop for StdTerminal {
+impl Drop for StdTerminal<'_> {
     fn drop(&mut self) {
         let _ = self.set_raw_mode_enabled(false);
         if self.fullscreen {
@@ -422,8 +422,8 @@ impl TerminalImpl for MockTerminal {
     }
 }
 
-pub(crate) struct Terminal {
-    inner: Box<dyn TerminalImpl>,
+pub(crate) struct Terminal<'a> {
+    inner: Box<dyn TerminalImpl + 'a>,
     output: Output,
     event_stream: Option<BoxStream<'static, TerminalEvent>>,
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
@@ -431,10 +431,10 @@ pub(crate) struct Terminal {
     ignore_ctrl_c: bool,
 }
 
-impl Terminal {
+impl<'a> Terminal<'a> {
     pub fn new(
-        stdout: Box<dyn Write + Send>,
-        stderr: Box<dyn Write + Send>,
+        stdout: Box<dyn Write + Send + 'a>,
+        stderr: Box<dyn Write + Send + 'a>,
         output: Output,
         fullscreen: bool,
         mouse_capture: bool,
@@ -452,21 +452,6 @@ impl Terminal {
             received_ctrl_c: false,
             ignore_ctrl_c: false,
         })
-    }
-
-    pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
-        let (term, output_stream) = MockTerminal::new(config);
-        (
-            Self {
-                inner: Box::new(term),
-                output: Output::Stdout,
-                event_stream: None,
-                subscribers: Vec::new(),
-                received_ctrl_c: false,
-                ignore_ctrl_c: false,
-            },
-            output_stream,
-        )
     }
 
     pub fn enable_mouse_capture(&mut self) -> io::Result<()> {
@@ -591,7 +576,24 @@ impl Terminal {
     }
 }
 
-impl Write for Terminal {
+impl Terminal<'static> {
+    pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
+        let (term, output_stream) = MockTerminal::new(config);
+        (
+            Self {
+                inner: Box::new(term),
+                output: Output::Stdout,
+                event_stream: None,
+                subscribers: Vec::new(),
+                received_ctrl_c: false,
+                ignore_ctrl_c: false,
+            },
+            output_stream,
+        )
+    }
+}
+
+impl Write for Terminal<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
@@ -603,18 +605,18 @@ impl Write for Terminal {
 
 /// Synchronized update terminal guard.
 /// Enters synchronized update on creation, exits when dropped.
-pub(crate) struct SynchronizedUpdate<'a> {
-    inner: &'a mut Terminal,
+pub(crate) struct SynchronizedUpdate<'a, 'b> {
+    inner: &'a mut Terminal<'b>,
 }
 
-impl<'a> SynchronizedUpdate<'a> {
-    pub fn begin(terminal: &'a mut Terminal) -> io::Result<Self> {
+impl<'a, 'b> SynchronizedUpdate<'a, 'b> {
+    pub fn begin(terminal: &'a mut Terminal<'b>) -> io::Result<Self> {
         terminal.execute(terminal::BeginSynchronizedUpdate)?;
         Ok(Self { inner: terminal })
     }
 }
 
-impl Drop for SynchronizedUpdate<'_> {
+impl Drop for SynchronizedUpdate<'_, '_> {
     fn drop(&mut self) {
         let _ = self.inner.execute(terminal::EndSynchronizedUpdate);
     }
@@ -757,5 +759,26 @@ mod tests {
         assert_eq!(vt.line(0).text(), "third     ");
         assert_eq!(vt.line(1).text(), "fourth    ");
         assert_eq!(vt.cursor().row, 1);
+    }
+
+    #[test]
+    fn test_borrowed_writers() {
+        let mut stdout_buf: Vec<u8> = Vec::new();
+        let mut stderr_buf: Vec<u8> = Vec::new();
+
+        {
+            let mut terminal = Terminal::new(
+                Box::new(&mut stdout_buf),
+                Box::new(&mut stderr_buf),
+                Output::Stdout,
+                false,
+                true,
+            )
+            .unwrap();
+            let canvas = Canvas::new(10, 1);
+            terminal.write_canvas(&canvas).unwrap();
+        }
+
+        assert!(!stdout_buf.is_empty());
     }
 }

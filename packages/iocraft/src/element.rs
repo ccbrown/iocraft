@@ -301,8 +301,8 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
         mouse_capture: Option<bool>,
         ignore_ctrl_c: bool,
         output: Output,
-        stdout_writer: Option<Box<dyn Write + Send>>,
-        stderr_writer: Option<Box<dyn Write + Send>>,
+        stdout_writer: Option<Box<dyn Write + Send + 'a>>,
+        stderr_writer: Option<Box<dyn Write + Send + 'a>>,
         element: &'a mut E,
     },
     Running(Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'a>>),
@@ -388,7 +388,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
     /// Set the stdout handle for hook output and TUI rendering (when output is Stdout).
     ///
     /// Default: `std::io::stdout()`
-    pub fn stdout<W: Write + Send + 'static>(mut self, writer: W) -> Self {
+    pub fn stdout<W: Write + Send + 'a>(mut self, writer: W) -> Self {
         match &mut self.state {
             RenderLoopFutureState::Init { stdout_writer, .. } => {
                 *stdout_writer = Some(Box::new(writer));
@@ -401,7 +401,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
     /// Set the stderr handle for hook output and TUI rendering (when output is Stderr).
     ///
     /// Default: `LineWriter::new(std::io::stderr())`
-    pub fn stderr<W: Write + Send + 'static>(mut self, writer: W) -> Self {
+    pub fn stderr<W: Write + Send + 'a>(mut self, writer: W) -> Self {
         match &mut self.state {
             RenderLoopFutureState::Init { stderr_writer, .. } => {
                 *stderr_writer = Some(Box::new(writer));
