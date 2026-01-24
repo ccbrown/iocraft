@@ -1,13 +1,10 @@
-use crate::{context::SystemContext, element::Output, ComponentUpdater, Hook, Hooks};
+use crate::{element::Output, ComponentUpdater, Hook, Hooks};
 use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use crossterm::{cursor, queue};
-use std::{
-    io::Write,
-    sync::{Arc, Mutex},
-};
+use crossterm::{cursor, QueueableCommand};
+use std::sync::{Arc, Mutex};
 
 mod private {
     pub trait Sealed {}
@@ -80,36 +77,27 @@ impl UseOutputState {
         }
 
         // Check if we have a terminal - if not, messages stay queued
-        if !updater.is_terminal_render_loop() {
+        if updater.terminal_mut().is_none() {
             return;
         }
 
         updater.clear_terminal_output();
-        let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
-
-        let system = updater.get_context::<SystemContext>().unwrap();
-        let stdout = system.stdout();
-        let stderr = system.stderr();
-        let render_to = system.render_to();
-
-        let render_handle = match render_to {
-            Output::Stdout => &stdout,
-            Output::Stderr => &stderr,
-        };
+        let terminal = updater.terminal_mut().unwrap();
+        let needs_carriage_returns = terminal.is_raw_mode_enabled();
+        let output = terminal.output();
 
         if let Some(col) = self.appended_newline {
-            let _ = queue!(
-                render_handle.lock().unwrap(),
-                cursor::MoveUp(1),
-                cursor::MoveRight(col)
-            );
+            let _ = terminal
+                .render_output()
+                .queue(cursor::MoveUp(1))
+                .and_then(|w| w.queue(cursor::MoveRight(col)));
         }
         let mut needs_extra_newline = self.appended_newline.is_some();
 
         for msg in self.queue.drain(..) {
             // Cursor manipulation only works when message output matches the render target
             let msg_matches_render = matches!(
-                (&msg, render_to),
+                (&msg, output),
                 (
                     Message::Stdout(_) | Message::StdoutNoNewline(_),
                     Output::Stdout
@@ -126,13 +114,13 @@ impl UseOutputState {
                     } else {
                         format!("{}\n", msg)
                     };
-                    let _ = stdout.lock().unwrap().write_all(formatted.as_bytes());
+                    let _ = terminal.stdout().write_all(formatted.as_bytes());
                     if msg_matches_render {
                         needs_extra_newline = false;
                     }
                 }
                 Message::StdoutNoNewline(msg) => {
-                    let _ = stdout.lock().unwrap().write_all(msg.as_bytes());
+                    let _ = terminal.stdout().write_all(msg.as_bytes());
                     if msg_matches_render && !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
@@ -143,13 +131,13 @@ impl UseOutputState {
                     } else {
                         format!("{}\n", msg)
                     };
-                    let _ = stderr.lock().unwrap().write_all(formatted.as_bytes());
+                    let _ = terminal.stderr().write_all(formatted.as_bytes());
                     if msg_matches_render {
                         needs_extra_newline = false;
                     }
                 }
                 Message::StderrNoNewline(msg) => {
-                    let _ = stderr.lock().unwrap().write_all(msg.as_bytes());
+                    let _ = terminal.stderr().write_all(msg.as_bytes());
                     if msg_matches_render && !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
@@ -161,7 +149,7 @@ impl UseOutputState {
             if let Ok(pos) = cursor::position() {
                 self.appended_newline = Some(pos.0);
                 let newline = if needs_carriage_returns { "\r\n" } else { "\n" };
-                let _ = render_handle.lock().unwrap().write_all(newline.as_bytes());
+                let _ = terminal.render_output().write_all(newline.as_bytes());
             } else {
                 self.appended_newline = None;
             }

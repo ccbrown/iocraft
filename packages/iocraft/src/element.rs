@@ -13,7 +13,7 @@ use std::{
     hash::Hash,
     io::{self, stderr, stdout, IsTerminal, LineWriter, Write},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 /// Used by the `element!` macro to extend a collection with elements.
@@ -385,7 +385,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
         self
     }
 
-    /// Set the stdout handle for hook output.
+    /// Set the stdout handle for hook output and TUI rendering (when output is Stdout).
     ///
     /// Default: `std::io::stdout()`
     pub fn stdout<W: Write + Send + 'static>(mut self, writer: W) -> Self {
@@ -398,7 +398,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
         self
     }
 
-    /// Set the stderr handle for hook output.
+    /// Set the stderr handle for hook output and TUI rendering (when output is Stderr).
     ///
     /// Default: `LineWriter::new(std::io::stderr())`
     pub fn stderr<W: Write + Send + 'static>(mut self, writer: W) -> Self {
@@ -439,40 +439,47 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
         loop {
             match &mut self.state {
                 RenderLoopFutureState::Init { .. } => {
-                    let (fullscreen, mouse_capture, ignore_ctrl_c, output, stdout_writer, stderr_writer, element) =
-                        match std::mem::replace(&mut self.state, RenderLoopFutureState::Empty) {
-                            RenderLoopFutureState::Init {
-                                fullscreen,
-                                mouse_capture,
-                                ignore_ctrl_c,
-                                output,
-                                stdout_writer,
-                                stderr_writer,
-                                element,
-                            } => (
-                                fullscreen,
-                                mouse_capture,
-                                ignore_ctrl_c,
-                                output,
-                                stdout_writer,
-                                stderr_writer,
-                                element,
-                            ),
-                            _ => unreachable!(),
-                        };
-                    let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
-                    let stdout_handle = Arc::new(Mutex::new(
-                        stdout_writer.unwrap_or_else(|| Box::new(stdout())),
-                    ));
-                    // Unlike stdout, stderr is unbuffered by default in the standard library
-                    let stderr_handle = Arc::new(Mutex::new(
-                        stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr()))),
-                    ));
-                    let render_handle = match output {
-                        Output::Stdout => stdout_handle.clone(),
-                        Output::Stderr => stderr_handle.clone(),
+                    let (
+                        fullscreen,
+                        mouse_capture,
+                        ignore_ctrl_c,
+                        output,
+                        stdout_writer,
+                        stderr_writer,
+                        element,
+                    ) = match std::mem::replace(&mut self.state, RenderLoopFutureState::Empty) {
+                        RenderLoopFutureState::Init {
+                            fullscreen,
+                            mouse_capture,
+                            ignore_ctrl_c,
+                            output,
+                            stdout_writer,
+                            stderr_writer,
+                            element,
+                        } => (
+                            fullscreen,
+                            mouse_capture,
+                            ignore_ctrl_c,
+                            output,
+                            stdout_writer,
+                            stderr_writer,
+                            element,
+                        ),
+                        _ => unreachable!(),
                     };
-                    let mut terminal = match Terminal::with_render_handle(render_handle, fullscreen, effective_mouse_capture) {
+                    let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
+                    let stdout_handle = stdout_writer.unwrap_or_else(|| Box::new(stdout()));
+                    // Unlike stdout, stderr is unbuffered by default in the standard library
+                    let stderr_handle =
+                        stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr())));
+
+                    let mut terminal = match Terminal::new(
+                        stdout_handle,
+                        stderr_handle,
+                        output,
+                        fullscreen,
+                        effective_mouse_capture,
+                    ) {
                         Ok(t) => t,
                         Err(e) => return std::task::Poll::Ready(Err(e)),
                     };
@@ -484,13 +491,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                     if ignore_ctrl_c {
                         terminal.ignore_ctrl_c();
                     }
-                    let fut = Box::pin(terminal_render_loop(
-                        element,
-                        terminal,
-                        stdout_handle,
-                        stderr_handle,
-                        output,
-                    ));
+                    let fut = Box::pin(terminal_render_loop(element, terminal));
                     self.state = RenderLoopFutureState::Running(fut);
                 }
                 RenderLoopFutureState::Running(fut) => {
