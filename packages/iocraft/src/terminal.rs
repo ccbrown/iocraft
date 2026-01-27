@@ -124,11 +124,14 @@ trait TerminalImpl: Write + Send {
     fn clear_canvas(&mut self) -> io::Result<()>;
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
-    fn stdout(&mut self) -> &mut dyn Write;
-    fn stderr(&mut self) -> &mut dyn Write;
+    fn dest(&mut self) -> &mut dyn Write;
+    fn alt(&mut self) -> &mut dyn Write;
 }
 
-fn clear_canvas_inline(dest: &mut (impl Write + ?Sized), prev_canvas_height: u16) -> io::Result<()> {
+fn clear_canvas_inline(
+    dest: &mut (impl Write + ?Sized),
+    prev_canvas_height: u16,
+) -> io::Result<()> {
     let lines_to_rewind = prev_canvas_height - 1;
     if lines_to_rewind == 0 {
         dest.queue(cursor::MoveToColumn(0))?
@@ -143,8 +146,8 @@ fn clear_canvas_inline(dest: &mut (impl Write + ?Sized), prev_canvas_height: u16
 
 struct StdTerminal<'a> {
     input_is_terminal: bool,
-    stdout: Box<dyn Write + Send + 'a>,
-    stderr: Box<dyn Write + Send + 'a>,
+    dest: Box<dyn Write + Send + 'a>,
+    alt: Box<dyn Write + Send + 'a>,
     fullscreen: bool,
     mouse_capture: bool,
     raw_mode_enabled: bool,
@@ -155,11 +158,11 @@ struct StdTerminal<'a> {
 
 impl Write for StdTerminal<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.stdout.write(buf)
+        self.dest.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.stdout.flush()
+        self.dest.flush()
     }
 }
 
@@ -177,9 +180,9 @@ impl TerminalImpl for StdTerminal<'_> {
             self.mouse_capture = enabled;
             if self.raw_mode_enabled {
                 if enabled {
-                    execute!(self.dest, event::EnableMouseCapture)?;
+                    self.dest.execute(event::EnableMouseCapture)?;
                 } else {
-                    execute!(self.dest, event::DisableMouseCapture)?;
+                    self.dest.execute(event::DisableMouseCapture)?;
                 }
             }
         }
@@ -200,7 +203,7 @@ impl TerminalImpl for StdTerminal<'_> {
                 if self.prev_canvas_height >= size.1 {
                     // We have to clear the entire terminal to avoid leaving artifacts.
                     // See: https://github.com/ccbrown/iocraft/issues/118
-                    self.stdout
+                    self.dest
                         .queue(terminal::Clear(terminal::ClearType::All))?
                         .queue(terminal::Clear(terminal::ClearType::Purge))?
                         .queue(cursor::MoveTo(0, 0))?;
@@ -209,7 +212,7 @@ impl TerminalImpl for StdTerminal<'_> {
             }
         }
 
-        clear_canvas_inline(&mut *self.stdout, self.prev_canvas_height)
+        clear_canvas_inline(&mut *self.dest, self.prev_canvas_height)
     }
 
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
@@ -248,25 +251,25 @@ impl TerminalImpl for StdTerminal<'_> {
             .boxed())
     }
 
-    fn stdout(&mut self) -> &mut dyn Write {
-        &mut *self.stdout
+    fn dest(&mut self) -> &mut dyn Write {
+        &mut *self.dest
     }
 
-    fn stderr(&mut self) -> &mut dyn Write {
-        &mut *self.stderr
+    fn alt(&mut self) -> &mut dyn Write {
+        &mut *self.alt
     }
 }
 
 impl<'a> StdTerminal<'a> {
     fn new(
-        stdout: Box<dyn Write + Send + 'a>,
-        stderr: Box<dyn Write + Send + 'a>,
+        dest: Box<dyn Write + Send + 'a>,
+        alt: Box<dyn Write + Send + 'a>,
         fullscreen: bool,
         mouse_capture: bool,
     ) -> io::Result<Self> {
         let mut term = Self {
-            stdout,
-            stderr,
+            dest,
+            alt,
             input_is_terminal: stdin().is_terminal(),
             fullscreen,
             mouse_capture,
@@ -275,9 +278,9 @@ impl<'a> StdTerminal<'a> {
             prev_canvas_height: 0,
             size: None,
         };
-        term.stdout.queue(cursor::Hide)?;
+        term.dest.queue(cursor::Hide)?;
         if fullscreen {
-            term.stdout.queue(terminal::EnterAlternateScreen)?;
+            term.dest.queue(terminal::EnterAlternateScreen)?;
         }
         Ok(term)
     }
@@ -286,22 +289,22 @@ impl<'a> StdTerminal<'a> {
         if raw_mode_enabled != self.raw_mode_enabled {
             if raw_mode_enabled {
                 if terminal::supports_keyboard_enhancement().unwrap_or(false) {
-                    self.stdout.execute(event::PushKeyboardEnhancementFlags(
+                    self.dest.execute(event::PushKeyboardEnhancementFlags(
                         event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
                     ))?;
                     self.enabled_keyboard_enhancement = true;
                 }
                 if self.mouse_capture {
-                    self.stdout.execute(event::EnableMouseCapture)?;
+                    self.dest.execute(event::EnableMouseCapture)?;
                 }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
                 if self.mouse_capture {
-                    self.stdout.execute(event::DisableMouseCapture)?;
+                    self.dest.execute(event::DisableMouseCapture)?;
                 }
                 if self.enabled_keyboard_enhancement {
-                    self.stdout.execute(event::PopKeyboardEnhancementFlags)?;
+                    self.dest.execute(event::PopKeyboardEnhancementFlags)?;
                 }
             }
             self.raw_mode_enabled = raw_mode_enabled;
@@ -314,11 +317,11 @@ impl Drop for StdTerminal<'_> {
     fn drop(&mut self) {
         let _ = self.set_raw_mode_enabled(false);
         if self.fullscreen {
-            let _ = self.stdout.queue(terminal::LeaveAlternateScreen);
+            let _ = self.dest.queue(terminal::LeaveAlternateScreen);
         } else if self.prev_canvas_height > 0 {
-            let _ = self.stdout.write_all(b"\r\n");
+            let _ = self.dest.write_all(b"\r\n");
         }
-        let _ = self.stdout.execute(cursor::Show);
+        let _ = self.dest.execute(cursor::Show);
     }
 }
 
@@ -363,8 +366,8 @@ impl Default for MockTerminalConfig {
 struct MockTerminal {
     config: MockTerminalConfig,
     output: mpsc::UnboundedSender<Canvas>,
-    dummy_stdout: io::Sink,
-    dummy_stderr: io::Sink,
+    dummy_dest: io::Sink,
+    dummy_alt: io::Sink,
 }
 
 impl MockTerminal {
@@ -375,8 +378,8 @@ impl MockTerminal {
             Self {
                 config,
                 output: output_tx,
-                dummy_stdout: io::sink(),
-                dummy_stderr: io::sink(),
+                dummy_dest: io::sink(),
+                dummy_alt: io::sink(),
             },
             output,
         )
@@ -413,12 +416,12 @@ impl TerminalImpl for MockTerminal {
         Ok(events.chain(stream::pending()).boxed())
     }
 
-    fn stdout(&mut self) -> &mut dyn Write {
-        &mut self.dummy_stdout
+    fn dest(&mut self) -> &mut dyn Write {
+        &mut self.dummy_dest
     }
 
-    fn stderr(&mut self) -> &mut dyn Write {
-        &mut self.dummy_stderr
+    fn alt(&mut self) -> &mut dyn Write {
+        &mut self.dummy_alt
     }
 }
 
@@ -439,13 +442,13 @@ impl<'a> Terminal<'a> {
         fullscreen: bool,
         mouse_capture: bool,
     ) -> io::Result<Self> {
-        // Flip handles so StdTerminal.stdout is always the render destination
-        let (stdout, stderr) = match output {
+        // dest is the render destination, alt is the other stream
+        let (dest, alt) = match output {
             Output::Stdout => (stdout, stderr),
             Output::Stderr => (stderr, stdout),
         };
         Ok(Self {
-            inner: Box::new(StdTerminal::new(stdout, stderr, fullscreen, mouse_capture)?),
+            inner: Box::new(StdTerminal::new(dest, alt, fullscreen, mouse_capture)?),
             output,
             event_stream: None,
             subscribers: Vec::new(),
@@ -497,25 +500,23 @@ impl<'a> Terminal<'a> {
 
     /// Returns a mutable reference to the stdout handle.
     pub fn stdout(&mut self) -> &mut dyn Write {
-        // Flip back: inner.stdout is render dest, inner.stderr is alternate
         match self.output {
-            Output::Stdout => self.inner.stdout(),
-            Output::Stderr => self.inner.stderr(),
+            Output::Stdout => self.inner.dest(),
+            Output::Stderr => self.inner.alt(),
         }
     }
 
     /// Returns a mutable reference to the stderr handle.
     pub fn stderr(&mut self) -> &mut dyn Write {
-        // Flip back: inner.stdout is render dest, inner.stderr is alternate
         match self.output {
-            Output::Stdout => self.inner.stderr(),
-            Output::Stderr => self.inner.stdout(),
+            Output::Stdout => self.inner.alt(),
+            Output::Stderr => self.inner.dest(),
         }
     }
 
     /// Returns a mutable reference to the render output handle (stdout or stderr based on output setting).
     pub fn render_output(&mut self) -> &mut dyn Write {
-        self.inner.stdout()
+        self.inner.dest()
     }
 
     /// Wraps a series of terminal updates in a synchronized update block, making sure to end the
