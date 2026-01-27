@@ -94,6 +94,10 @@ impl UseOutputState {
                 .queue(cursor::MoveUp(1))
                 .and_then(|w| w.queue(cursor::MoveRight(col)));
         }
+        // Flush render output to ensure escape sequences are sent before any
+        // cross-stream writes (e.g., stdout messages when rendering to stderr).
+        let _ = terminal.render_output().flush();
+
         let mut needs_extra_newline = self.appended_newline.is_some();
 
         for msg in self.queue.drain(..) {
