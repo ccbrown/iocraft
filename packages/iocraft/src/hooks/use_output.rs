@@ -1,10 +1,13 @@
-use crate::{element::Output, ComponentUpdater, Hook, Hooks};
+use crate::{ComponentUpdater, Hook, Hooks};
 use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 use crossterm::{cursor, QueueableCommand};
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+};
 
 mod private {
     pub trait Sealed {}
@@ -84,7 +87,6 @@ impl UseOutputState {
         updater.clear_terminal_output();
         let terminal = updater.terminal_mut().unwrap();
         let needs_carriage_returns = terminal.is_raw_mode_enabled();
-        let output = terminal.output();
 
         if let Some(col) = self.appended_newline {
             let _ = terminal
@@ -95,18 +97,6 @@ impl UseOutputState {
         let mut needs_extra_newline = self.appended_newline.is_some();
 
         for msg in self.queue.drain(..) {
-            // Cursor manipulation only works when message output matches the render target
-            let msg_matches_render = matches!(
-                (&msg, output),
-                (
-                    Message::Stdout(_) | Message::StdoutNoNewline(_),
-                    Output::Stdout
-                ) | (
-                    Message::Stderr(_) | Message::StderrNoNewline(_),
-                    Output::Stderr
-                )
-            );
-
             match msg {
                 Message::Stdout(msg) => {
                     let formatted = if needs_carriage_returns {
@@ -115,13 +105,11 @@ impl UseOutputState {
                         format!("{}\n", msg)
                     };
                     let _ = terminal.stdout().write_all(formatted.as_bytes());
-                    if msg_matches_render {
-                        needs_extra_newline = false;
-                    }
+                    needs_extra_newline = false;
                 }
                 Message::StdoutNoNewline(msg) => {
                     let _ = terminal.stdout().write_all(msg.as_bytes());
-                    if msg_matches_render && !msg.is_empty() {
+                    if !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
@@ -132,13 +120,11 @@ impl UseOutputState {
                         format!("{}\n", msg)
                     };
                     let _ = terminal.stderr().write_all(formatted.as_bytes());
-                    if msg_matches_render {
-                        needs_extra_newline = false;
-                    }
+                    needs_extra_newline = false;
                 }
                 Message::StderrNoNewline(msg) => {
                     let _ = terminal.stderr().write_all(msg.as_bytes());
-                    if msg_matches_render && !msg.is_empty() {
+                    if !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
