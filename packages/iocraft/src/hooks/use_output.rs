@@ -3,8 +3,11 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use crossterm::{cursor, queue};
-use std::sync::{Arc, Mutex};
+use crossterm::{cursor, QueueableCommand};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+};
 
 mod private {
     pub trait Sealed {}
@@ -76,40 +79,55 @@ impl UseOutputState {
             return;
         }
 
-        updater.clear_terminal_output();
-        if let Some(col) = self.appended_newline {
-            let _ = queue!(std::io::stdout(), cursor::MoveUp(1), cursor::MoveRight(col));
+        // Check if we have a terminal - if not, messages stay queued
+        if updater.terminal_mut().is_none() {
+            return;
         }
 
-        let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
+        updater.clear_terminal_output();
+        let terminal = updater.terminal_mut().unwrap();
+        let needs_carriage_returns = terminal.is_raw_mode_enabled();
+
+        if let Some(col) = self.appended_newline {
+            let _ = terminal
+                .render_output()
+                .queue(cursor::MoveUp(1))
+                .and_then(|w| w.queue(cursor::MoveRight(col)));
+        }
+        // Flush render output to ensure escape sequences are sent before any
+        // cross-stream writes (e.g., stdout messages when rendering to stderr).
+        let _ = terminal.render_output().flush();
+
         let mut needs_extra_newline = self.appended_newline.is_some();
 
         for msg in self.queue.drain(..) {
             match msg {
                 Message::Stdout(msg) => {
-                    if needs_carriage_returns {
-                        print!("{}\r\n", msg)
+                    let formatted = if needs_carriage_returns {
+                        format!("{}\r\n", msg)
                     } else {
-                        println!("{}", msg)
-                    }
+                        format!("{}\n", msg)
+                    };
+                    let _ = terminal.stdout().write_all(formatted.as_bytes());
                     needs_extra_newline = false;
                 }
                 Message::StdoutNoNewline(msg) => {
-                    print!("{}", msg);
+                    let _ = terminal.stdout().write_all(msg.as_bytes());
                     if !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
                 Message::Stderr(msg) => {
-                    if needs_carriage_returns {
-                        eprint!("{}\r\n", msg)
+                    let formatted = if needs_carriage_returns {
+                        format!("{}\r\n", msg)
                     } else {
-                        eprintln!("{}", msg)
-                    }
+                        format!("{}\n", msg)
+                    };
+                    let _ = terminal.stderr().write_all(formatted.as_bytes());
                     needs_extra_newline = false;
                 }
                 Message::StderrNoNewline(msg) => {
-                    eprint!("{}", msg);
+                    let _ = terminal.stderr().write_all(msg.as_bytes());
                     if !msg.is_empty() {
                         needs_extra_newline = !msg.ends_with('\n');
                     }
@@ -120,11 +138,8 @@ impl UseOutputState {
         if needs_extra_newline {
             if let Ok(pos) = cursor::position() {
                 self.appended_newline = Some(pos.0);
-                if needs_carriage_returns {
-                    print!("\r\n");
-                } else {
-                    println!();
-                }
+                let newline = if needs_carriage_returns { "\r\n" } else { "\n" };
+                let _ = terminal.render_output().write_all(newline.as_bytes());
             } else {
                 self.appended_newline = None;
             }

@@ -1,8 +1,8 @@
-use crate::canvas::Canvas;
+use crate::{canvas::Canvas, element::Output};
 use crossterm::{
     cursor,
     event::{self, Event, EventStream},
-    execute, queue, terminal,
+    terminal, ExecutableCommand, QueueableCommand,
 };
 use futures::{
     channel::mpsc,
@@ -11,7 +11,7 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdin, stdout, IsTerminal, Write},
+    io::{self, stdin, IsTerminal, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
@@ -121,11 +121,14 @@ trait TerminalImpl: Write + Send {
     fn clear_canvas(&mut self) -> io::Result<()>;
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
+    fn stdout(&mut self) -> &mut dyn Write;
+    fn stderr(&mut self) -> &mut dyn Write;
 }
 
-struct StdTerminal {
+struct StdTerminal<'a> {
     input_is_terminal: bool,
-    dest: io::Stdout,
+    stdout: Box<dyn Write + Send + 'a>,
+    stderr: Box<dyn Write + Send + 'a>,
     fullscreen: bool,
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
@@ -133,17 +136,17 @@ struct StdTerminal {
     size: Option<(u16, u16)>,
 }
 
-impl Write for StdTerminal {
+impl Write for StdTerminal<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.dest.write(buf)
+        self.stdout.write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.dest.flush()
+        self.stdout.flush()
     }
 }
 
-impl TerminalImpl for StdTerminal {
+impl TerminalImpl for StdTerminal<'_> {
     fn refresh_size(&mut self) {
         self.size = terminal::size().ok()
     }
@@ -166,21 +169,19 @@ impl TerminalImpl for StdTerminal {
                 if self.prev_canvas_height >= size.1 {
                     // We have to clear the entire terminal to avoid leaving artifacts.
                     // See: https://github.com/ccbrown/iocraft/issues/118
-                    return queue!(
-                        self.dest,
-                        terminal::Clear(terminal::ClearType::Purge),
-                        cursor::MoveTo(0, 0),
-                    );
+                    self.stdout
+                        .queue(terminal::Clear(terminal::ClearType::Purge))?
+                        .queue(cursor::MoveTo(0, 0))?;
+                    return Ok(());
                 }
             }
         }
 
         let lines_to_rewind = self.prev_canvas_height - if self.fullscreen { 1 } else { 0 };
-        queue!(
-            self.dest,
-            cursor::MoveToPreviousLine(lines_to_rewind as _),
-            terminal::Clear(terminal::ClearType::FromCursorDown)
-        )
+        self.stdout
+            .queue(cursor::MoveToPreviousLine(lines_to_rewind as _))?
+            .queue(terminal::Clear(terminal::ClearType::FromCursorDown))?;
+        Ok(())
     }
 
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
@@ -222,52 +223,59 @@ impl TerminalImpl for StdTerminal {
             })
             .boxed())
     }
+
+    fn stdout(&mut self) -> &mut dyn Write {
+        &mut *self.stdout
+    }
+
+    fn stderr(&mut self) -> &mut dyn Write {
+        &mut *self.stderr
+    }
 }
 
-impl StdTerminal {
-    fn new(fullscreen: bool) -> io::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut dest = stdout();
-        queue!(dest, cursor::Hide)?;
-        if fullscreen {
-            queue!(dest, terminal::EnterAlternateScreen)?;
-        }
-        Ok(Self {
-            dest,
+impl<'a> StdTerminal<'a> {
+    fn new(
+        stdout: Box<dyn Write + Send + 'a>,
+        stderr: Box<dyn Write + Send + 'a>,
+        fullscreen: bool,
+    ) -> io::Result<Self> {
+        let mut term = Self {
+            stdout,
+            stderr,
             input_is_terminal: stdin().is_terminal(),
             fullscreen,
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_height: 0,
             size: None,
-        })
+        };
+        term.stdout.queue(cursor::Hide)?;
+        if fullscreen {
+            term.stdout.queue(terminal::EnterAlternateScreen)?;
+        }
+        Ok(term)
     }
 
     fn set_raw_mode_enabled(&mut self, raw_mode_enabled: bool) -> io::Result<()> {
         if raw_mode_enabled != self.raw_mode_enabled {
             if raw_mode_enabled {
                 if terminal::supports_keyboard_enhancement().unwrap_or(false) {
-                    execute!(
-                        self.dest,
-                        event::PushKeyboardEnhancementFlags(
-                            event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-                        )
-                    )?;
+                    self.stdout.execute(event::PushKeyboardEnhancementFlags(
+                        event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
+                    ))?;
                     self.enabled_keyboard_enhancement = true;
                 }
                 if self.fullscreen {
-                    execute!(self.dest, event::EnableMouseCapture)?;
+                    self.stdout.execute(event::EnableMouseCapture)?;
                 }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
                 if self.fullscreen {
-                    execute!(self.dest, event::DisableMouseCapture)?;
+                    self.stdout.execute(event::DisableMouseCapture)?;
                 }
                 if self.enabled_keyboard_enhancement {
-                    execute!(self.dest, event::PopKeyboardEnhancementFlags)?;
+                    self.stdout.execute(event::PopKeyboardEnhancementFlags)?;
                 }
             }
             self.raw_mode_enabled = raw_mode_enabled;
@@ -276,13 +284,13 @@ impl StdTerminal {
     }
 }
 
-impl Drop for StdTerminal {
+impl Drop for StdTerminal<'_> {
     fn drop(&mut self) {
         let _ = self.set_raw_mode_enabled(false);
         if self.fullscreen {
-            let _ = queue!(self.dest, terminal::LeaveAlternateScreen);
+            let _ = self.stdout.queue(terminal::LeaveAlternateScreen);
         }
-        let _ = execute!(self.dest, cursor::Show);
+        let _ = self.stdout.execute(cursor::Show);
     }
 }
 
@@ -327,6 +335,8 @@ impl Default for MockTerminalConfig {
 struct MockTerminal {
     config: MockTerminalConfig,
     output: mpsc::UnboundedSender<Canvas>,
+    dummy_stdout: io::Sink,
+    dummy_stderr: io::Sink,
 }
 
 impl MockTerminal {
@@ -337,6 +347,8 @@ impl MockTerminal {
             Self {
                 config,
                 output: output_tx,
+                dummy_stdout: io::sink(),
+                dummy_stderr: io::sink(),
             },
             output,
         )
@@ -372,38 +384,45 @@ impl TerminalImpl for MockTerminal {
         mem::swap(&mut events, &mut self.config.events);
         Ok(events.chain(stream::pending()).boxed())
     }
+
+    fn stdout(&mut self) -> &mut dyn Write {
+        &mut self.dummy_stdout
+    }
+
+    fn stderr(&mut self) -> &mut dyn Write {
+        &mut self.dummy_stderr
+    }
 }
 
-pub(crate) struct Terminal {
-    inner: Box<dyn TerminalImpl>,
+pub(crate) struct Terminal<'a> {
+    inner: Box<dyn TerminalImpl + 'a>,
+    output: Output,
     event_stream: Option<BoxStream<'static, TerminalEvent>>,
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
     received_ctrl_c: bool,
     ignore_ctrl_c: bool,
 }
 
-impl Terminal {
-    pub fn new() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(false)?))
-    }
-
-    pub fn fullscreen() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(true)?))
-    }
-
-    pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
-        let (term, output) = MockTerminal::new(config);
-        (Self::new_with_impl(term), output)
-    }
-
-    fn new_with_impl<T: TerminalImpl + 'static>(inner: T) -> Self {
-        Self {
-            inner: Box::new(inner),
+impl<'a> Terminal<'a> {
+    pub fn new(
+        stdout: Box<dyn Write + Send + 'a>,
+        stderr: Box<dyn Write + Send + 'a>,
+        output: Output,
+        fullscreen: bool,
+    ) -> io::Result<Self> {
+        // Flip handles so StdTerminal.stdout is always the render destination
+        let (stdout, stderr) = match output {
+            Output::Stdout => (stdout, stderr),
+            Output::Stderr => (stderr, stdout),
+        };
+        Ok(Self {
+            inner: Box::new(StdTerminal::new(stdout, stderr, fullscreen)?),
+            output,
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
             ignore_ctrl_c: false,
-        }
+        })
     }
 
     pub fn ignore_ctrl_c(&mut self) {
@@ -432,6 +451,34 @@ impl Terminal {
 
     pub fn received_ctrl_c(&self) -> bool {
         self.received_ctrl_c
+    }
+
+    /// Returns which output handle is being used for TUI rendering.
+    pub fn output(&self) -> Output {
+        self.output
+    }
+
+    /// Returns a mutable reference to the stdout handle.
+    pub fn stdout(&mut self) -> &mut dyn Write {
+        // Flip back: inner.stdout is render dest, inner.stderr is alternate
+        match self.output {
+            Output::Stdout => self.inner.stdout(),
+            Output::Stderr => self.inner.stderr(),
+        }
+    }
+
+    /// Returns a mutable reference to the stderr handle.
+    pub fn stderr(&mut self) -> &mut dyn Write {
+        // Flip back: inner.stdout is render dest, inner.stderr is alternate
+        match self.output {
+            Output::Stdout => self.inner.stderr(),
+            Output::Stderr => self.inner.stdout(),
+        }
+    }
+
+    /// Returns a mutable reference to the render output handle (stdout or stderr based on output setting).
+    pub fn render_output(&mut self) -> &mut dyn Write {
+        self.inner.stdout()
     }
 
     /// Wraps a series of terminal updates in a synchronized update block, making sure to end the
@@ -492,7 +539,24 @@ impl Terminal {
     }
 }
 
-impl Write for Terminal {
+impl Terminal<'static> {
+    pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
+        let (term, output_stream) = MockTerminal::new(config);
+        (
+            Self {
+                inner: Box::new(term),
+                output: Output::Stdout,
+                event_stream: None,
+                subscribers: Vec::new(),
+                received_ctrl_c: false,
+                ignore_ctrl_c: false,
+            },
+            output_stream,
+        )
+    }
+}
+
+impl Write for Terminal<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }
@@ -504,36 +568,66 @@ impl Write for Terminal {
 
 /// Synchronized update terminal guard.
 /// Enters synchronized update on creation, exits when dropped.
-pub(crate) struct SynchronizedUpdate<'a> {
-    inner: &'a mut Terminal,
+pub(crate) struct SynchronizedUpdate<'a, 'b> {
+    inner: &'a mut Terminal<'b>,
 }
 
-impl<'a> SynchronizedUpdate<'a> {
-    pub fn begin(terminal: &'a mut Terminal) -> io::Result<Self> {
-        execute!(terminal, terminal::BeginSynchronizedUpdate)?;
+impl<'a, 'b> SynchronizedUpdate<'a, 'b> {
+    pub fn begin(terminal: &'a mut Terminal<'b>) -> io::Result<Self> {
+        terminal.execute(terminal::BeginSynchronizedUpdate)?;
         Ok(Self { inner: terminal })
     }
 }
 
-impl Drop for SynchronizedUpdate<'_> {
+impl Drop for SynchronizedUpdate<'_, '_> {
     fn drop(&mut self) {
-        let _ = execute!(self.inner, terminal::EndSynchronizedUpdate);
+        let _ = self.inner.execute(terminal::EndSynchronizedUpdate);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::prelude::*;
 
     #[test]
     fn test_std_terminal() {
         // There's unfortunately not much here we can really test, but we'll do our best.
         // TODO: Is there a library we can use to emulate terminal input/output?
-        let mut terminal = Terminal::new().unwrap();
+        let mut terminal = Terminal::new(
+            Box::new(std::io::stdout()),
+            Box::new(std::io::stderr()),
+            Output::Stdout,
+            false,
+        )
+        .unwrap();
         assert!(!terminal.is_raw_mode_enabled());
         assert!(!terminal.received_ctrl_c());
         assert!(!terminal.is_raw_mode_enabled());
         let canvas = Canvas::new(10, 1);
         terminal.write_canvas(&canvas).unwrap();
+    }
+
+    #[test]
+    fn test_borrowed_writers() {
+        let mut stdout_buf: Vec<u8> = Vec::new();
+        let mut stderr_buf: Vec<u8> = Vec::new();
+
+        {
+            // Test that borrowed writers compile and work.
+            // The lifetime of the terminal is tied to the borrowed writers.
+            let mut terminal = Terminal::new(
+                Box::new(&mut stdout_buf),
+                Box::new(&mut stderr_buf),
+                Output::Stdout,
+                false,
+            )
+            .unwrap();
+            let canvas = Canvas::new(10, 1);
+            terminal.write_canvas(&canvas).unwrap();
+        }
+
+        // Verify we can use the buffers after the terminal is dropped
+        assert!(!stdout_buf.is_empty());
     }
 }

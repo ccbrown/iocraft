@@ -11,7 +11,7 @@ use std::{
     fmt::Debug,
     future::Future,
     hash::Hash,
-    io::{self, stderr, stdout, IsTerminal, Write},
+    io::{self, stderr, stdout, IsTerminal, LineWriter, Write},
     pin::Pin,
     sync::Arc,
 };
@@ -282,6 +282,16 @@ pub trait ElementExt: private::Sealed + Sized {
     }
 }
 
+/// Specifies which handle to render the TUI to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Output {
+    /// Render to the stdout handle (default).
+    #[default]
+    Stdout,
+    /// Render to the stderr handle.
+    Stderr,
+}
+
 #[derive(Default)]
 enum RenderLoopFutureState<'a, E: ElementExt> {
     #[default]
@@ -289,6 +299,9 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
     Init {
         fullscreen: bool,
         ignore_ctrl_c: bool,
+        output: Output,
+        stdout_writer: Option<Box<dyn Write + Send + 'a>>,
+        stderr_writer: Option<Box<dyn Write + Send + 'a>>,
         element: &'a mut E,
     },
     Running(Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'a>>),
@@ -309,6 +322,9 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
             state: RenderLoopFutureState::Init {
                 fullscreen: false,
                 ignore_ctrl_c: false,
+                output: Output::default(),
+                stdout_writer: None,
+                stderr_writer: None,
                 element,
             },
         }
@@ -342,6 +358,49 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
         }
         self
     }
+
+    /// Set the stdout handle for hook output and TUI rendering (when output is Stdout).
+    ///
+    /// Default: `std::io::stdout()`
+    pub fn stdout<W: Write + Send + 'a>(mut self, writer: W) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { stdout_writer, .. } => {
+                *stdout_writer = Some(Box::new(writer));
+            }
+            _ => panic!("stdout() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Set the stderr handle for hook output and TUI rendering (when output is Stderr).
+    ///
+    /// Default: `LineWriter::new(std::io::stderr())`
+    pub fn stderr<W: Write + Send + 'a>(mut self, writer: W) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { stderr_writer, .. } => {
+                *stderr_writer = Some(Box::new(writer));
+            }
+            _ => panic!("stderr() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Choose which handle to render the TUI to.
+    ///
+    /// When set to [`Output::Stderr`], the TUI will be rendered to the stderr handle.
+    /// This is useful for CLI tools that need to pipe stdout to other programs
+    /// while still displaying a TUI to the user.
+    ///
+    /// Default: [`Output::Stdout`]
+    pub fn output(mut self, output: Output) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { output: o, .. } => {
+                *o = output;
+            }
+            _ => panic!("output() must be called before polling the future"),
+        }
+        self
+    }
 }
 
 impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
@@ -354,23 +413,35 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
         loop {
             match &mut self.state {
                 RenderLoopFutureState::Init { .. } => {
-                    let (fullscreen, ignore_ctrl_c, element) =
+                    let (fullscreen, ignore_ctrl_c, output, stdout_writer, stderr_writer, element) =
                         match std::mem::replace(&mut self.state, RenderLoopFutureState::Empty) {
                             RenderLoopFutureState::Init {
                                 fullscreen,
                                 ignore_ctrl_c,
+                                output,
+                                stdout_writer,
+                                stderr_writer,
                                 element,
-                            } => (fullscreen, ignore_ctrl_c, element),
+                            } => (
+                                fullscreen,
+                                ignore_ctrl_c,
+                                output,
+                                stdout_writer,
+                                stderr_writer,
+                                element,
+                            ),
                             _ => unreachable!(),
                         };
-                    let mut terminal = match if fullscreen {
-                        Terminal::fullscreen()
-                    } else {
-                        Terminal::new()
-                    } {
-                        Ok(t) => t,
-                        Err(e) => return std::task::Poll::Ready(Err(e)),
-                    };
+                    let stdout_handle = stdout_writer.unwrap_or_else(|| Box::new(stdout()));
+                    // Unlike stdout, stderr is unbuffered by default in the standard library
+                    let stderr_handle =
+                        stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr())));
+
+                    let mut terminal =
+                        match Terminal::new(stdout_handle, stderr_handle, output, fullscreen) {
+                            Ok(t) => t,
+                            Err(e) => return std::task::Poll::Ready(Err(e)),
+                        };
                     if ignore_ctrl_c {
                         terminal.ignore_ctrl_c();
                     }
