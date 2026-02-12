@@ -127,6 +127,7 @@ struct StdTerminal {
     input_is_terminal: bool,
     dest: io::Stdout,
     fullscreen: bool,
+    mouse_capture: bool,
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
     prev_canvas_height: u16,
@@ -225,7 +226,7 @@ impl TerminalImpl for StdTerminal {
 }
 
 impl StdTerminal {
-    fn new(fullscreen: bool) -> io::Result<Self>
+    fn new(fullscreen: bool, mouse_capture: bool) -> io::Result<Self>
     where
         Self: Sized,
     {
@@ -238,6 +239,7 @@ impl StdTerminal {
             dest,
             input_is_terminal: stdin().is_terminal(),
             fullscreen,
+            mouse_capture,
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_height: 0,
@@ -257,13 +259,13 @@ impl StdTerminal {
                     )?;
                     self.enabled_keyboard_enhancement = true;
                 }
-                if self.fullscreen {
+                if self.fullscreen && self.mouse_capture {
                     execute!(self.dest, event::EnableMouseCapture)?;
                 }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
-                if self.fullscreen {
+                if self.fullscreen && self.mouse_capture {
                     execute!(self.dest, event::DisableMouseCapture)?;
                 }
                 if self.enabled_keyboard_enhancement {
@@ -384,11 +386,11 @@ pub(crate) struct Terminal {
 
 impl Terminal {
     pub fn new() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(false)?))
+        Ok(Self::new_with_impl(StdTerminal::new(false, true)?))
     }
 
-    pub fn fullscreen() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(true)?))
+    pub fn fullscreen(mouse_capture: bool) -> io::Result<Self> {
+        Ok(Self::new_with_impl(StdTerminal::new(true, mouse_capture)?))
     }
 
     pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
