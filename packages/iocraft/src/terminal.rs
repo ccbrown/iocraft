@@ -176,21 +176,25 @@ impl TerminalImpl for StdTerminal {
             }
         }
 
-        let lines_to_rewind = self.prev_canvas_height - if self.fullscreen { 1 } else { 0 };
-        queue!(
-            self.dest,
-            cursor::MoveToPreviousLine(lines_to_rewind as _),
-            terminal::Clear(terminal::ClearType::FromCursorDown)
-        )
+        let lines_to_rewind = self.prev_canvas_height - 1;
+        if lines_to_rewind == 0 {
+            queue!(
+                self.dest,
+                cursor::MoveToColumn(0),
+                terminal::Clear(terminal::ClearType::FromCursorDown)
+            )
+        } else {
+            queue!(
+                self.dest,
+                cursor::MoveToPreviousLine(lines_to_rewind as _),
+                terminal::Clear(terminal::ClearType::FromCursorDown)
+            )
+        }
     }
 
     fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
         self.prev_canvas_height = canvas.height() as _;
-        if self.fullscreen {
-            canvas.write_ansi_without_final_newline(self)?;
-        } else {
-            canvas.write_ansi(self)?;
-        }
+        canvas.write_ansi_without_final_newline(self)?;
         Ok(())
     }
 
@@ -283,6 +287,8 @@ impl Drop for StdTerminal {
         let _ = self.set_raw_mode_enabled(false);
         if self.fullscreen {
             let _ = queue!(self.dest, terminal::LeaveAlternateScreen);
+        } else if self.prev_canvas_height > 0 {
+            let _ = self.dest.write_all(b"\r\n");
         }
         let _ = execute!(self.dest, cursor::Show);
     }
