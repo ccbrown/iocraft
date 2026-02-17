@@ -186,6 +186,7 @@ impl TerminalImpl for StdTerminal {
                     // See: https://github.com/ccbrown/iocraft/issues/118
                     return queue!(
                         self.dest,
+                        terminal::Clear(terminal::ClearType::All),
                         terminal::Clear(terminal::ClearType::Purge),
                         cursor::MoveTo(0, 0),
                     );
