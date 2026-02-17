@@ -182,12 +182,14 @@ impl TerminalImpl for StdTerminal {
         if !self.fullscreen {
             if let Some(size) = self.size {
                 if self.prev_canvas_height >= size.1 {
-                    // We have to clear the entire terminal to avoid leaving artifacts.
-                    // See: https://github.com/ccbrown/iocraft/issues/118
+                    // Canvas fills or exceeds the viewport. Clear only the visible
+                    // viewport instead of purging the entire terminal (including
+                    // scrollback). This preserves any output printed above the
+                    // component via use_output.
                     return queue!(
                         self.dest,
-                        terminal::Clear(terminal::ClearType::Purge),
                         cursor::MoveTo(0, 0),
+                        terminal::Clear(terminal::ClearType::FromCursorDown),
                     );
                 }
             }
