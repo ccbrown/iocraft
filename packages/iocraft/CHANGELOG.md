@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.18](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.17...iocraft-v0.7.18) - 2026-02-19
+
+### Added
+
+- add disable_mouse_capture() to fullscreen render loop ([#161](https://github.com/ccbrown/iocraft/pull/161))
+
+### Fixed
+
+- clean visible terminal in addition to scrollback to avoid leaving behind artifacts ([#164](https://github.com/ccbrown/iocraft/pull/164))
+- eliminate extra blank line in inline render mode ([#162](https://github.com/ccbrown/iocraft/pull/162))
+
+### Other
+
+- *(iocraft)* release v0.7.18 ([#160](https://github.com/ccbrown/iocraft/pull/160))
+
 ## [0.7.18](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.17...iocraft-v0.7.18) - 2026-02-17
 
 ### Added
