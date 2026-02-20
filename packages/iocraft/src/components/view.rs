@@ -135,6 +135,43 @@ impl BorderStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BorderTitlePos {
+    #[default]
+    Top,
+    Bottom
+}
+
+/// The characters used to render a custom border for a [`View`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BorderTitle {
+    pub title: String,
+    pub pos: BorderTitlePos,
+}
+
+fn center_and_clip(border_char: &str, length: usize, title: &str) -> String {
+    let title_len = title.chars().count();
+
+    // If inner is longer, clip it
+    let (clipped_title, clipped_len) = if title_len > length {
+        (title.chars().take(length).collect(), length)
+    } else {
+        (title.to_string(), title_len)
+    };
+
+    // Calculate padding
+    let total_padding = length.saturating_sub(clipped_len);
+    let left_padding = total_padding / 2;
+    let right_padding = total_padding - left_padding;
+
+    format!(
+        "{}{}{}",
+        border_char.repeat(left_padding),
+        clipped_title,
+        border_char.repeat(right_padding)
+    )
+}
+
 /// The props which can be passed to the [`View`] component.
 #[non_exhaustive]
 #[with_layout_style_props]
@@ -151,6 +188,9 @@ pub struct ViewProps<'a> {
 
     /// The edges to render the border on. By default, the border will be rendered on all edges.
     pub border_edges: Option<Edges>,
+
+    /// The color of the border.
+    pub border_title: Option<BorderTitle>,
 
     /// The color of the background.
     pub background_color: Option<Color>,
@@ -176,6 +216,7 @@ pub struct View {
     border_text_style: CanvasTextStyle,
     border_edges: Edges,
     background_color: Option<Color>,
+    border_title: Option<BorderTitle>,
 }
 
 impl Component for View {
@@ -198,6 +239,8 @@ impl Component for View {
         };
         self.border_edges = props.border_edges.unwrap_or(Edges::all());
         self.background_color = props.background_color;
+        self.border_title = props.border_title.clone();
+
         let mut style: taffy::style::Style = props.layout_style().into();
         style.border = if self.border_style.is_none() {
             Rect::zero()
@@ -277,10 +320,16 @@ impl Component for View {
                     canvas.set_text(0, 0, &border.top_left.to_string(), self.border_text_style);
                 }
 
-                let top = border
-                    .top
-                    .to_string()
-                    .repeat(layout.size.width as usize - left_border_size - right_border_size);
+                let (top_size, top_char) = (
+                    layout.size.width as usize - left_border_size - right_border_size,
+                    border.top.to_string(),
+                );
+                let top = match self.border_title {
+                    Some(ref title) if title.pos == BorderTitlePos::Top =>
+                        center_and_clip(&top_char, top_size, &title.title),
+                    _ => top_char.repeat(top_size),
+                };
+
                 canvas.set_text(left_border_size as _, 0, &top, self.border_text_style);
 
                 if self.border_edges.contains(Edges::Right) {
@@ -317,10 +366,16 @@ impl Component for View {
                     );
                 }
 
-                let bottom = border
-                    .bottom
-                    .to_string()
-                    .repeat(layout.size.width as usize - left_border_size - right_border_size);
+                let (bottom_size, bottom_char) = (
+                    layout.size.width as usize - left_border_size - right_border_size,
+                    border.bottom.to_string(),
+                );
+                let bottom = match self.border_title {
+                    Some(ref title) if title.pos == BorderTitlePos::Bottom =>
+                        center_and_clip(&bottom_char, bottom_size, &title.title),
+                    _ => bottom_char.repeat(bottom_size),
+                };
+
                 canvas.set_text(
                     left_border_size as _,
                     layout.size.height as isize - 1,
