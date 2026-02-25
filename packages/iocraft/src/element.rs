@@ -283,6 +283,8 @@ pub trait ElementExt: private::Sealed + Sized {
 }
 
 /// Specifies which handle to render the TUI to.
+#[cfg_attr(not(feature = "unstable-output-streams"), doc(hidden))]
+#[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Output {
     /// Render to the stdout handle (default).
@@ -387,7 +389,11 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
 
     /// Set the stdout handle for hook output and TUI rendering (when output is Stdout).
     ///
+    /// See [`output`](Self::output) for known crossterm caveats when mixing streams.
+    ///
     /// Default: `std::io::stdout()`
+    #[cfg(feature = "unstable-output-streams")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
     pub fn stdout<W: Write + Send + 'a>(mut self, writer: W) -> Self {
         match &mut self.state {
             RenderLoopFutureState::Init { stdout_writer, .. } => {
@@ -400,7 +406,11 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
 
     /// Set the stderr handle for hook output and TUI rendering (when output is Stderr).
     ///
+    /// See [`output`](Self::output) for known crossterm caveats when mixing streams.
+    ///
     /// Default: `LineWriter::new(std::io::stderr())`
+    #[cfg(feature = "unstable-output-streams")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
     pub fn stderr<W: Write + Send + 'a>(mut self, writer: W) -> Self {
         match &mut self.state {
             RenderLoopFutureState::Init { stderr_writer, .. } => {
@@ -417,7 +427,20 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
     /// This is useful for CLI tools that need to pipe stdout to other programs
     /// while still displaying a TUI to the user.
     ///
+    /// ## Known crossterm caveats
+    ///
+    /// Some crossterm operations bypass the provided writer and write directly to
+    /// stdout, which can cause issues when stdout is piped:
+    ///
+    /// - Cursor position queries always write to stdout
+    ///   ([#652](https://github.com/crossterm-rs/crossterm/issues/652),
+    ///   [#957](https://github.com/crossterm-rs/crossterm/pull/957)).
+    /// - Keyboard enhancement queries fall back to stdout on unix
+    ///   ([#1026](https://github.com/crossterm-rs/crossterm/pull/1026)).
+    ///
     /// Default: [`Output::Stdout`]
+    #[cfg(feature = "unstable-output-streams")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
     pub fn output(mut self, output: Output) -> Self {
         match &mut self.state {
             RenderLoopFutureState::Init { output: o, .. } => {
