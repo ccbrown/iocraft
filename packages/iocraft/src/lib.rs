@@ -115,6 +115,7 @@ pub(crate) mod segmented_string;
 mod style;
 mod terminal;
 pub(crate) mod unicode_linebreak;
+mod strip_ansi;
 
 mod flattened_exports {
     pub use crate::canvas::*;
