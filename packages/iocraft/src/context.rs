@@ -7,11 +7,15 @@ use core::{
 /// The system context, which is always available to all components.
 pub struct SystemContext {
     should_exit: bool,
+    mouse_capture: Option<bool>,
 }
 
 impl SystemContext {
     pub(crate) fn new() -> Self {
-        Self { should_exit: false }
+        Self {
+            should_exit: false,
+            mouse_capture: None,
+        }
     }
 
     /// If called from a component that is being dynamically rendered, this will cause the render
@@ -22,6 +26,16 @@ impl SystemContext {
 
     pub(crate) fn should_exit(&self) -> bool {
         self.should_exit
+    }
+
+    /// Toggles mouse capture on the terminal. If called from a component that is being dynamically
+    /// rendered, mouse capture will be enabled or disabled after the current render pass.
+    pub fn set_mouse_capture(&mut self, enabled: bool) {
+        self.mouse_capture = Some(enabled);
+    }
+
+    pub(crate) fn mouse_capture(&self) -> Option<bool> {
+        self.mouse_capture
     }
 }
 

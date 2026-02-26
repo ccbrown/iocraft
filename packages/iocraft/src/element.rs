@@ -288,7 +288,7 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
     Empty,
     Init {
         fullscreen: bool,
-        mouse_capture: bool,
+        mouse_capture: Option<bool>,
         ignore_ctrl_c: bool,
         element: &'a mut E,
     },
@@ -309,7 +309,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
         Self {
             state: RenderLoopFutureState::Init {
                 fullscreen: false,
-                mouse_capture: true,
+                mouse_capture: None,
                 ignore_ctrl_c: false,
                 element,
             },
@@ -331,12 +331,24 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
         self
     }
 
+    /// Enables mouse capture. By default, mouse capture is only enabled in fullscreen mode. Call
+    /// this method to enable it in inline mode as well.
+    pub fn enable_mouse_capture(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { mouse_capture, .. } => {
+                *mouse_capture = Some(true);
+            }
+            _ => panic!("enable_mouse_capture() must be called before polling the future"),
+        }
+        self
+    }
+
     /// Disables mouse capture for fullscreen mode. By default, fullscreen mode enables mouse
     /// capture via crossterm's `EnableMouseCapture`. Call this method to opt out.
     pub fn disable_mouse_capture(mut self) -> Self {
         match &mut self.state {
             RenderLoopFutureState::Init { mouse_capture, .. } => {
-                *mouse_capture = false;
+                *mouse_capture = Some(false);
             }
             _ => panic!("disable_mouse_capture() must be called before polling the future"),
         }
@@ -378,14 +390,20 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                             } => (fullscreen, mouse_capture, ignore_ctrl_c, element),
                             _ => unreachable!(),
                         };
+                    let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
                     let mut terminal = match if fullscreen {
-                        Terminal::fullscreen(mouse_capture)
+                        Terminal::fullscreen(effective_mouse_capture)
                     } else {
                         Terminal::new()
                     } {
                         Ok(t) => t,
                         Err(e) => return std::task::Poll::Ready(Err(e)),
                     };
+                    if effective_mouse_capture && !fullscreen {
+                        if let Err(e) = terminal.enable_mouse_capture() {
+                            return std::task::Poll::Ready(Err(e));
+                        }
+                    }
                     if ignore_ctrl_c {
                         terminal.ignore_ctrl_c();
                     }
