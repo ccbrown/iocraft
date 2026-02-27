@@ -457,6 +457,7 @@ impl<'a> Tree<'a> {
 
     async fn terminal_render_loop(&mut self, mut term: Terminal) -> io::Result<()> {
         let mut prev_canvas: Option<Canvas> = None;
+        let mut mouse_capture_enabled: Option<bool> = None;
         loop {
             term.refresh_size();
             let terminal_size = term.size();
@@ -472,6 +473,16 @@ impl<'a> Tree<'a> {
                 prev_canvas = Some(output.canvas);
                 Ok(())
             })?;
+            if let Some(requested) = self.system_context.mouse_capture() {
+                if mouse_capture_enabled != Some(requested) {
+                    if requested {
+                        term.enable_mouse_capture()?;
+                    } else {
+                        term.disable_mouse_capture()?;
+                    }
+                    mouse_capture_enabled = Some(requested);
+                }
+            }
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }

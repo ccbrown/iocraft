@@ -116,6 +116,9 @@ trait TerminalImpl: Write + Send {
     fn size(&self) -> Option<(u16, u16)> {
         None
     }
+    fn set_mouse_capture(&mut self, _enabled: bool) -> io::Result<()> {
+        Ok(())
+    }
 
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
@@ -168,6 +171,20 @@ impl TerminalImpl for StdTerminal {
 
     fn size(&self) -> Option<(u16, u16)> {
         self.size
+    }
+
+    fn set_mouse_capture(&mut self, enabled: bool) -> io::Result<()> {
+        if self.mouse_capture != enabled {
+            self.mouse_capture = enabled;
+            if self.raw_mode_enabled {
+                if enabled {
+                    execute!(self.dest, event::EnableMouseCapture)?;
+                } else {
+                    execute!(self.dest, event::DisableMouseCapture)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn is_raw_mode_enabled(&self) -> bool {
@@ -268,13 +285,13 @@ impl StdTerminal {
                     )?;
                     self.enabled_keyboard_enhancement = true;
                 }
-                if self.fullscreen && self.mouse_capture {
+                if self.mouse_capture {
                     execute!(self.dest, event::EnableMouseCapture)?;
                 }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
-                if self.fullscreen && self.mouse_capture {
+                if self.mouse_capture {
                     execute!(self.dest, event::DisableMouseCapture)?;
                 }
                 if self.enabled_keyboard_enhancement {
@@ -397,7 +414,7 @@ pub(crate) struct Terminal {
 
 impl Terminal {
     pub fn new() -> io::Result<Self> {
-        Ok(Self::new_with_impl(StdTerminal::new(false, true)?))
+        Ok(Self::new_with_impl(StdTerminal::new(false, false)?))
     }
 
     pub fn fullscreen(mouse_capture: bool) -> io::Result<Self> {
@@ -417,6 +434,14 @@ impl Terminal {
             received_ctrl_c: false,
             ignore_ctrl_c: false,
         }
+    }
+
+    pub fn enable_mouse_capture(&mut self) -> io::Result<()> {
+        self.inner.set_mouse_capture(true)
+    }
+
+    pub fn disable_mouse_capture(&mut self) -> io::Result<()> {
+        self.inner.set_mouse_capture(false)
     }
 
     pub fn ignore_ctrl_c(&mut self) {
