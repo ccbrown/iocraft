@@ -4,18 +4,12 @@ use std::{
 };
 use taffy::Rect;
 
-use crate::{
-    hooks::{Ref, UseRef},
-    ComponentDrawer, Hook, Hooks,
-};
+use crate::{ComponentDrawer, Hook, Hooks};
 
 mod private {
     pub trait Sealed {}
     impl Sealed for crate::Hooks<'_, '_> {}
 }
-
-/// [`Ref`] with component's drawer rect.
-pub type ComponentRectRef = Ref<Option<Rect<u16>>>;
 
 /// `UseComponentRect` is a hook that returns the current component's canvas position and size
 ///  from the previous frame, or `None` if it's the first frame.
@@ -23,14 +17,17 @@ pub type ComponentRectRef = Ref<Option<Rect<u16>>>;
 /// See [`ComponentDrawer::canvas_position`] and [`ComponentDrawer::size`] for more info.
 pub trait UseComponentRect<'a>: private::Sealed {
     /// Returns the curent component canvas position and size in form of a [`Rect`].
-    fn use_component_rect(&mut self) -> ComponentRectRef;
+    ///
+    /// Using this will cause the component to be immediately re-rendered a second time, or
+    /// whenever the component's position or size changes. If the component's position or size
+    /// changes again during this re-render, it may cause an infinite render loop.
+    fn use_component_rect(&mut self) -> Option<Rect<u16>>;
 }
 
 impl<'a> UseComponentRect<'a> for Hooks<'a, '_> {
-    fn use_component_rect(&mut self) -> ComponentRectRef {
-        let rect = self.use_ref_default();
+    fn use_component_rect(&mut self) -> Option<Rect<u16>> {
         self.use_hook(move || UseComponentRectImpl {
-            rect,
+            rect: None,
             is_changed: false,
         })
         .rect
@@ -38,7 +35,7 @@ impl<'a> UseComponentRect<'a> for Hooks<'a, '_> {
 }
 
 struct UseComponentRectImpl {
-    rect: ComponentRectRef,
+    rect: Option<Rect<u16>>,
     is_changed: bool,
 }
 
@@ -61,10 +58,10 @@ impl Hook for UseComponentRectImpl {
             bottom: position.y as u16 + size.height,
         };
 
-        if self.rect.get() != Some(rect) {
-            self.rect.set(Some(rect));
+        if self.rect != Some(rect) {
+            self.rect = Some(rect);
             self.is_changed = true;
-        } else if self.rect.get().is_some() {
+        } else {
             self.is_changed = false;
         }
     }
@@ -80,7 +77,7 @@ mod tests {
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let rect = hooks.use_component_rect().get();
+        let rect = hooks.use_component_rect();
 
         let Some(rect) = rect else {
             return element! { Text(content: "00:00:00:00") };
