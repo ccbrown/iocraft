@@ -45,26 +45,29 @@ struct ScrollViewHandleInner {
     scroll_offset: State<i32>,
     content_height: State<u16>,
     viewport_height: State<u16>,
+    user_scrolled_up: State<bool>,
 }
 
 impl ScrollViewHandle {
-    /// Scrolls to the top of the content.
+    /// Scrolls to the top of the content. Disengages auto scroll.
     pub fn scroll_to_top(&mut self) {
         if let Some(inner) = &mut self.inner {
             inner.scroll_offset.set(0);
+            Self::update_user_scrolled_up(inner);
         }
     }
 
-    /// Scrolls to the bottom of the content.
+    /// Scrolls to the bottom of the content. Re-engages auto scroll.
     pub fn scroll_to_bottom(&mut self) {
         if let Some(inner) = &mut self.inner {
             let max = max_offset(inner.content_height.get(), inner.viewport_height.get());
             inner.scroll_offset.set(max);
+            inner.user_scrolled_up.set(false);
         }
     }
 
     /// Scrolls to the given offset in lines from the top. The offset is clamped to the valid
-    /// range.
+    /// range. Disengages auto scroll if the resulting position is not at the bottom.
     pub fn scroll_to(&mut self, offset: i32) {
         if let Some(inner) = &mut self.inner {
             inner.scroll_offset.set(clamp_offset(
@@ -72,11 +75,13 @@ impl ScrollViewHandle {
                 inner.content_height.get(),
                 inner.viewport_height.get(),
             ));
+            Self::update_user_scrolled_up(inner);
         }
     }
 
     /// Scrolls by the given number of lines (positive = down, negative = up). The resulting
-    /// offset is clamped to the valid range.
+    /// offset is clamped to the valid range. Disengages auto scroll if the resulting position
+    /// is not at the bottom.
     pub fn scroll_by(&mut self, delta: i32) {
         if let Some(inner) = &mut self.inner {
             inner.scroll_offset.set(clamp_offset(
@@ -84,6 +89,7 @@ impl ScrollViewHandle {
                 inner.content_height.get(),
                 inner.viewport_height.get(),
             ));
+            Self::update_user_scrolled_up(inner);
         }
     }
 
@@ -106,6 +112,18 @@ impl ScrollViewHandle {
         self.inner
             .as_ref()
             .map_or(0, |inner| inner.viewport_height.get())
+    }
+
+    /// Returns whether auto scroll is currently pinned to the bottom.
+    pub fn is_auto_scroll_pinned(&self) -> bool {
+        self.inner
+            .as_ref()
+            .is_none_or(|inner| !inner.user_scrolled_up.get())
+    }
+
+    fn update_user_scrolled_up(inner: &mut ScrollViewHandleInner) {
+        let max = max_offset(inner.content_height.get(), inner.viewport_height.get());
+        inner.user_scrolled_up.set(inner.scroll_offset.get() < max);
     }
 }
 
@@ -223,6 +241,10 @@ pub struct ScrollViewProps<'a> {
     pub scrollbar_thumb_color: Option<Color>,
     /// Optional color for the scrollbar track. Defaults to `DarkGrey`.
     pub scrollbar_track_color: Option<Color>,
+    /// Whether keyboard events (arrow keys, Page Up/Down, Home/End) scroll
+    /// the view. Defaults to `true`. The terminal events hook is always
+    /// registered to maintain consistent hook ordering.
+    pub keyboard_scroll: Option<bool>,
 }
 
 // Hook that measures the component height in pre_component_draw and writes
@@ -279,6 +301,7 @@ pub fn ScrollView<'a>(
 
     let scroll_step = props.scroll_step.unwrap_or(DEFAULT_SCROLL_STEP) as i32;
     let auto_scroll = props.auto_scroll;
+    let keyboard_scroll = props.keyboard_scroll.unwrap_or(true);
 
     // Sync content height from the ref written by the measurer child.
     let ch = content_height_ref.get();
@@ -293,6 +316,7 @@ pub fn ScrollView<'a>(
                 scroll_offset,
                 content_height,
                 viewport_height,
+                user_scrolled_up,
             }),
         });
     }
@@ -319,14 +343,18 @@ pub fn ScrollView<'a>(
                 TerminalEvent::Key(KeyEvent { code, kind, .. })
                     if *kind != KeyEventKind::Release =>
                 {
-                    match code {
-                        KeyCode::Up => Some(-1),
-                        KeyCode::Down => Some(1),
-                        KeyCode::PageUp => Some(-(vh.get() as i32).max(1)),
-                        KeyCode::PageDown => Some((vh.get() as i32).max(1)),
-                        KeyCode::Home => Some(i32::MIN / 2),
-                        KeyCode::End => Some(i32::MAX / 2),
-                        _ => None,
+                    if keyboard_scroll {
+                        match code {
+                            KeyCode::Up => Some(-1),
+                            KeyCode::Down => Some(1),
+                            KeyCode::PageUp => Some(-(vh.get() as i32).max(1)),
+                            KeyCode::PageDown => Some((vh.get() as i32).max(1)),
+                            KeyCode::Home => Some(i32::MIN / 2),
+                            KeyCode::End => Some(i32::MAX / 2),
+                            _ => None,
+                        }
+                    } else {
+                        None
                     }
                 }
                 TerminalEvent::FullscreenMouse(mouse) => match mouse.kind {
