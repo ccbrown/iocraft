@@ -13,6 +13,14 @@
 //! - Build fullscreen terminal applications with ease.
 //! - Pass [props](crate::Props) and [context](crate::components::ContextProvider) by reference to avoid unnecessary cloning.
 //!
+//! ## Optional Features
+//!
+//! - `unstable-output-streams`: enables configuring the render stream and stdout/stderr handles for
+//!   render loops. Some crossterm operations bypass the provided writer and write directly to
+//!   stdout ([#652](https://github.com/crossterm-rs/crossterm/issues/652),
+//!   [#957](https://github.com/crossterm-rs/crossterm/pull/957),
+//!   [#1026](https://github.com/crossterm-rs/crossterm/pull/1026)).
+//!
 //! ## Getting Started
 //!
 //! If you're familiar with React, you'll feel right at home with `iocraft`. It uses all the same
