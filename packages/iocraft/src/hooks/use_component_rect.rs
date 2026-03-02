@@ -21,11 +21,11 @@ pub trait UseComponentRect<'a>: private::Sealed {
     /// Using this will cause the component to be immediately re-rendered a second time, or
     /// whenever the component's position or size changes. If the component's position or size
     /// changes again during this re-render, it may cause an infinite render loop.
-    fn use_component_rect(&mut self) -> Option<Rect<u16>>;
+    fn use_component_rect(&mut self) -> Option<Rect<i32>>;
 }
 
 impl<'a> UseComponentRect<'a> for Hooks<'a, '_> {
-    fn use_component_rect(&mut self) -> Option<Rect<u16>> {
+    fn use_component_rect(&mut self) -> Option<Rect<i32>> {
         self.use_hook(move || UseComponentRectImpl {
             rect: None,
             is_changed: false,
@@ -35,7 +35,7 @@ impl<'a> UseComponentRect<'a> for Hooks<'a, '_> {
 }
 
 struct UseComponentRectImpl {
-    rect: Option<Rect<u16>>,
+    rect: Option<Rect<i32>>,
     is_changed: bool,
 }
 
@@ -52,10 +52,10 @@ impl Hook for UseComponentRectImpl {
         let size = drawer.size();
         let position = drawer.canvas_position();
         let rect = Rect {
-            left: position.x as u16,
-            right: position.x as u16 + size.width,
-            top: position.y as u16,
-            bottom: position.y as u16 + size.height,
+            left: position.x as i32,
+            right: position.x as i32 + size.width as i32,
+            top: position.y as i32,
+            bottom: position.y as i32 + size.height as i32,
         };
 
         if self.rect != Some(rect) {
