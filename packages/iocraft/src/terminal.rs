@@ -493,11 +493,6 @@ impl<'a> Terminal<'a> {
         self.received_ctrl_c
     }
 
-    /// Returns which output handle is being used for TUI rendering.
-    pub fn output(&self) -> Output {
-        self.output
-    }
-
     /// Returns a mutable reference to the stdout handle.
     pub fn stdout(&mut self) -> &mut dyn Write {
         match self.output {

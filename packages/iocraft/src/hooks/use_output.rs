@@ -4,10 +4,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use crossterm::{cursor, QueueableCommand};
-use std::{
-    io::Write,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 mod private {
     pub trait Sealed {}

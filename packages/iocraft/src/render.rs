@@ -377,10 +377,10 @@ impl<'a> Tree<'a> {
         }
     }
 
-    fn render<'w>(
+    fn render(
         &mut self,
         max_width: Option<usize>,
-        terminal: Option<&mut Terminal<'w>>,
+        terminal: Option<&mut Terminal<'_>>,
     ) -> RenderOutput {
         let mut wrapper_child_node_ids = vec![self.root_component.node_id()];
         let did_clear_terminal_output = {
@@ -506,7 +506,7 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
     tree.render(max_width, None).canvas
 }
 
-pub(crate) async fn terminal_render_loop<'a, E>(e: &mut E, term: Terminal<'a>) -> io::Result<()>
+pub(crate) async fn terminal_render_loop<E>(e: &mut E, term: Terminal<'_>) -> io::Result<()>
 where
     E: ElementExt,
 {
