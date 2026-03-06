@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.18...iocraft-v0.8.0) - 2026-03-06
+
+### Added
+
+- allow configuring render output and stdout/stderr handles ([#157](https://github.com/ccbrown/iocraft/pull/157))
+- add keyboard_scroll prop and expose auto scroll state ([#175](https://github.com/ccbrown/iocraft/pull/175))
+- Add UseComponentRect ([#145](https://github.com/ccbrown/iocraft/pull/145))
+
+### Fixed
+
+- use i32 for use_component_rect to prevent overflow ([#176](https://github.com/ccbrown/iocraft/pull/176))
+
+### Other
+
+- *(deps)* bump crossterm to 0.29.0 ([#178](https://github.com/ccbrown/iocraft/pull/178))
+- document use_component_rect caveat, simplify api ([#174](https://github.com/ccbrown/iocraft/pull/174))
+- Scrolling component ([#170](https://github.com/ccbrown/iocraft/pull/170))
+
 ## [0.7.18](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.17...iocraft-v0.7.18) - 2026-02-17
 
 ### Added
