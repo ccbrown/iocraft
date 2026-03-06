@@ -11,7 +11,7 @@ default = []
 unstable-output-streams = []
 
 [dependencies]
-crossterm = { version = "0.28.1", features = ["event-stream"] }
+crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures = "0.3.30"
 taffy = { version = "0.5.2", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
 iocraft-macros = { version = "0.2.3", path = "../iocraft-macros" }
