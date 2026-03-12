@@ -18,6 +18,7 @@ iocraft-macros = { version = "0.2.3", path = "../iocraft-macros" }
 bitflags = "2.6.0"
 unicode-width = "0.1.13"
 generational-box = "0.5.6"
+regex = "1.12.3"
 
 [dev-dependencies]
 avt = "0.17"

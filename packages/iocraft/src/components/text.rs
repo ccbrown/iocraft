@@ -1,6 +1,7 @@
 use crate::{
     render::MeasureFunc, segmented_string::SegmentedString, CanvasTextStyle, Color, Component,
     ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
+    strip_ansi::strip_ansi,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -227,7 +228,7 @@ impl Component for Text {
             underline: props.decoration == TextDecoration::Underline,
             italic: props.italic,
         };
-        self.content = props.content.clone();
+        self.content = strip_ansi(&props.content);
         self.wrap = props.wrap;
         self.align = props.align;
         updater.set_measure_func(Self::measure_func(self.content.clone(), props.wrap));
