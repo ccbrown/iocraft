@@ -122,7 +122,7 @@ trait TerminalImpl: Write + Send {
 
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
-    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()>;
+    fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()>;
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
     fn dest(&mut self) -> &mut dyn Write;
     fn alt(&mut self) -> &mut dyn Write;
@@ -152,6 +152,7 @@ struct StdTerminal<'a> {
     mouse_capture: bool,
     raw_mode_enabled: bool,
     enabled_keyboard_enhancement: bool,
+    prev_canvas_top_row: u16,
     prev_canvas_height: u16,
     size: Option<(u16, u16)>,
 }
@@ -198,26 +199,123 @@ impl TerminalImpl for StdTerminal<'_> {
             return Ok(());
         }
 
-        if !self.fullscreen {
-            if let Some(size) = self.size {
-                if self.prev_canvas_height >= size.1 {
-                    // We have to clear the entire terminal to avoid leaving artifacts.
-                    // See: https://github.com/ccbrown/iocraft/issues/118
-                    self.dest
-                        .queue(terminal::Clear(terminal::ClearType::All))?
-                        .queue(terminal::Clear(terminal::ClearType::Purge))?
-                        .queue(cursor::MoveTo(0, 0))?;
-                    return Ok(());
-                }
+        if self.fullscreen {
+            self.dest
+                .queue(cursor::MoveTo(0, self.prev_canvas_top_row))?
+                .queue(terminal::Clear(terminal::ClearType::FromCursorDown))?;
+            return Ok(());
+        }
+
+        if let Some(size) = self.size {
+            if self.prev_canvas_height >= size.1 {
+                // We have to clear the entire terminal to avoid leaving artifacts.
+                // See: https://github.com/ccbrown/iocraft/issues/118
+                self.dest
+                    .queue(terminal::Clear(terminal::ClearType::All))?
+                    .queue(terminal::Clear(terminal::ClearType::Purge))?
+                    .queue(cursor::MoveTo(0, 0))?;
+                return Ok(());
             }
         }
 
         clear_canvas_inline(&mut *self.dest, self.prev_canvas_height)
     }
 
-    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
-        self.prev_canvas_height = canvas.height() as _;
-        canvas.write_ansi_without_final_newline(self)?;
+    fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
+        let Some(prev) = prev else {
+            // No previous canvas: full write.
+            if self.fullscreen {
+                self.dest.flush()?;
+                self.alt.flush()?;
+                self.prev_canvas_top_row = cursor::position()?.1;
+            }
+            self.prev_canvas_height = canvas.height() as _;
+            canvas.write_ansi_without_final_newline(&mut *self.dest)?;
+            return Ok(());
+        };
+
+        if self.fullscreen {
+            // Fullscreen: absolute positioning.
+            let top_row = self.prev_canvas_top_row;
+            let max_height = prev.height().max(canvas.height());
+            for y in 0..max_height {
+                if prev.row_eq(canvas, y) {
+                    continue;
+                }
+                self.dest.queue(cursor::MoveTo(0, top_row + y as u16))?;
+                if y < canvas.height() {
+                    canvas.write_ansi_row_without_newline(y, &mut *self.dest)?;
+                } else {
+                    self.dest
+                        .queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+                }
+            }
+            if canvas.height() > 0 {
+                self.dest
+                    .queue(cursor::MoveTo(0, top_row + canvas.height() as u16 - 1))?;
+            }
+            self.prev_canvas_height = canvas.height() as _;
+            return Ok(());
+        }
+
+        // Inline: fall back to full clear + rewrite when canvas >= terminal height.
+        if let Some(size) = self.size {
+            if canvas.height() as u16 >= size.1 || self.prev_canvas_height >= size.1 {
+                self.clear_canvas()?;
+                self.prev_canvas_height = canvas.height() as _;
+                canvas.write_ansi_without_final_newline(&mut *self.dest)?;
+                return Ok(());
+            }
+        }
+
+        // Inline: row diff with relative cursor movement.
+        let prev_height = prev.height();
+        let new_height = canvas.height();
+        let max_height = prev_height.max(new_height);
+        let mut current_y = prev_height.saturating_sub(1);
+
+        for y in 0..max_height {
+            if prev.row_eq(canvas, y) {
+                continue;
+            }
+            match y.cmp(&current_y) {
+                std::cmp::Ordering::Less => {
+                    self.dest
+                        .queue(cursor::MoveToPreviousLine((current_y - y) as u16))?;
+                }
+                std::cmp::Ordering::Greater => {
+                    self.dest
+                        .queue(cursor::MoveToNextLine((y - current_y) as u16))?;
+                }
+                std::cmp::Ordering::Equal => {
+                    self.dest.queue(cursor::MoveToColumn(0))?;
+                }
+            }
+            current_y = y;
+
+            if y < new_height {
+                canvas.write_ansi_row_without_newline(y, &mut *self.dest)?;
+            } else {
+                self.dest
+                    .queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+            }
+        }
+
+        // Reposition cursor to last row of new canvas.
+        let target_y = new_height.saturating_sub(1);
+        match target_y.cmp(&current_y) {
+            std::cmp::Ordering::Greater => {
+                self.dest
+                    .queue(cursor::MoveToNextLine((target_y - current_y) as u16))?;
+            }
+            std::cmp::Ordering::Less => {
+                self.dest
+                    .queue(cursor::MoveToPreviousLine((current_y - target_y) as u16))?;
+            }
+            std::cmp::Ordering::Equal => {}
+        }
+
+        self.prev_canvas_height = new_height as _;
         Ok(())
     }
 
@@ -275,6 +373,7 @@ impl<'a> StdTerminal<'a> {
             mouse_capture,
             raw_mode_enabled: false,
             enabled_keyboard_enhancement: false,
+            prev_canvas_top_row: 0,
             prev_canvas_height: 0,
             size: None,
         };
@@ -405,7 +504,7 @@ impl TerminalImpl for MockTerminal {
         Ok(())
     }
 
-    fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
+    fn write_canvas(&mut self, _prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
         let _ = self.output.unbounded_send(canvas.clone());
         Ok(())
     }
@@ -485,8 +584,8 @@ impl<'a> Terminal<'a> {
         self.inner.clear_canvas()
     }
 
-    pub fn write_canvas(&mut self, canvas: &Canvas) -> io::Result<()> {
-        self.inner.write_canvas(canvas)
+    pub fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
+        self.inner.write_canvas(prev, canvas)
     }
 
     pub fn received_ctrl_c(&self) -> bool {
@@ -622,6 +721,30 @@ impl Drop for SynchronizedUpdate<'_, '_> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+    use crossterm::QueueableCommand;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct TestWriter {
+        buf: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl Write for TestWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.buf.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn new_test_writer() -> (TestWriter, Arc<Mutex<Vec<u8>>>) {
+        let writer = TestWriter::default();
+        let buf = writer.buf.clone();
+        (writer, buf)
+    }
 
     #[test]
     fn test_std_terminal() {
@@ -639,7 +762,7 @@ mod tests {
         assert!(!terminal.received_ctrl_c());
         assert!(!terminal.is_raw_mode_enabled());
         let canvas = Canvas::new(10, 1);
-        terminal.write_canvas(&canvas).unwrap();
+        terminal.write_canvas(None, &canvas).unwrap();
     }
 
     fn render_canvas_to_vt(canvas: &Canvas, cols: usize, rows: usize) -> avt::Vt {
@@ -660,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_canvas_single_line_cursor_position() {
+    fn test_inline_rewrite_single_line_cursor() {
         let mut canvas = Canvas::new(10, 1);
         canvas
             .subview_mut(0, 0, 0, 0, 10, 1)
@@ -684,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_canvas_multi_line_cursor_position() {
+    fn test_inline_rewrite_multi_line_cursor() {
         let mut canvas = Canvas::new(10, 3);
         canvas
             .subview_mut(0, 0, 0, 0, 10, 3)
@@ -726,7 +849,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_canvas_no_extra_blank_line() {
+    fn test_inline_rewrite_no_extra_blank_line() {
         let mut canvas = Canvas::new(10, 2);
         canvas
             .subview_mut(0, 0, 0, 0, 10, 2)
@@ -758,6 +881,472 @@ mod tests {
     }
 
     #[test]
+    fn test_fullscreen_diff_preserves_origin() {
+        let mut prev = Canvas::new(10, 2);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "first", CanvasTextStyle::default());
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "second", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 2);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "first", CanvasTextStyle::default());
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "changed", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 1, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        write!(setup, "log\r\n").unwrap();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "log       ");
+        assert_eq!(vt.line(1).text(), "first     ");
+        assert_eq!(vt.line(2).text(), "changed   ");
+        assert_eq!(
+            vt.cursor().row,
+            2,
+            "cursor should stay on the canvas bottom"
+        );
+    }
+
+    #[test]
+    fn test_fullscreen_clear_preserves_output_above() {
+        let mut canvas = Canvas::new(10, 2);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "first", CanvasTextStyle::default());
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "second", CanvasTextStyle::default());
+
+        let (dest, clear_buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 1, canvas.height() as _);
+        term.clear_canvas().unwrap();
+
+        let mut setup = Vec::new();
+        write!(setup, "log\r\n").unwrap();
+        canvas.write_ansi_without_final_newline(&mut setup).unwrap();
+        write!(setup, "\r\ntail").unwrap();
+        setup.queue(cursor::MoveTo(0, 0)).unwrap();
+        setup.extend_from_slice(&*clear_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "log       ");
+        assert_eq!(vt.line(1).text(), "          ");
+        assert_eq!(vt.line(2).text(), "          ");
+        assert_eq!(vt.line(3).text(), "          ");
+    }
+
+    fn new_fullscreen_term(
+        dest: TestWriter,
+        prev_canvas_top_row: u16,
+        prev_canvas_height: u16,
+    ) -> StdTerminal<'static> {
+        StdTerminal {
+            input_is_terminal: false,
+            dest: Box::new(dest),
+            alt: Box::new(io::sink()),
+            fullscreen: true,
+            mouse_capture: false,
+            raw_mode_enabled: false,
+            enabled_keyboard_enhancement: false,
+            prev_canvas_top_row,
+            prev_canvas_height,
+            size: None,
+        }
+    }
+
+    fn new_inline_term(dest: TestWriter, prev_canvas_height: u16) -> StdTerminal<'static> {
+        StdTerminal {
+            input_is_terminal: false,
+            dest: Box::new(dest),
+            alt: Box::new(io::sink()),
+            fullscreen: false,
+            mouse_capture: false,
+            raw_mode_enabled: false,
+            enabled_keyboard_enhancement: false,
+            prev_canvas_top_row: 0,
+            prev_canvas_height,
+            size: Some((10, 10)),
+        }
+    }
+
+    #[test]
+    fn test_inline_diff_unchanged_row_skipped() {
+        let mut prev = Canvas::new(10, 2);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "first", CanvasTextStyle::default());
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "second", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 2);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "first", CanvasTextStyle::default());
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "changed", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        // Build vt: render prev, then apply diff output.
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "first     ");
+        assert_eq!(vt.line(1).text(), "changed   ");
+        assert_eq!(vt.cursor().row, 1);
+    }
+
+    #[test]
+    fn test_inline_diff_shrinking() {
+        let mut prev = Canvas::new(10, 3);
+        prev.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "aaa", CanvasTextStyle::default());
+        prev.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 1, "bbb", CanvasTextStyle::default());
+        prev.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 2, "ccc", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 2);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "aaa", CanvasTextStyle::default());
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "ddd", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "aaa       ");
+        assert_eq!(vt.line(1).text(), "ddd       ");
+        assert_eq!(
+            vt.line(2).text(),
+            "          ",
+            "old row 2 should be cleared"
+        );
+        assert_eq!(vt.cursor().row, 1, "cursor on last row of new canvas");
+    }
+
+    #[test]
+    fn test_inline_diff_growing() {
+        let mut prev = Canvas::new(10, 2);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "aaa", CanvasTextStyle::default());
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "bbb", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 3);
+        next.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "aaa", CanvasTextStyle::default());
+        next.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 1, "bbb", CanvasTextStyle::default());
+        next.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 2, "ccc", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "aaa       ");
+        assert_eq!(vt.line(1).text(), "bbb       ");
+        assert_eq!(vt.line(2).text(), "ccc       ");
+        assert_eq!(vt.cursor().row, 2, "cursor on last row of new canvas");
+    }
+
+    #[test]
+    fn test_inline_diff_identical_canvas_is_noop() {
+        let mut canvas = Canvas::new(10, 2);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "world", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, canvas.height() as _);
+        term.write_canvas(Some(&canvas), &canvas).unwrap();
+
+        assert!(
+            diff_buf.lock().unwrap().is_empty(),
+            "identical canvas should produce no output"
+        );
+    }
+
+    #[test]
+    fn test_fullscreen_diff_identical_canvas_is_noop() {
+        let mut canvas = Canvas::new(10, 2);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "world", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 0, canvas.height() as _);
+        term.write_canvas(Some(&canvas), &canvas).unwrap();
+
+        // Fullscreen always queues a final MoveTo for cursor repositioning,
+        // but no row content should be written. Verify by checking the output
+        // contains no row data (the only bytes are the trailing MoveTo).
+        let buf = diff_buf.lock().unwrap();
+        let s = String::from_utf8(buf.clone()).unwrap();
+        assert!(
+            !s.contains("hello") && !s.contains("world"),
+            "identical canvas should not rewrite any row content"
+        );
+    }
+
+    #[test]
+    fn test_inline_diff_styled_text_preserved() {
+        let bold_style = CanvasTextStyle {
+            weight: Weight::Bold,
+            color: Some(Color::Red),
+            ..Default::default()
+        };
+
+        let mut prev = Canvas::new(10, 2);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", bold_style);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "old", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 2);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", bold_style);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "new", bold_style);
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        // Row 0 unchanged: bold red "hello"
+        let row0 = vt.line(0);
+        assert_eq!(row0.text(), "hello     ");
+        assert!(row0.cells()[0].pen().is_bold());
+        assert!(row0.cells()[0].pen().foreground().is_some());
+
+        // Row 1 updated: bold red "new"
+        let row1 = vt.line(1);
+        assert_eq!(row1.text(), "new       ");
+        assert!(row1.cells()[0].pen().is_bold());
+        assert!(row1.cells()[0].pen().foreground().is_some());
+    }
+
+    #[test]
+    fn test_fullscreen_diff_styled_text_preserved() {
+        let underline_style = CanvasTextStyle {
+            underline: true,
+            color: Some(Color::Green),
+            ..Default::default()
+        };
+
+        let mut prev = Canvas::new(10, 2);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "keep", underline_style);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "old", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 2);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "keep", underline_style);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "new", underline_style);
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 0, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        // Row 0 unchanged
+        let row0 = vt.line(0);
+        assert_eq!(row0.text(), "keep      ");
+        assert!(row0.cells()[0].pen().is_underline());
+
+        // Row 1 updated with underline green
+        let row1 = vt.line(1);
+        assert_eq!(row1.text(), "new       ");
+        assert!(row1.cells()[0].pen().is_underline());
+        assert!(row1.cells()[0].pen().foreground().is_some());
+    }
+
+    #[test]
+    fn test_inline_diff_at_terminal_height_boundary() {
+        // Canvas height == terminal height should fall back to full clear + rewrite.
+        let mut prev = Canvas::new(10, 5);
+        prev.subview_mut(0, 0, 0, 0, 10, 5)
+            .set_text(0, 0, "aaa", CanvasTextStyle::default());
+        prev.subview_mut(0, 0, 0, 0, 10, 5)
+            .set_text(0, 4, "bbb", CanvasTextStyle::default());
+
+        let mut next = Canvas::new(10, 5);
+        next.subview_mut(0, 0, 0, 0, 10, 5)
+            .set_text(0, 0, "aaa", CanvasTextStyle::default());
+        next.subview_mut(0, 0, 0, 0, 10, 5)
+            .set_text(0, 4, "ccc", CanvasTextStyle::default());
+
+        let (dest, diff_buf) = new_test_writer();
+        // Terminal is 10x5, canvas is also 5 rows tall, triggering the fallback.
+        let mut term = StdTerminal {
+            input_is_terminal: false,
+            dest: Box::new(dest),
+            alt: Box::new(io::sink()),
+            fullscreen: false,
+            mouse_capture: false,
+            raw_mode_enabled: false,
+            enabled_keyboard_enhancement: false,
+            prev_canvas_top_row: 0,
+            prev_canvas_height: prev.height() as _,
+            size: Some((10, 5)),
+        };
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        // The fallback does clear + full rewrite, so just verify the final
+        // visible state is correct by feeding the diff output into a vt that
+        // already shows the prev canvas.
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "aaa       ");
+        assert_eq!(vt.line(4).text(), "ccc       ");
+    }
+
+    #[test]
+    fn test_inline_diff_sequential_updates() {
+        let style = CanvasTextStyle::default();
+
+        let mut c1 = Canvas::new(10, 2);
+        c1.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "aaa", style);
+        c1.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "bbb", style);
+
+        let mut c2 = Canvas::new(10, 2);
+        c2.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "aaa", style);
+        c2.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "ccc", style);
+
+        let mut c3 = Canvas::new(10, 3);
+        c3.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "xxx", style);
+        c3.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 1, "ccc", style);
+        c3.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 2, "ddd", style);
+
+        let (dest, buf) = new_test_writer();
+        let mut term = new_inline_term(dest, c1.height() as _);
+
+        // First diff: c1 -> c2
+        term.write_canvas(Some(&c1), &c2).unwrap();
+        // Second diff: c2 -> c3
+        term.write_canvas(Some(&c2), &c3).unwrap();
+
+        let mut setup = Vec::new();
+        c1.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 6);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "xxx       ");
+        assert_eq!(vt.line(1).text(), "ccc       ");
+        assert_eq!(vt.line(2).text(), "ddd       ");
+        assert_eq!(vt.cursor().row, 2, "cursor on last row of final canvas");
+    }
+
+    #[test]
+    fn test_fullscreen_diff_sequential_updates() {
+        let style = CanvasTextStyle::default();
+
+        let mut c1 = Canvas::new(10, 2);
+        c1.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "aaa", style);
+        c1.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "bbb", style);
+
+        let mut c2 = Canvas::new(10, 2);
+        c2.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "aaa", style);
+        c2.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "ccc", style);
+
+        let mut c3 = Canvas::new(10, 3);
+        c3.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "xxx", style);
+        c3.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 1, "ccc", style);
+        c3.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 2, "ddd", style);
+
+        let (dest, buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 0, c1.height() as _);
+
+        term.write_canvas(Some(&c1), &c2).unwrap();
+        term.write_canvas(Some(&c2), &c3).unwrap();
+
+        let mut setup = Vec::new();
+        c1.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 6);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "xxx       ");
+        assert_eq!(vt.line(1).text(), "ccc       ");
+        assert_eq!(vt.line(2).text(), "ddd       ");
+        assert_eq!(vt.cursor().row, 2, "cursor on last row of final canvas");
+    }
+
+    #[test]
     fn test_borrowed_writers() {
         let mut stdout_buf: Vec<u8> = Vec::new();
         let mut stderr_buf: Vec<u8> = Vec::new();
@@ -772,7 +1361,7 @@ mod tests {
             )
             .unwrap();
             let canvas = Canvas::new(10, 1);
-            terminal.write_canvas(&canvas).unwrap();
+            terminal.write_canvas(None, &canvas).unwrap();
         }
 
         assert!(!stdout_buf.is_empty());
