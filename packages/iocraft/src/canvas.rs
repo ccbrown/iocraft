@@ -187,144 +187,149 @@ impl Canvas {
         }
     }
 
-    fn write_impl<W: Write>(
-        &self,
-        mut w: W,
-        ansi: bool,
-        omit_final_newline: bool,
-    ) -> io::Result<()> {
+    fn row(&self, y: usize) -> &[Cell] {
+        let Some(row) = self.cells.get(y) else {
+            return &[];
+        };
+        let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
+        &row[..last_non_empty.map_or(0, |i| i + 1)]
+    }
+
+    pub(crate) fn row_eq(&self, other: &Self, y: usize) -> bool {
+        self.width == other.width && self.row(y) == other.row(y)
+    }
+
+    fn write_row_impl<W: Write>(&self, y: usize, mut w: W, ansi: bool) -> io::Result<()> {
+        let row = self.row(y);
         if ansi {
             write!(w, csi!("0m"))?;
         }
 
         let mut background_color = None;
         let mut text_style = CanvasTextStyle::default();
+        let mut col = 0;
+        let mut did_clear_line = false;
+        while col < row.len() {
+            let cell = &row[col];
 
-        for y in 0..self.cells.len() {
-            let row = &self.cells[y];
-            let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
-            let row = &row[..last_non_empty.map_or(0, |i| i + 1)];
-            let mut col = 0;
-            let mut did_clear_line = false;
-            while col < row.len() {
-                let cell = &row[col];
-
-                if ansi {
-                    // For certain changes, we need to reset all attributes.
-                    let mut needs_reset = false;
-                    if let Some(c) = &cell.character {
-                        if c.style.weight != text_style.weight && c.style.weight == Weight::Normal {
-                            needs_reset = true;
-                        }
-                        if !c.style.underline && text_style.underline {
-                            needs_reset = true;
-                        }
-                        if !c.style.italic && text_style.italic {
-                            needs_reset = true;
-                        }
-                    } else if text_style.underline {
+            if ansi {
+                let mut needs_reset = false;
+                if let Some(c) = &cell.character {
+                    if c.style.weight != text_style.weight && c.style.weight == Weight::Normal {
                         needs_reset = true;
                     }
-                    if needs_reset {
-                        write!(w, csi!("0m"))?;
-                        background_color = None;
-                        text_style = CanvasTextStyle::default();
+                    if !c.style.underline && text_style.underline {
+                        needs_reset = true;
                     }
-
-                    if let Some(c) = &cell.character {
-                        if c.style.color != text_style.color {
-                            write!(
-                                w,
-                                csi!("{}m"),
-                                Colored::ForegroundColor(c.style.color.unwrap_or(Color::Reset))
-                            )?;
-                        }
-
-                        if c.style.weight != text_style.weight {
-                            match c.style.weight {
-                                Weight::Bold => write!(w, csi!("{}m"), Attribute::Bold.sgr())?,
-                                Weight::Normal => {}
-                                Weight::Light => write!(w, csi!("{}m"), Attribute::Dim.sgr())?,
-                            }
-                        }
-
-                        if c.style.underline && !text_style.underline {
-                            write!(w, csi!("{}m"), Attribute::Underlined.sgr())?;
-                        }
-
-                        if c.style.italic && !text_style.italic {
-                            write!(w, csi!("{}m"), Attribute::Italic.sgr())?;
-                        }
-
-                        text_style = c.style;
+                    if !c.style.italic && text_style.italic {
+                        needs_reset = true;
                     }
+                } else if text_style.underline {
+                    needs_reset = true;
+                }
+                if needs_reset {
+                    write!(w, csi!("0m"))?;
+                    background_color = None;
+                    text_style = CanvasTextStyle::default();
                 }
 
                 if let Some(c) = &cell.character {
-                    col += c.value.width().max(1);
-                } else {
-                    col += 1;
-                }
-
-                if ansi && col >= self.width {
-                    // go ahead and clear until end of line. we need to do this before writing
-                    // the last character, because if we're at the end of the terminal row, the
-                    // cursor won't change position and the last character would be erased
-                    // if we did it later
-                    // see: https://github.com/ccbrown/iocraft/issues/83
-
-                    // make sure to reset the background before clearing
-                    // see: https://github.com/ccbrown/iocraft/issues/142
-                    if background_color.is_some() {
-                        write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
-                        background_color = None;
+                    if c.style.color != text_style.color {
+                        write!(
+                            w,
+                            csi!("{}m"),
+                            Colored::ForegroundColor(c.style.color.unwrap_or(Color::Reset))
+                        )?;
                     }
 
-                    write!(w, csi!("K"))?;
-                    did_clear_line = true;
-                }
+                    if c.style.weight != text_style.weight {
+                        match c.style.weight {
+                            Weight::Bold => write!(w, csi!("{}m"), Attribute::Bold.sgr())?,
+                            Weight::Normal => {}
+                            Weight::Light => write!(w, csi!("{}m"), Attribute::Dim.sgr())?,
+                        }
+                    }
 
-                if ansi && cell.background_color != background_color {
-                    write!(
-                        w,
-                        csi!("{}m"),
-                        Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
-                    )?;
-                    background_color = cell.background_color;
-                }
+                    if c.style.underline && !text_style.underline {
+                        write!(w, csi!("{}m"), Attribute::Underlined.sgr())?;
+                    }
 
-                if let Some(c) = &cell.character {
-                    write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
-                } else {
-                    w.write_all(b" ")?;
+                    if c.style.italic && !text_style.italic {
+                        write!(w, csi!("{}m"), Attribute::Italic.sgr())?;
+                    }
+
+                    text_style = c.style;
                 }
             }
-            if ansi {
-                // if the background color is set, we need to reset it
+
+            if let Some(c) = &cell.character {
+                col += c.value.width().max(1);
+            } else {
+                col += 1;
+            }
+
+            if ansi && col >= self.width {
                 if background_color.is_some() {
                     write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
                     background_color = None;
                 }
-                if !did_clear_line {
-                    // clear until end of line
-                    write!(w, csi!("K"))?;
-                }
+
+                write!(w, csi!("K"))?;
+                did_clear_line = true;
             }
+
+            if ansi && cell.background_color != background_color {
+                write!(
+                    w,
+                    csi!("{}m"),
+                    Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
+                )?;
+                background_color = cell.background_color;
+            }
+
+            if let Some(c) = &cell.character {
+                write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
+            } else {
+                w.write_all(b" ")?;
+            }
+        }
+        if ansi {
+            if background_color.is_some() {
+                write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
+            }
+            if !did_clear_line {
+                write!(w, csi!("K"))?;
+            }
+            write!(w, csi!("0m"))?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_ansi_row_without_newline<W: Write>(
+        &self,
+        y: usize,
+        w: W,
+    ) -> io::Result<()> {
+        self.write_row_impl(y, w, true)
+    }
+
+    fn write_impl<W: Write>(
+        &self,
+        mut w: W,
+        ansi: bool,
+        omit_final_newline: bool,
+    ) -> io::Result<()> {
+        for y in 0..self.cells.len() {
+            self.write_row_impl(y, &mut w, ansi)?;
             let is_final_line = y == self.cells.len() - 1;
             if !omit_final_newline || !is_final_line {
                 if ansi {
-                    if is_final_line {
-                        write!(w, csi!("0m"))?;
-                    }
                     // add a carriage return in case we're in raw mode
                     w.write_all(b"\r\n")?;
                 } else {
                     w.write_all(b"\n")?;
                 }
             }
-        }
-        if ansi && omit_final_newline {
-            write!(w, csi!("0m"))?;
         }
         w.flush()?;
         Ok(())
@@ -473,6 +478,7 @@ mod tests {
         canvas.write_ansi(&mut actual).unwrap();
 
         let mut expected = Vec::new();
+        // row 0
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "  ").unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
@@ -484,7 +490,10 @@ mod tests {
         )
         .unwrap();
         write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
+        // row 1
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "  ").unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "   ").unwrap();
@@ -495,7 +504,10 @@ mod tests {
         )
         .unwrap();
         write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
+        // row 2
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
@@ -541,9 +553,11 @@ mod tests {
             Colored::BackgroundColor(Color::Reset)
         )
         .unwrap();
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
         // line 2
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
         write!(
@@ -561,9 +575,11 @@ mod tests {
             Colored::BackgroundColor(Color::Reset)
         )
         .unwrap();
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
         // line 3
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
         write!(
@@ -745,12 +761,19 @@ mod tests {
             .unwrap();
 
         let mut expected = Vec::new();
+        // row 0
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "hello!").unwrap();
         write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
+        // row 1
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
+        // row 2 (final, no newline)
+        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
 
@@ -780,5 +803,83 @@ mod tests {
         write!(expected, "\r\n").unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_row_eq_same_content() {
+        let mut a = Canvas::new(10, 2);
+        let mut b = Canvas::new(10, 2);
+        a.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        b.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+
+        assert!(a.row_eq(&b, 0));
+        assert!(a.row_eq(&b, 1));
+    }
+
+    #[test]
+    fn test_row_eq_different_content() {
+        let mut a = Canvas::new(10, 1);
+        let mut b = Canvas::new(10, 1);
+        a.subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        b.subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "world", CanvasTextStyle::default());
+
+        assert!(!a.row_eq(&b, 0));
+    }
+
+    #[test]
+    fn test_row_eq_different_widths() {
+        let mut a = Canvas::new(10, 1);
+        let mut b = Canvas::new(20, 1);
+        a.subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        b.subview_mut(0, 0, 0, 0, 20, 1)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+
+        assert!(!a.row_eq(&b, 0));
+    }
+
+    #[test]
+    fn test_row_eq_out_of_bounds() {
+        let a = Canvas::new(10, 1);
+        let b = Canvas::new(10, 2);
+
+        // row 1 is out of bounds for a, but exists (empty) in b
+        assert!(a.row_eq(&b, 1));
+    }
+
+    #[test]
+    fn test_write_ansi_row_without_newline() {
+        let mut canvas = Canvas::new(10, 2);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "world", CanvasTextStyle::default());
+
+        // each row should render independently with its own reset
+        let mut row0 = Vec::new();
+        canvas.write_ansi_row_without_newline(0, &mut row0).unwrap();
+
+        let mut expected0 = Vec::new();
+        write!(expected0, csi!("0m")).unwrap();
+        write!(expected0, "hello").unwrap();
+        write!(expected0, csi!("K")).unwrap();
+        write!(expected0, csi!("0m")).unwrap();
+        assert_eq!(row0, expected0);
+
+        let mut row1 = Vec::new();
+        canvas.write_ansi_row_without_newline(1, &mut row1).unwrap();
+
+        let mut expected1 = Vec::new();
+        write!(expected1, csi!("0m")).unwrap();
+        write!(expected1, "world").unwrap();
+        write!(expected1, csi!("K")).unwrap();
+        write!(expected1, csi!("0m")).unwrap();
+        assert_eq!(row1, expected1);
     }
 }
