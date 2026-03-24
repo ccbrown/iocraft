@@ -175,7 +175,7 @@ impl Canvas {
         clip_y: isize,
         clip_width: usize,
         clip_height: usize,
-    ) -> CanvasSubviewMut {
+    ) -> CanvasSubviewMut<'_> {
         CanvasSubviewMut {
             y,
             x,

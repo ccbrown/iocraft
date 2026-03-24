@@ -89,7 +89,7 @@ impl<T: Sync + Send + 'static> Ref<T> {
     /// # Panics
     ///
     /// Panics if the owner of the ref has been dropped.
-    pub fn read(&self) -> RefRef<T> {
+    pub fn read(&self) -> RefRef<'_, T> {
         self.try_read()
             .expect("attempt to read ref after owner was dropped")
     }
@@ -102,7 +102,7 @@ impl<T: Sync + Send + 'static> Ref<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same ref, writes to one will be blocked for as long as any
     /// reference returned by this method exists.</div>
-    pub fn try_read(&self) -> Option<RefRef<T>> {
+    pub fn try_read(&self) -> Option<RefRef<'_, T>> {
         loop {
             match self.inner.try_read() {
                 Ok(inner) => break Some(RefRef { inner }),
@@ -124,7 +124,7 @@ impl<T: Sync + Send + 'static> Ref<T> {
     /// # Panics
     ///
     /// Panics if the owner of the ref has been dropped.
-    pub fn write(&mut self) -> RefMutRef<T> {
+    pub fn write(&mut self) -> RefMutRef<'_, T> {
         self.try_write()
             .expect("attempt to write ref after owner was dropped")
     }
@@ -137,7 +137,7 @@ impl<T: Sync + Send + 'static> Ref<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same ref, operations on one will be blocked for as long as any
     /// reference returned by this method exists.</div>
-    pub fn try_write(&mut self) -> Option<RefMutRef<T>> {
+    pub fn try_write(&mut self) -> Option<RefMutRef<'_, T>> {
         self.inner.try_write().ok().map(|inner| RefMutRef { inner })
     }
 }

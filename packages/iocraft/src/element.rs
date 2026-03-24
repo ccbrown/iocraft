@@ -158,7 +158,7 @@ pub trait ElementExt: private::Sealed + Sized {
     fn key(&self) -> &ElementKey;
 
     #[doc(hidden)]
-    fn props_mut(&mut self) -> AnyProps;
+    fn props_mut(&mut self) -> AnyProps<'_>;
 
     #[doc(hidden)]
     fn helper(&self) -> Box<dyn ComponentHelperExt>;
@@ -533,7 +533,7 @@ impl ElementExt for AnyElement<'_> {
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         self.props.borrow()
     }
 
@@ -552,7 +552,7 @@ impl ElementExt for &mut AnyElement<'_> {
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         self.props.borrow()
     }
 
@@ -574,7 +574,7 @@ where
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         AnyProps::borrowed(&mut self.props)
     }
 
@@ -596,7 +596,7 @@ where
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         AnyProps::borrowed(&mut self.props)
     }
 
