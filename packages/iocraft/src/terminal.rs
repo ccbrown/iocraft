@@ -284,8 +284,26 @@ impl TerminalImpl for StdTerminal<'_> {
                         .queue(cursor::MoveToPreviousLine((current_y - y) as u16))?;
                 }
                 std::cmp::Ordering::Greater => {
-                    self.dest
-                        .queue(cursor::MoveToNextLine((y - current_y) as u16))?;
+                    // Lines within the previous canvas already exist in the
+                    // terminal and can be reached with MoveToNextLine (CSI E).
+                    // Lines beyond prev_height don't exist yet — we must emit
+                    // \r\n to create them, since CSI E won't extend the
+                    // scrollback when the cursor is at the bottom of the screen.
+                    let last_existing_line = prev_height.saturating_sub(1).max(current_y);
+                    if y <= last_existing_line {
+                        self.dest
+                            .queue(cursor::MoveToNextLine((y - current_y) as u16))?;
+                    } else {
+                        let move_to_last = last_existing_line.saturating_sub(current_y);
+                        if move_to_last > 0 {
+                            self.dest
+                                .queue(cursor::MoveToNextLine(move_to_last as u16))?;
+                        }
+                        let new_lines = y - last_existing_line;
+                        for _ in 0..new_lines {
+                            self.dest.write_all(b"\r\n")?;
+                        }
+                    }
                 }
                 std::cmp::Ordering::Equal => {
                     self.dest.queue(cursor::MoveToColumn(0))?;
@@ -966,6 +984,14 @@ mod tests {
     }
 
     fn new_inline_term(dest: TestWriter, prev_canvas_height: u16) -> StdTerminal<'static> {
+        new_inline_term_with_size(dest, prev_canvas_height, (10, 10))
+    }
+
+    fn new_inline_term_with_size(
+        dest: TestWriter,
+        prev_canvas_height: u16,
+        term_size: (u16, u16),
+    ) -> StdTerminal<'static> {
         StdTerminal {
             input_is_terminal: false,
             dest: Box::new(dest),
@@ -976,8 +1002,29 @@ mod tests {
             enabled_keyboard_enhancement: false,
             prev_canvas_top_row: 0,
             prev_canvas_height,
-            size: Some((10, 10)),
+            size: Some(term_size),
         }
+    }
+
+    /// Run an inline diff (prev → next) and return the raw diff bytes plus
+    /// an `avt::Vt` showing the final visible state.
+    fn inline_diff_vt(
+        prev: &Canvas,
+        next: &Canvas,
+        term_size: (u16, u16),
+    ) -> (Vec<u8>, avt::Vt) {
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term_with_size(dest, prev.height() as _, term_size);
+        term.write_canvas(Some(prev), next).unwrap();
+
+        let diff = diff_buf.lock().unwrap().clone();
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&diff);
+
+        let mut vt = avt::Vt::new(term_size.0 as _, term_size.1 as _);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+        (diff, vt)
     }
 
     #[test]
@@ -1079,6 +1126,84 @@ mod tests {
         assert_eq!(vt.line(1).text(), "bbb       ");
         assert_eq!(vt.line(2).text(), "ccc       ");
         assert_eq!(vt.cursor().row, 2, "cursor on last row of new canvas");
+    }
+
+    #[test]
+    fn test_inline_diff_non_adjacent_rows_forward() {
+        // Two non-adjacent rows change within the existing canvas. The diff
+        // visits row 1 first (moving the cursor up from row 4), then row 3
+        // (moving forward but still within the old canvas). This exercises the
+        // Greater branch when y < prev_height.
+        let style = CanvasTextStyle::default();
+
+        let mut prev = Canvas::new(10, 5);
+        for i in 0..5 {
+            prev.subview_mut(0, 0, 0, 0, 10, 5)
+                .set_text(0, i, &format!("row{i}"), style);
+        }
+
+        let mut next = Canvas::new(10, 5);
+        for i in 0..5 {
+            next.subview_mut(0, 0, 0, 0, 10, 5)
+                .set_text(0, i, &format!("row{i}"), style);
+        }
+        // Use same-length replacements to avoid masking the bug with
+        // trailing-cell issues in write_ansi_row_without_newline.
+        next.subview_mut(0, 0, 0, 0, 10, 5)
+            .set_text(0, 1, "AAA1", style);
+        next.subview_mut(0, 0, 0, 0, 10, 5)
+            .set_text(0, 3, "BBB3", style);
+
+        let (_diff, vt) = inline_diff_vt(&prev, &next, (10, 10));
+
+        assert_eq!(vt.line(0).text(), "row0      ");
+        assert_eq!(vt.line(1).text(), "AAA1      ");
+        assert_eq!(vt.line(2).text(), "row2      ");
+        assert_eq!(vt.line(3).text(), "BBB3      ");
+        assert_eq!(vt.line(4).text(), "row4      ");
+    }
+
+    #[test]
+    fn test_inline_diff_growing_at_bottom_of_screen() {
+        // Simulate the canvas being at the bottom of the terminal so that
+        // growing from 1 row to 2 requires scrolling. MoveToNextLine (CSI E)
+        // won't create new lines at the screen bottom — only \r\n will.
+        let style = CanvasTextStyle::default();
+
+        let mut prev = Canvas::new(10, 1);
+        prev.subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "hello", style);
+
+        let mut next = Canvas::new(10, 2);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "hello", style);
+        next.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "world", style);
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        // Fill the VT so the canvas starts on the last row, then apply the diff.
+        let mut setup = Vec::new();
+        let vt_rows = 5;
+        for i in 0..vt_rows - 1 {
+            write!(setup, "line{i}\r\n").unwrap();
+        }
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, vt_rows);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        // The VT should have scrolled: line0 is gone, canvas occupies last 2 rows.
+        assert_eq!(vt.line(vt_rows - 2).text(), "hello     ");
+        assert_eq!(vt.line(vt_rows - 1).text(), "world     ");
+        assert_eq!(
+            vt.cursor().row,
+            vt_rows - 1,
+            "cursor on last row of new canvas"
+        );
     }
 
     #[test]
