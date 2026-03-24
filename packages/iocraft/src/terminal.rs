@@ -258,16 +258,6 @@ impl TerminalImpl for StdTerminal<'_> {
             return Ok(());
         }
 
-        // Inline: fall back to full clear + rewrite when canvas >= terminal height.
-        if let Some(size) = self.size {
-            if canvas.height() as u16 >= size.1 || self.prev_canvas_height >= size.1 {
-                self.clear_canvas()?;
-                self.prev_canvas_height = canvas.height() as _;
-                canvas.write_ansi_without_final_newline(&mut *self.dest)?;
-                return Ok(());
-            }
-        }
-
         // Inline: row diff with relative cursor movement.
         let prev_height = prev.height();
         let new_height = canvas.height();
@@ -277,6 +267,17 @@ impl TerminalImpl for StdTerminal<'_> {
         for y in 0..max_height {
             if prev.row_eq(canvas, y) {
                 continue;
+            }
+            // If a changed row has scrolled off the top of the visible area,
+            // we can't reach it with cursor movement — fall back to full rewrite.
+            if let Some((_cols, term_h)) = self.size {
+                let visible_start = prev_height.saturating_sub(term_h as usize);
+                if y < visible_start {
+                    self.clear_canvas()?;
+                    self.prev_canvas_height = canvas.height() as _;
+                    canvas.write_ansi_without_final_newline(&mut *self.dest)?;
+                    return Ok(());
+                }
             }
             match y.cmp(&current_y) {
                 std::cmp::Ordering::Less => {
@@ -1340,7 +1341,8 @@ mod tests {
 
     #[test]
     fn test_inline_diff_at_terminal_height_boundary() {
-        // Canvas height == terminal height should fall back to full clear + rewrite.
+        // Canvas height == terminal height uses the normal diff path when only
+        // visible rows changed (no off-screen changes trigger a fallback).
         let mut prev = Canvas::new(10, 5);
         prev.subview_mut(0, 0, 0, 0, 10, 5)
             .set_text(0, 0, "aaa", CanvasTextStyle::default());
@@ -1353,34 +1355,82 @@ mod tests {
         next.subview_mut(0, 0, 0, 0, 10, 5)
             .set_text(0, 4, "ccc", CanvasTextStyle::default());
 
-        let (dest, diff_buf) = new_test_writer();
-        // Terminal is 10x5, canvas is also 5 rows tall, triggering the fallback.
-        let mut term = StdTerminal {
-            input_is_terminal: false,
-            dest: Box::new(dest),
-            alt: Box::new(io::sink()),
-            fullscreen: false,
-            mouse_capture: false,
-            raw_mode_enabled: false,
-            enabled_keyboard_enhancement: false,
-            prev_canvas_top_row: 0,
-            prev_canvas_height: prev.height() as _,
-            size: Some((10, 5)),
-        };
-        term.write_canvas(Some(&prev), &next).unwrap();
-
-        // The fallback does clear + full rewrite, so just verify the final
-        // visible state is correct by feeding the diff output into a vt that
-        // already shows the prev canvas.
-        let mut setup = Vec::new();
-        prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
-
-        let mut vt = avt::Vt::new(10, 5);
-        vt.feed_str(&String::from_utf8(setup).unwrap());
+        let (_diff, vt) = inline_diff_vt(&prev, &next, (10, 5));
 
         assert_eq!(vt.line(0).text(), "aaa       ");
         assert_eq!(vt.line(4).text(), "ccc       ");
+    }
+
+    #[test]
+    fn test_inline_diff_tall_canvas_visible_change() {
+        // Canvas (8 rows) taller than terminal (5 rows). Only the last row
+        // changes, which is in the visible area — the normal diff path should
+        // handle it without a full clear+rewrite.
+        let style = CanvasTextStyle::default();
+
+        let mut prev = Canvas::new(10, 8);
+        for i in 0..8 {
+            prev.subview_mut(0, 0, 0, 0, 10, 8)
+                .set_text(0, i, &format!("row{i}"), style);
+        }
+
+        let mut next = Canvas::new(10, 8);
+        for i in 0..7 {
+            next.subview_mut(0, 0, 0, 0, 10, 8)
+                .set_text(0, i, &format!("row{i}"), style);
+        }
+        next.subview_mut(0, 0, 0, 0, 10, 8)
+            .set_text(0, 7, "CHANGED", style);
+
+        let (diff, vt) = inline_diff_vt(&prev, &next, (10, 5));
+
+        // Should NOT contain a full clear (ClearAll = ESC[2J)
+        let diff_str = String::from_utf8_lossy(&diff);
+        assert!(
+            !diff_str.contains("\x1b[2J"),
+            "expected row-level diff, not full clear; got: {diff_str:?}"
+        );
+
+        // The bottom 5 rows of the 8-row canvas are visible in the terminal.
+        assert_eq!(vt.line(0).text(), "row3      ");
+        assert_eq!(vt.line(4).text(), "CHANGED   ");
+    }
+
+    #[test]
+    fn test_inline_diff_tall_canvas_offscreen_change() {
+        // Canvas (8 rows) taller than terminal (5 rows). A row above the
+        // visible area changes — this must trigger the full-rewrite fallback
+        // since we can't cursor to an off-screen row.
+        let style = CanvasTextStyle::default();
+
+        let mut prev = Canvas::new(10, 8);
+        for i in 0..8 {
+            prev.subview_mut(0, 0, 0, 0, 10, 8)
+                .set_text(0, i, &format!("row{i}"), style);
+        }
+
+        let mut next = Canvas::new(10, 8);
+        for i in 0..8 {
+            next.subview_mut(0, 0, 0, 0, 10, 8)
+                .set_text(0, i, &format!("row{i}"), style);
+        }
+        // Change row 1, which is above the visible area (visible_start = 8-5 = 3).
+        next.subview_mut(0, 0, 0, 0, 10, 8)
+            .set_text(0, 1, "OFFSCR", style);
+
+        let (diff, vt) = inline_diff_vt(&prev, &next, (10, 5));
+
+        // Should contain a full clear (ClearAll = ESC[2J, because
+        // prev_canvas_height >= term_height triggers the heavy clear path).
+        let diff_str = String::from_utf8_lossy(&diff);
+        assert!(
+            diff_str.contains("\x1b[2J"),
+            "expected full clear fallback; got: {diff_str:?}"
+        );
+
+        // After full rewrite, the bottom 5 rows of the new canvas are visible.
+        assert_eq!(vt.line(0).text(), "row3      ");
+        assert_eq!(vt.line(4).text(), "row7      ");
     }
 
     #[test]
