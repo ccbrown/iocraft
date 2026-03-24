@@ -215,7 +215,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// # Panics
     ///
     /// Panics if the owner of the state has been dropped.
-    pub fn read(&self) -> StateRef<T> {
+    pub fn read(&self) -> StateRef<'_, T> {
         self.try_read()
             .expect("attempt to read state after owner was dropped")
     }
@@ -228,7 +228,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, writes to one will be blocked for as long as any
     /// reference returned by this method exists.</div>
-    pub fn try_read(&self) -> Option<StateRef<T>> {
+    pub fn try_read(&self) -> Option<StateRef<'_, T>> {
         loop {
             match self.inner.try_read() {
                 Ok(inner) => break Some(StateRef { inner }),
@@ -250,7 +250,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// # Panics
     ///
     /// Panics if the owner of the state has been dropped.
-    pub fn write(&mut self) -> StateMutRef<T> {
+    pub fn write(&mut self) -> StateMutRef<'_, T> {
         self.try_write()
             .expect("attempt to write state after owner was dropped")
     }
@@ -263,7 +263,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, operations on one will be blocked for as long as any
     /// reference returned by this method exists.</div>
-    pub fn try_write(&mut self) -> Option<StateMutRef<T>> {
+    pub fn try_write(&mut self) -> Option<StateMutRef<'_, T>> {
         self.inner.try_write().ok().map(|inner| StateMutRef {
             inner,
             did_deref_mut: false,

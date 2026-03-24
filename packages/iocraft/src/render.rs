@@ -94,12 +94,12 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
     }
 
     /// Gets an immutable reference to context of the given type.
-    pub fn get_context<T: Any>(&self) -> Option<Ref<T>> {
+    pub fn get_context<T: Any>(&self) -> Option<Ref<'_, T>> {
         self.component_context_stack.get_context()
     }
 
     /// Gets a mutable reference to context of the given type.
-    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<T>> {
+    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<'_, T>> {
         self.component_context_stack.get_context_mut()
     }
 
@@ -259,7 +259,7 @@ impl ComponentDrawer<'_> {
     }
 
     /// Gets the region of the canvas that the component should be drawn to.
-    pub fn canvas(&mut self) -> CanvasSubviewMut {
+    pub fn canvas(&mut self) -> CanvasSubviewMut<'_> {
         self.context.canvas.subview_mut(
             self.node_position.x as _,
             self.node_position.y as _,
