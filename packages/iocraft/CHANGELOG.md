@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.0...iocraft-v0.8.1) - 2026-03-24
+
+### Other
+
+- update rust, fix new clippy warnings ([#181](https://github.com/ccbrown/iocraft/pull/181))
+
 ## [0.8.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.18...iocraft-v0.8.0) - 2026-03-06
 
 ### Added
