@@ -1009,11 +1009,7 @@ mod tests {
 
     /// Run an inline diff (prev → next) and return the raw diff bytes plus
     /// an `avt::Vt` showing the final visible state.
-    fn inline_diff_vt(
-        prev: &Canvas,
-        next: &Canvas,
-        term_size: (u16, u16),
-    ) -> (Vec<u8>, avt::Vt) {
+    fn inline_diff_vt(prev: &Canvas, next: &Canvas, term_size: (u16, u16)) -> (Vec<u8>, avt::Vt) {
         let (dest, diff_buf) = new_test_writer();
         let mut term = new_inline_term_with_size(dest, prev.height() as _, term_size);
         term.write_canvas(Some(prev), next).unwrap();
