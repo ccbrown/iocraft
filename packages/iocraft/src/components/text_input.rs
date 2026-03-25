@@ -231,6 +231,17 @@ impl TextBuffer {
         }
         self.offset_for_closest_column_in_row(row + 1, col_preference.unwrap_or(col))
     }
+
+    fn row_start_offset(&self, offset: usize) -> usize {
+        let (row, _) = self.row_column_for_offset(offset);
+        self.rows[row as usize].offset
+    }
+
+    fn row_end_offset(&self, offset: usize) -> usize {
+        let (row, _) = self.row_column_for_offset(offset);
+        let r = &self.rows[row as usize];
+        r.offset + r.len
+    }
 }
 
 #[derive(Default, Props)]
@@ -420,6 +431,26 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     modifiers,
                     ..
                 }) if kind != KeyEventKind::Release
+                    && modifiers.contains(KeyModifiers::CONTROL) =>
+                {
+                    match code {
+                        KeyCode::Char('a') => {
+                            cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
+                            vertical_movement_col_preference.set(None);
+                        }
+                        KeyCode::Char('e') => {
+                            cursor_offset.set(buffer.row_end_offset(cursor_offset.get()));
+                            vertical_movement_col_preference.set(None);
+                        }
+                        _ => {}
+                    }
+                }
+                TerminalEvent::Key(KeyEvent {
+                    code,
+                    kind,
+                    modifiers,
+                    ..
+                }) if kind != KeyEventKind::Release
                     && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                 {
                     let mut clear_vertical_movement_col_preference = true;
@@ -481,6 +512,12 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                                 cursor_offset.get(),
                                 vertical_movement_col_preference.get(),
                             ));
+                        }
+                        KeyCode::Home => {
+                            cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
+                        }
+                        KeyCode::End => {
+                            cursor_offset.set(buffer.row_end_offset(cursor_offset.get()));
                         }
                         _ => {
                             clear_vertical_movement_col_preference = false;
