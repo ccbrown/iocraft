@@ -71,17 +71,30 @@ pub struct CanvasTextStyle {
     pub italic: bool,
 }
 
-#[derive(Clone, Default, PartialEq)]
-struct Cell {
-    background_color: Option<Color>,
+/// A single cell on a [`Canvas`], containing optional text and background color.
+#[non_exhaustive]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CanvasCell {
+    /// The background color of this cell, if set.
+    pub background_color: Option<Color>,
+    /// The text style applied to this cell, if any character is present.
+    pub text_style: Option<CanvasTextStyle>,
     character: Option<Character>,
 }
 
-impl Cell {
+impl CanvasCell {
+    /// Returns the text content of this cell, or `None` if empty.
+    pub fn text(&self) -> Option<&str> {
+        self.character.as_ref().map(|ch| ch.value.as_str())
+    }
+
     fn is_empty(&self) -> bool {
         self.background_color.is_none() && self.character.is_none()
     }
 }
+
+// Internal alias during migration
+type Cell = CanvasCell;
 
 /// `Canvas` is the medium that output is drawn to before being rendered to the terminal or other
 /// destinations.
@@ -113,6 +126,50 @@ impl Canvas {
     /// Returns the height of the canvas.
     pub fn height(&self) -> usize {
         self.cells.len()
+    }
+
+    /// Returns a reference to the cell at the given position, or `None` if
+    /// out of bounds.
+    pub fn cell(&self, x: usize, y: usize) -> Option<&CanvasCell> {
+        self.cells.get(y).and_then(|row| row.get(x))
+    }
+
+    /// Extracts plain text from a rectangular region of the canvas.
+    ///
+    /// Each row within the region produces one line in the result, separated
+    /// by newlines. Trailing whitespace on each line is trimmed. Out-of-bounds
+    /// coordinates are clamped silently.
+    pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
+        let mut lines = Vec::with_capacity(h);
+        for row_idx in y..y + h {
+            let Some(row) = self.cells.get(row_idx) else {
+                lines.push(String::new());
+                continue;
+            };
+            let start = x.min(row.len());
+            let end = (x + w).min(row.len());
+            let slice = &row[start..end];
+            let last_non_empty = slice.iter().rposition(|cell| cell.character.is_some());
+            let trim_end = match last_non_empty {
+                Some(i) => i + 1,
+                None => {
+                    lines.push(String::new());
+                    continue;
+                }
+            };
+            let mut s = String::with_capacity(trim_end);
+            for cell in &slice[..trim_end] {
+                match cell.character.as_ref() {
+                    Some(ch) => s.push_str(&ch.value),
+                    None => s.push(' '),
+                }
+            }
+            lines.push(s);
+        }
+        lines.join(
+            "
+",
+        )
     }
 
     fn clear_text(&mut self, x: usize, y: usize, w: usize, h: usize) {
@@ -367,6 +424,17 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl CanvasSubviewMut<'_> {
+    /// Returns a reference to a cell at the given **absolute** canvas position.
+    pub fn cell(&self, abs_x: usize, abs_y: usize) -> Option<&CanvasCell> {
+        self.canvas.cell(abs_x, abs_y)
+    }
+
+    /// Extracts plain text from a rectangular region using **absolute** canvas
+    /// coordinates.
+    pub fn get_text(&self, abs_x: usize, abs_y: usize, w: usize, h: usize) -> String {
+        self.canvas.get_text(abs_x, abs_y, w, h)
+    }
+
     /// Fills the region with the given color.
     pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
         let mut left = self.x + x;
@@ -780,5 +848,53 @@ mod tests {
         write!(expected, "\r\n").unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_cell_read() {
+        let mut canvas = Canvas::new(10, 3);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        assert_eq!(canvas.cell(0, 0).and_then(|c| c.text()), Some("h"));
+        assert_eq!(canvas.cell(4, 0).and_then(|c| c.text()), Some("o"));
+        assert_eq!(canvas.cell(5, 0).and_then(|c| c.text()), None);
+        assert_eq!(canvas.cell(99, 99), None);
+    }
+
+    #[test]
+    fn test_get_text_single_row() {
+        let mut canvas = Canvas::new(10, 3);
+        let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 3);
+        sv.set_text(0, 0, "hello", CanvasTextStyle::default());
+        sv.set_text(2, 1, "ab", CanvasTextStyle::default());
+        drop(sv);
+        assert_eq!(canvas.get_text(0, 0, 10, 1), "hello");
+        assert_eq!(canvas.get_text(0, 1, 10, 1), "  ab");
+        assert_eq!(canvas.get_text(0, 2, 10, 1), "");
+    }
+
+    #[test]
+    fn test_get_text_multi_row() {
+        let mut canvas = Canvas::new(10, 3);
+        let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 3);
+        sv.set_text(0, 0, "line one", CanvasTextStyle::default());
+        sv.set_text(0, 1, "line two", CanvasTextStyle::default());
+        drop(sv);
+        assert_eq!(
+            canvas.get_text(0, 0, 10, 3),
+            "line one
+line two
+"
+        );
+    }
+
+    #[test]
+    fn test_get_text_partial_row() {
+        let mut canvas = Canvas::new(10, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "abcdef", CanvasTextStyle::default());
+        assert_eq!(canvas.get_text(2, 0, 3, 1), "cde");
     }
 }
