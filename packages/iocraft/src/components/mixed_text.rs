@@ -1,6 +1,7 @@
 use crate::{
     components::text::{Text, TextAlign, TextDecoration, TextDrawer, TextWrap},
     segmented_string::SegmentedString,
+    strip_ansi::strip_ansi,
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 
@@ -115,6 +116,9 @@ impl Component for MixedText {
         _hooks: Hooks,
         updater: &mut ComponentUpdater,
     ) {
+        for content in props.contents.iter_mut() {
+            content.text = strip_ansi(&content.text).into_owned();
+        }
         let plaintext = props
             .contents
             .iter()
@@ -183,6 +187,22 @@ mod tests {
                     MixedText(contents: vec![
                         MixedTextContent::new("this is ").color(Color::Red).weight(Weight::Bold).italic(),
                         MixedTextContent::new("a wrapping test").decoration(TextDecoration::Underline),
+                    ])
+                }
+            }
+            .to_string(),
+            "this is a\nwrapping test\n"
+        );
+    }
+
+    #[test]
+    fn test_mixed_text_strips_ansi() {
+        assert_eq!(
+            element! {
+                View(width: 14) {
+                    MixedText(contents: vec![
+                        MixedTextContent::new("\x1b[31mthis is \x1b[0m"),
+                        MixedTextContent::new("\x1b[1ma wrapping test\x1b[0m"),
                     ])
                 }
             }

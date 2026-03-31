@@ -1,5 +1,5 @@
-use std::sync::LazyLock;
 use regex::Regex;
+use std::{borrow::Cow, sync::LazyLock};
 
 pub const ANSI_REGEX_PATTERN: &str = concat!(
     // OSC branch
@@ -28,6 +28,6 @@ pub const ANSI_REGEX_PATTERN: &str = concat!(
 static ANSI_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(ANSI_REGEX_PATTERN).expect("valid ANSI regex"));
 
-pub(crate) fn strip_ansi(string: &str) -> String {
-    ANSI_REGEX.replace_all(string, "").to_string()
+pub(crate) fn strip_ansi(string: &str) -> Cow<'_, str> {
+    ANSI_REGEX.replace_all(string, "")
 }
