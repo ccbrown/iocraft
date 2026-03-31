@@ -112,6 +112,7 @@ mod multimap;
 mod props;
 mod render;
 pub(crate) mod segmented_string;
+mod strip_ansi;
 mod style;
 mod terminal;
 pub(crate) mod unicode_linebreak;

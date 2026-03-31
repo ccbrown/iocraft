@@ -1,6 +1,6 @@
 use crate::{
-    render::MeasureFunc, segmented_string::SegmentedString, CanvasTextStyle, Color, Component,
-    ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
+    render::MeasureFunc, segmented_string::SegmentedString, strip_ansi::strip_ansi,
+    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -227,7 +227,7 @@ impl Component for Text {
             underline: props.decoration == TextDecoration::Underline,
             italic: props.italic,
         };
-        self.content = props.content.clone();
+        self.content = strip_ansi(&props.content).into_owned();
         self.wrap = props.wrap;
         self.align = props.align;
         updater.set_measure_func(Self::measure_func(self.content.clone(), props.wrap));
@@ -324,5 +324,28 @@ mod tests {
 
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn test_text_strips_ansi() {
+        assert_eq!(
+            element!(Text(content: "\x1b[31mhello\x1b[0m")).to_string(),
+            "hello\n"
+        );
+
+        assert_eq!(
+            element! {
+                View(width: 10) {
+                    Text(content: "\x1b[1mthis is\x1b[0m a wrap test")
+                }
+            }
+            .to_string(),
+            "this is a\nwrap test\n"
+        );
+
+        assert_eq!(
+            element!(Text(content: "no ansi here")).to_string(),
+            "no ansi here\n"
+        );
     }
 }
