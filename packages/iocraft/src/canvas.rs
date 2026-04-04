@@ -77,8 +77,6 @@ pub struct CanvasTextStyle {
 pub struct CanvasCell {
     /// The background color of this cell, if set.
     pub background_color: Option<Color>,
-    /// The text style applied to this cell, if any character is present.
-    pub text_style: Option<CanvasTextStyle>,
     character: Option<Character>,
 }
 
@@ -88,7 +86,13 @@ impl CanvasCell {
         self.character.as_ref().map(|ch| ch.value.as_str())
     }
 
-    fn is_empty(&self) -> bool {
+    /// Returns the text style of this cell, or `None` if the cell is empty.
+    pub fn text_style(&self) -> Option<&CanvasTextStyle> {
+        self.character.as_ref().map(|ch| &ch.style)
+    }
+
+    /// Returns `true` if the cell has no content and no background color.
+    pub fn is_empty(&self) -> bool {
         self.background_color.is_none() && self.character.is_none()
     }
 }
@@ -424,15 +428,44 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl CanvasSubviewMut<'_> {
-    /// Returns a reference to a cell at the given **absolute** canvas position.
-    pub fn cell(&self, abs_x: usize, abs_y: usize) -> Option<&CanvasCell> {
-        self.canvas.cell(abs_x, abs_y)
+    /// Returns a reference to a cell at the given **relative** subview position.
+    ///
+    /// Returns `None` if the resulting absolute position is out of bounds or
+    /// outside the clip region.
+    pub fn cell(&self, x: isize, y: isize) -> Option<&CanvasCell> {
+        let abs_x = self.x + x;
+        let abs_y = self.y + y;
+        if abs_x < self.clip_x
+            || abs_y < self.clip_y
+            || abs_x < 0
+            || abs_y < 0
+            || abs_x >= self.clip_x + self.clip_width as isize
+            || abs_y >= self.clip_y + self.clip_height as isize
+        {
+            return None;
+        }
+        self.canvas.cell(abs_x as usize, abs_y as usize)
     }
 
-    /// Extracts plain text from a rectangular region using **absolute** canvas
-    /// coordinates.
-    pub fn get_text(&self, abs_x: usize, abs_y: usize, w: usize, h: usize) -> String {
-        self.canvas.get_text(abs_x, abs_y, w, h)
+    /// Extracts plain text from a rectangular region using **relative** subview
+    /// coordinates. The region is clamped to the clip bounds.
+    pub fn get_text(&self, x: isize, y: isize, w: usize, h: usize) -> String {
+        let mut left = self.x + x;
+        let mut top = self.y + y;
+        let mut right = left + w as isize;
+        let mut bottom = top + h as isize;
+
+        left = left.max(self.clip_x).max(0);
+        top = top.max(self.clip_y).max(0);
+        right = right.min(self.clip_x + self.clip_width as isize).max(0);
+        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
+
+        self.canvas.get_text(
+            left as _,
+            top as _,
+            (right - left).max(0) as _,
+            (bottom - top).max(0) as _,
+        )
     }
 
     /// Fills the region with the given color.
@@ -896,5 +929,59 @@ line two
             .subview_mut(0, 0, 0, 0, 10, 1)
             .set_text(0, 0, "abcdef", CanvasTextStyle::default());
         assert_eq!(canvas.get_text(2, 0, 3, 1), "cde");
+    }
+
+    #[test]
+    fn test_cell_text_style() {
+        let mut canvas = Canvas::new(10, 1);
+        let style = CanvasTextStyle {
+            weight: Weight::Bold,
+            ..Default::default()
+        };
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "hi", style);
+        let cell = canvas.cell(0, 0).unwrap();
+        let ts = cell.text_style().unwrap();
+        assert_eq!(ts.weight, Weight::Bold);
+        // Empty cell returns None.
+        assert!(canvas.cell(5, 0).unwrap().text_style().is_none());
+    }
+
+    #[test]
+    fn test_cell_is_empty() {
+        let mut canvas = Canvas::new(5, 1);
+        assert!(canvas.cell(0, 0).unwrap().is_empty());
+        canvas
+            .subview_mut(0, 0, 0, 0, 5, 1)
+            .set_text(0, 0, "a", CanvasTextStyle::default());
+        assert!(!canvas.cell(0, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_subview_cell_relative_coords() {
+        let mut canvas = Canvas::new(10, 5);
+        // Subview at offset (2, 1) with clip matching subview area
+        let mut sv = canvas.subview_mut(2, 1, 2, 1, 6, 3);
+        sv.set_text(0, 0, "abc", CanvasTextStyle::default());
+        // Read back via subview using relative coordinates
+        assert_eq!(sv.cell(0, 0).and_then(|c| c.text()), Some("a"));
+        assert_eq!(sv.cell(2, 0).and_then(|c| c.text()), Some("c"));
+        // Out of clip bounds → None
+        assert_eq!(sv.cell(-1, 0), None);
+        assert_eq!(sv.cell(6, 0), None);
+        assert_eq!(sv.cell(0, -1), None);
+        assert_eq!(sv.cell(0, 3), None);
+    }
+
+    #[test]
+    fn test_subview_get_text_relative_coords() {
+        let mut canvas = Canvas::new(10, 5);
+        let mut sv = canvas.subview_mut(2, 1, 2, 1, 6, 3);
+        sv.set_text(0, 0, "hello", CanvasTextStyle::default());
+        sv.set_text(0, 1, "world", CanvasTextStyle::default());
+        // Read back relative to subview origin
+        assert_eq!(sv.get_text(0, 0, 6, 1), "hello");
+        assert_eq!(sv.get_text(0, 0, 6, 2), "hello\nworld");
     }
 }
