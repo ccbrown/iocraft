@@ -97,9 +97,6 @@ impl CanvasCell {
     }
 }
 
-// Internal alias during migration
-type Cell = CanvasCell;
-
 /// `Canvas` is the medium that output is drawn to before being rendered to the terminal or other
 /// destinations.
 ///
@@ -110,7 +107,7 @@ type Cell = CanvasCell;
 #[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
-    cells: Vec<Vec<Cell>>,
+    cells: Vec<Vec<CanvasCell>>,
 }
 
 impl Canvas {
@@ -118,7 +115,7 @@ impl Canvas {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
-            cells: vec![vec![Cell::default(); width]; height],
+            cells: vec![vec![CanvasCell::default(); width]; height],
         }
     }
 
