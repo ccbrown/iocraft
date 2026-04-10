@@ -5,6 +5,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
+use std::sync::atomic::{AtomicU64, Ordering};
 use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream, Parser},
@@ -15,7 +16,6 @@ use syn::{
     DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Generics, Ident, ItemFn, ItemStruct,
     Lifetime, Lit, Member, Pat, Result, Token, Type, TypePath, WhereClause, WherePredicate,
 };
-use uuid::Uuid;
 
 enum ParsedElementChild {
     Element(ParsedElement),
@@ -73,16 +73,24 @@ impl ToTokens for ParsedElement {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ty = &self.ty;
 
-        let decl_key = Uuid::new_v4().as_u128();
+        // Use module_path!() combined with a deterministic counter to ensure
+        // keys are unique both within a compilation unit and across crates.
+        // module_path!() resolves to the caller's module path at compile time,
+        // providing cross-crate uniqueness. The counter provides within-crate
+        // uniqueness. This also ensures reproducible builds (no random UUIDs).
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
 
         let key = self
             .props
             .iter()
             .find_map(|FieldValue { member, expr, .. }| match member {
-                Member::Named(ident) if ident == "key" => Some(quote!((#decl_key, #expr))),
+                Member::Named(ident) if ident == "key" => {
+                    Some(quote!((module_path!(), #counter, #expr)))
+                }
                 _ => None,
             })
-            .unwrap_or_else(|| quote!(#decl_key));
+            .unwrap_or_else(|| quote!((module_path!(), #counter)));
 
         let prop_assignments = self
             .props
