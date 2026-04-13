@@ -134,8 +134,8 @@ impl Text {
     pub(crate) fn alignment_padding(line_width: usize, align: TextAlign, width: usize) -> usize {
         match align {
             TextAlign::Left => 0,
-            TextAlign::Right => width - line_width,
-            TextAlign::Center => width / 2 - line_width / 2,
+            TextAlign::Right => width - width.min(line_width),
+            TextAlign::Center => width / 2 - width.min(line_width) / 2,
         }
     }
 
