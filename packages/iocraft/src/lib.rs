@@ -134,6 +134,13 @@ mod flattened_exports {
 
 pub use flattened_exports::*;
 
+/// Re-exported [`taffy`] crate, which powers flexbox layout in `iocraft`.
+///
+/// This allows you to reference `taffy` types (e.g. [`taffy::Size`],
+/// [`taffy::AvailableSpace`]) in your own code without adding a separate
+/// `taffy` dependency to your `Cargo.toml`.
+pub use taffy;
+
 /// Components for crafting your UI.
 pub mod components;
 
