@@ -198,17 +198,26 @@ impl TerminalImpl for StdTerminal<'_> {
             return Ok(());
         }
 
-        if !self.fullscreen {
-            if let Some(size) = self.size {
-                if self.prev_canvas_height >= size.1 {
-                    // We have to clear the entire terminal to avoid leaving artifacts.
-                    // See: https://github.com/ccbrown/iocraft/issues/118
-                    self.dest
-                        .queue(terminal::Clear(terminal::ClearType::All))?
-                        .queue(terminal::Clear(terminal::ClearType::Purge))?
-                        .queue(cursor::MoveTo(0, 0))?;
-                    return Ok(());
-                }
+        if self.fullscreen {
+            // In fullscreen (alternate screen) mode, just reposition the
+            // cursor to the top-left corner.  The subsequent write_canvas
+            // overwrites every row and each row emits CSI K to erase
+            // trailing content, so a full-screen ClearFromCursorDown is
+            // unnecessary.  Skipping the clear prevents visible bottom-of-
+            // screen flicker during rapid redraws.
+            self.dest.queue(cursor::MoveTo(0, 0))?;
+            return Ok(());
+        }
+
+        if let Some(size) = self.size {
+            if self.prev_canvas_height >= size.1 {
+                // We have to clear the entire terminal to avoid leaving artifacts.
+                // See: https://github.com/ccbrown/iocraft/issues/118
+                self.dest
+                    .queue(terminal::Clear(terminal::ClearType::All))?
+                    .queue(terminal::Clear(terminal::ClearType::Purge))?
+                    .queue(cursor::MoveTo(0, 0))?;
+                return Ok(());
             }
         }
 
