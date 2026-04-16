@@ -1542,4 +1542,148 @@ mod tests {
 
         assert!(!stdout_buf.is_empty());
     }
+
+    /// Helper: build a pair of 10×5 canvases (4 content rows + 1 footer) that
+    /// differ only in a single cell's background color on `changed_row`,
+    /// simulating a mouse-highlight overlay.
+    fn make_fullscreen_diff_canvases(changed_row: usize) -> (Canvas, Canvas) {
+        let style = CanvasTextStyle::default();
+        let width = 10;
+        let height = 5;
+
+        let build = |highlight: bool| {
+            let mut c = Canvas::new(width, height);
+            let mut sv = c.subview_mut(0, 0, 0, 0, width, height);
+            for y in 0..4u32 {
+                sv.set_text(0, y as isize, &format!("row{y}"), style);
+            }
+            sv.set_text(0, 4, "FOOTER", style);
+            sv.set_background_color(0, 4, width, 1, Color::Green);
+            if highlight {
+                sv.set_background_color(0, changed_row as isize, 1, 1, Color::Yellow);
+            }
+            c
+        };
+
+        (build(false), build(true))
+    }
+
+    /// Regression test for the fullscreen row-diff rendering bug.
+    ///
+    /// In fullscreen (alternate screen) mode, `prev_canvas_top_row` must be 0
+    /// so that row-level diffs use `MoveTo(0, y)`.  This test verifies that
+    /// with `prev_canvas_top_row = 0` the diff writes each changed row to its
+    /// correct terminal position.
+    ///
+    /// Simulates the scenario from `examples/fullscreen_mouse_overlay_bug.rs`:
+    /// a layout with numbered content rows and a distinct footer, where a single
+    /// cell changes between frames (as a mouse-highlight overlay would cause).
+    #[test]
+    fn test_fullscreen_diff_zero_top_row_renders_correctly() {
+        let (prev, next) = make_fullscreen_diff_canvases(2);
+        let width = prev.width();
+        let height = prev.height();
+
+        let (dest, buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 0, height as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        // Replay: write prev canvas as the baseline already on screen,
+        // then apply the diff on top.
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(width, height + 2);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(0).text(), "row0      ");
+        assert_eq!(vt.line(1).text(), "row1      ");
+        assert_eq!(vt.line(2).text(), "row2      ");
+        assert_eq!(vt.line(3).text(), "row3      ");
+        assert_eq!(
+            vt.line(4).text(),
+            "FOOTER    ",
+            "every row must appear at its correct terminal position"
+        );
+    }
+
+    /// Counterpart: with a non-zero `prev_canvas_top_row`, every changed row Y
+    /// is written to terminal line `top_row + Y` instead of line Y.  Unchanged
+    /// rows are skipped by `row_eq`, so the corruption is never self-correcting.
+    ///
+    /// This demonstrates why `prev_canvas_top_row` must be anchored at 0 in
+    /// fullscreen mode — any stale cursor position causes the entire diff to
+    /// be offset.
+    #[test]
+    fn test_fullscreen_diff_nonzero_top_row_offsets_changed_rows() {
+        let (prev, next) = make_fullscreen_diff_canvases(1);
+        let width = prev.width();
+        let height = prev.height();
+
+        // With top_row = 2 (simulating a stale cursor value), the diff for
+        // changed row 1 writes to terminal position 2+1 = 3 instead of 1.
+        let (dest, buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 2, height as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&*buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(width, height + 4);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        // Row 1's diff landed at terminal line 3 (offset 2+1) instead of 1,
+        // overwriting row 3's original content.
+        assert_eq!(
+            vt.line(3).text(),
+            "row1      ",
+            "row 1's diff landed at terminal line 3 (offset 2+1) instead of line 1"
+        );
+        // Row 3's original "row3" content is gone — proof that the offset
+        // corrupts rows that should have been left untouched.
+        assert_ne!(
+            vt.line(3).text(),
+            "row3      ",
+            "row 3 was overwritten by the misplaced diff for row 1"
+        );
+    }
+
+    /// End-to-end test: exercises the full initial-write → diff pipeline.
+    ///
+    /// With the fix, `write_canvas(None, …)` anchors `prev_canvas_top_row` at 0
+    /// without querying `cursor::position()`.  Without the fix, the initial
+    /// write calls `cursor::position()` which will fail in a non-TTY test
+    /// environment (timeout), causing this test to panic — thereby catching
+    /// the regression.
+    #[test]
+    fn test_fullscreen_initial_write_sets_zero_top_row() {
+        let (initial, next) = make_fullscreen_diff_canvases(2);
+        let width = initial.width();
+        let height = initial.height();
+
+        let (dest, buf) = new_test_writer();
+        let mut term = new_fullscreen_term(dest, 99, 0); // start with intentionally wrong value
+
+        // The initial write must set prev_canvas_top_row = 0 (the fix).
+        // Without the fix, this panics due to cursor::position() timeout.
+        term.write_canvas(None, &initial).unwrap();
+        assert_eq!(
+            term.prev_canvas_top_row, 0,
+            "initial fullscreen write must anchor prev_canvas_top_row at 0"
+        );
+
+        // Subsequent diff should render correctly with top_row = 0.
+        term.write_canvas(Some(&initial), &next).unwrap();
+
+        let mut vt = avt::Vt::new(width, height + 2);
+        vt.feed_str(&String::from_utf8(buf.lock().unwrap().clone()).unwrap());
+
+        assert_eq!(vt.line(0).text(), "row0      ");
+        assert_eq!(vt.line(1).text(), "row1      ");
+        assert_eq!(vt.line(2).text(), "row2      ");
+        assert_eq!(vt.line(3).text(), "row3      ");
+        assert_eq!(vt.line(4).text(), "FOOTER    ");
+    }
 }
