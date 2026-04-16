@@ -227,7 +227,12 @@ impl TerminalImpl for StdTerminal<'_> {
             if self.fullscreen {
                 self.dest.flush()?;
                 self.alt.flush()?;
-                self.prev_canvas_top_row = cursor::position()?.1;
+                // In fullscreen (alternate screen) the cursor is guaranteed to
+                // be at (0, 0) after EnterAlternateScreen.  Calling
+                // cursor::position() inside BeginSynchronizedUpdate can return
+                // a stale value from the main screen on some terminals.
+                self.prev_canvas_top_row = 0;
+                self.dest.queue(cursor::MoveTo(0, 0))?;
             }
             self.prev_canvas_height = canvas.height() as _;
             canvas.write_ansi_without_final_newline(&mut *self.dest)?;
