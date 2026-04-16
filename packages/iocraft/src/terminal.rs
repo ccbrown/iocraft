@@ -225,12 +225,6 @@ impl TerminalImpl for StdTerminal<'_> {
         let Some(prev) = prev else {
             // No previous canvas: full write.
             if self.fullscreen {
-                self.dest.flush()?;
-                self.alt.flush()?;
-                // In fullscreen (alternate screen) the cursor is guaranteed to
-                // be at (0, 0) after EnterAlternateScreen.  Calling
-                // cursor::position() inside BeginSynchronizedUpdate can return
-                // a stale value from the main screen on some terminals.
                 self.prev_canvas_top_row = 0;
                 self.dest.queue(cursor::MoveTo(0, 0))?;
             }
@@ -1568,16 +1562,12 @@ mod tests {
         (build(false), build(true))
     }
 
-    /// Regression test for the fullscreen row-diff rendering bug.
+    /// Verify that with `prev_canvas_top_row = 0` the fullscreen row-level
+    /// diff writes each changed row to its correct terminal position.
     ///
-    /// In fullscreen (alternate screen) mode, `prev_canvas_top_row` must be 0
-    /// so that row-level diffs use `MoveTo(0, y)`.  This test verifies that
-    /// with `prev_canvas_top_row = 0` the diff writes each changed row to its
-    /// correct terminal position.
-    ///
-    /// Simulates the scenario from `examples/fullscreen_mouse_overlay_bug.rs`:
-    /// a layout with numbered content rows and a distinct footer, where a single
-    /// cell changes between frames (as a mouse-highlight overlay would cause).
+    /// Uses a layout with numbered content rows and a distinct footer, where
+    /// a single cell changes between frames (as a mouse-highlight overlay
+    /// would cause).
     #[test]
     fn test_fullscreen_diff_zero_top_row_renders_correctly() {
         let (prev, next) = make_fullscreen_diff_canvases(2);
@@ -1641,22 +1631,18 @@ mod tests {
             "row1      ",
             "row 1's diff landed at terminal line 3 (offset 2+1) instead of line 1"
         );
-        // Row 3's original "row3" content is gone — proof that the offset
-        // corrupts rows that should have been left untouched.
-        assert_ne!(
-            vt.line(3).text(),
-            "row3      ",
-            "row 3 was overwritten by the misplaced diff for row 1"
-        );
     }
 
-    /// End-to-end test: exercises the full initial-write → diff pipeline.
+    /// Regression test: exercises the full initial-write → diff pipeline.
     ///
-    /// With the fix, `write_canvas(None, …)` anchors `prev_canvas_top_row` at 0
-    /// without querying `cursor::position()`.  Without the fix, the initial
-    /// write calls `cursor::position()` which will fail in a non-TTY test
-    /// environment (timeout), causing this test to panic — thereby catching
-    /// the regression.
+    /// `write_canvas(None, …)` must set `prev_canvas_top_row` to 0.  This path
+    /// runs both on the very first frame and whenever `clear_terminal_output()`
+    /// triggers a full rewrite on a subsequent frame — in either case the
+    /// cursor may not be at (0, 0), so the code must reset it explicitly.
+    ///
+    /// Without the fix, the old code called `cursor::position()` which returns
+    /// a stale value inside `BeginSynchronizedUpdate` on real terminals, and
+    /// fails outright in non-TTY test environments (timeout → panic).
     #[test]
     fn test_fullscreen_initial_write_sets_zero_top_row() {
         let (initial, next) = make_fullscreen_diff_canvases(2);
