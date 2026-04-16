@@ -210,6 +210,12 @@ impl TerminalImpl for StdTerminal<'_> {
                     return Ok(());
                 }
             }
+        } else {
+            // In fullscreen mode, skip the full clear to prevent flicker.
+            // write_canvas() overwrites every row and emits CSI K for each row,
+            // so a clear is redundant and causes visible flicker on rapid updates.
+            self.dest.queue(cursor::MoveTo(0, 0))?;
+            return Ok(());
         }
 
         clear_canvas_inline(&mut *self.dest, self.prev_canvas_height)
