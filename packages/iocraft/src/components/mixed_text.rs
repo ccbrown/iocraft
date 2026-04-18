@@ -142,15 +142,23 @@ impl Component for MixedText {
             TextWrap::Wrap => width as usize,
             TextWrap::NoWrap => usize::MAX,
         });
-        let mut drawer = TextDrawer::new(drawer, self.align != TextAlign::Left);
-        for mut line in lines {
+
+        let paddings = lines
+            .iter()
+            .map(|line| Text::alignment_padding(line.width, self.align, width as _))
+            .collect::<Vec<_>>();
+        let x_offset = paddings.iter().copied().min().unwrap_or(0);
+
+        let mut drawer = TextDrawer::new(drawer, x_offset, self.align != TextAlign::Left);
+        for (mut line, padding) in lines.into_iter().zip(paddings) {
             if self.wrap == TextWrap::Wrap {
                 line.trim_end();
             }
-            let padding = Text::alignment_padding(line.width, self.align, width as _);
-            if padding > 0 {
+
+            let additional_padding = padding - x_offset;
+            if additional_padding > 0 {
                 drawer.append_lines(
-                    [format!("{:width$}", "", width = padding).as_str()],
+                    [format!("{:width$}", "", width = additional_padding as usize).as_str()],
                     CanvasTextStyle::default(),
                 );
             }
