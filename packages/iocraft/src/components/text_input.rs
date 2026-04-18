@@ -73,6 +73,14 @@ impl TextInputHandle {
     }
 }
 
+/// The action to take for a key event after `on_key_event` is called.
+pub enum KeyEventAction {
+    /// Perform the default handling of the key event, which may update the value and/or cursor position.
+    Default,
+    /// Perform no further handling of the key event.
+    None,
+}
+
 /// The props which can be passed to the [`TextInput`] component.
 #[non_exhaustive]
 #[derive(Default, Props)]
@@ -88,6 +96,9 @@ pub struct TextInputProps {
 
     /// The handler to invoke when the value changes.
     pub on_change: HandlerMut<'static, String>,
+
+    /// If provided, this handler will be invoked for key events before the default handling of the input. The return value indicates whether the default handling should be performed or not. This can be used to implement custom key bindings.
+    pub on_key_event: Option<HandlerMut<'static, KeyEvent, KeyEventAction>>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
     pub multiline: bool,
@@ -419,20 +430,31 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         let mut value = props.value.clone();
         let mut temp_cursor_offset = cursor_offset.get();
         let mut on_change = props.on_change.take();
+        let mut on_key_event = props.on_key_event.take();
         move |event| {
             if !has_focus {
                 return;
             }
 
-            match event {
-                TerminalEvent::Key(KeyEvent {
+            let key_event = match event {
+                TerminalEvent::Key(k) => k,
+                _ => return,
+            };
+
+            if let Some(on_key_event) = &mut on_key_event {
+                match on_key_event(key_event.clone()) {
+                    KeyEventAction::Default => {}
+                    KeyEventAction::None => return,
+                }
+            }
+
+            match key_event {
+                KeyEvent {
                     code,
                     kind,
                     modifiers,
                     ..
-                }) if kind != KeyEventKind::Release
-                    && modifiers.contains(KeyModifiers::CONTROL) =>
-                {
+                } if kind != KeyEventKind::Release && modifiers.contains(KeyModifiers::CONTROL) => {
                     match code {
                         KeyCode::Char('a') => {
                             cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
@@ -445,12 +467,12 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         _ => {}
                     }
                 }
-                TerminalEvent::Key(KeyEvent {
+                KeyEvent {
                     code,
                     kind,
                     modifiers,
                     ..
-                }) if kind != KeyEventKind::Release
+                } if kind != KeyEventKind::Release
                     && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                 {
                     let mut clear_vertical_movement_col_preference = true;
