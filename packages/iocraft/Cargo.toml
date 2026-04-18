@@ -1,6 +1,6 @@
 [package]
 name = "iocraft"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Create beautifully crafted CLI programs and text output with a declarative React-like Rust API."
@@ -14,7 +14,7 @@ unstable-output-streams = []
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures = "0.3.30"
 taffy = { version = "0.5.2", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
-iocraft-macros = { version = "0.2.3", path = "../iocraft-macros" }
+iocraft-macros = { version = "0.2.4", path = "../iocraft-macros" }
 bitflags = "2.6.0"
 unicode-width = "0.1.13"
 generational-box = "0.5.6"

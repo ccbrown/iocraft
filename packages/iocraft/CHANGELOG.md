@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.0...iocraft-v0.8.1) - 2026-04-18
+
+### Added
+
+- re-export taffy crate for user convenience ([#191](https://github.com/ccbrown/iocraft/pull/191))
+- add public read access to cell content ([#186](https://github.com/ccbrown/iocraft/pull/186))
+- strip ANSI escape codes for Text and MixedText ([#185](https://github.com/ccbrown/iocraft/pull/185))
+- Add Home/End and Ctrl+A/E key bindings for TextInput ([#182](https://github.com/ccbrown/iocraft/pull/182))
+
+### Fixed
+
+- correctly overflow center/right+nowrap text ([#193](https://github.com/ccbrown/iocraft/pull/193))
+
+### Other
+
+- remove temporary type alias
+- update rust, fix new clippy warnings ([#181](https://github.com/ccbrown/iocraft/pull/181))
+
 ## [0.8.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.18...iocraft-v0.8.0) - 2026-03-06
 
 ### Added
