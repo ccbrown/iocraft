@@ -402,6 +402,23 @@ mod tests {
             "456789abc\n"
         );
 
+        assert_eq!(
+            element! {
+                View(
+                    flex_direction: FlexDirection::Column,
+                    width: 9,
+                ) {
+                    Text(
+                        content: "123456789abcdef\n1",
+                        align: TextAlign::Center,
+                        wrap: TextWrap::NoWrap
+                    )
+                }
+            }
+            .to_string(),
+            "456789abc\n    1\n"
+        );
+
         // If we expand the outer view, we should be able to see some of the overflowing text.
         assert_eq!(
             element! {
