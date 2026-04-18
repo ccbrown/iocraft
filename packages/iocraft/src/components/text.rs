@@ -152,7 +152,7 @@ impl Text {
                 let x_offset = paddings.iter().copied().min().unwrap_or(0);
                 let aligned = content
                     .lines()
-                    .zip(paddings.into_iter())
+                    .zip(paddings)
                     .map(|(line, padding)| {
                         format!(
                             "{:width$}{}",
