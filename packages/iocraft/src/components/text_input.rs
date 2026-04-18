@@ -286,7 +286,7 @@ impl Component for TextBufferView {
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
-        let mut drawer = TextDrawer::new(drawer, false);
+        let mut drawer = TextDrawer::new(drawer, 0, false);
         drawer.append_lines(self.buffer.lines(), self.text_style);
     }
 }
