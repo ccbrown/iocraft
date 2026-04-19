@@ -13,7 +13,6 @@ use core::{
     pin::Pin,
     task::{self, Poll},
 };
-use crossterm::{execute, terminal};
 use futures::{
     future::{select, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
@@ -23,29 +22,29 @@ use taffy::{
     AvailableSpace, Display, Layout, NodeId, Overflow, Point, Rect, Size, Style, TaffyTree,
 };
 
-pub(crate) struct UpdateContext<'a> {
-    terminal: Option<&'a mut Terminal>,
+pub(crate) struct UpdateContext<'a, 'w> {
+    terminal: Option<&'a mut Terminal<'w>>,
     layout_engine: &'a mut LayoutEngine,
     did_clear_terminal_output: bool,
 }
 
 /// Provides information and operations that low level component implementations may need to
 /// utilize during the update phase.
-pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a> {
+pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a, 'w> {
     node_id: NodeId,
     transparent_layout: bool,
     children: &'a mut Components,
     unattached_child_node_ids: &'a mut Vec<NodeId>,
-    context: &'a mut UpdateContext<'b>,
+    context: &'a mut UpdateContext<'b, 'w>,
     component_context_stack: &'a mut ContextStack<'c>,
 }
 
-impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
+impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
     pub(crate) fn new(
         node_id: NodeId,
         children: &'a mut Components,
         unattached_child_node_ids: &'a mut Vec<NodeId>,
-        context: &'a mut UpdateContext<'b>,
+        context: &'a mut UpdateContext<'b, 'w>,
         component_context_stack: &'a mut ContextStack<'c>,
     ) -> Self {
         Self {
@@ -84,18 +83,23 @@ impl<'a, 'b, 'c> ComponentUpdater<'a, 'b, 'c> {
         }
     }
 
+    /// Returns a mutable reference to the terminal, if we're in a terminal render loop.
+    pub(crate) fn terminal_mut(&mut self) -> Option<&mut Terminal<'w>> {
+        self.context.terminal.as_deref_mut()
+    }
+
     #[doc(hidden)]
     pub fn component_context_stack(&self) -> &ContextStack<'c> {
         self.component_context_stack
     }
 
     /// Gets an immutable reference to context of the given type.
-    pub fn get_context<T: Any>(&self) -> Option<Ref<T>> {
+    pub fn get_context<T: Any>(&self) -> Option<Ref<'_, T>> {
         self.component_context_stack.get_context()
     }
 
     /// Gets a mutable reference to context of the given type.
-    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<T>> {
+    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<'_, T>> {
         self.component_context_stack.get_context_mut()
     }
 
@@ -255,14 +259,14 @@ impl ComponentDrawer<'_> {
     }
 
     /// Gets the region of the canvas that the component should be drawn to.
-    pub fn canvas(&mut self) -> CanvasSubviewMut {
+    pub fn canvas(&mut self) -> CanvasSubviewMut<'_> {
         self.context.canvas.subview_mut(
             self.node_position.x as _,
             self.node_position.y as _,
             self.clip_rect.left as _,
             self.clip_rect.top as _,
-            (self.clip_rect.right - self.clip_rect.left) as _,
-            (self.clip_rect.bottom - self.clip_rect.top) as _,
+            self.clip_rect.right.saturating_sub(self.clip_rect.left) as _,
+            self.clip_rect.bottom.saturating_sub(self.clip_rect.top) as _,
         )
     }
 
@@ -376,7 +380,7 @@ impl<'a> Tree<'a> {
     fn render(
         &mut self,
         max_width: Option<usize>,
-        terminal: Option<&mut Terminal>,
+        terminal: Option<&mut Terminal<'_>>,
     ) -> RenderOutput {
         let mut wrapper_child_node_ids = vec![self.root_component.node_id()];
         let did_clear_terminal_output = {
@@ -456,20 +460,34 @@ impl<'a> Tree<'a> {
         }
     }
 
-    async fn terminal_render_loop(&mut self, mut term: Terminal) -> io::Result<()> {
+    async fn terminal_render_loop(&mut self, mut term: Terminal<'_>) -> io::Result<()> {
         let mut prev_canvas: Option<Canvas> = None;
+        let mut mouse_capture_enabled: Option<bool> = None;
         loop {
-            let width = term.width().map(|w| w as usize);
-            execute!(term, terminal::BeginSynchronizedUpdate,)?;
-            let output = self.render(width, Some(&mut term));
-            if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas) {
-                if !output.did_clear_terminal_output {
-                    term.clear_canvas()?;
+            term.refresh_size();
+            let terminal_size = term.size();
+            term.synchronized_update(|mut term| {
+                let output = self.render(terminal_size.map(|(w, _)| w as usize), Some(&mut term));
+                if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas)
+                {
+                    if !output.did_clear_terminal_output {
+                        term.clear_canvas()?;
+                    }
+                    term.write_canvas(&output.canvas)?;
                 }
-                term.write_canvas(&output.canvas)?;
+                prev_canvas = Some(output.canvas);
+                Ok(())
+            })?;
+            if let Some(requested) = self.system_context.mouse_capture() {
+                if mouse_capture_enabled != Some(requested) {
+                    if requested {
+                        term.enable_mouse_capture()?;
+                    } else {
+                        term.disable_mouse_capture()?;
+                    }
+                    mouse_capture_enabled = Some(requested);
+                }
             }
-            prev_canvas = Some(output.canvas);
-            execute!(term, terminal::EndSynchronizedUpdate)?;
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
@@ -488,7 +506,7 @@ pub(crate) fn render<E: ElementExt>(mut e: E, max_width: Option<usize>) -> Canva
     tree.render(max_width, None).canvas
 }
 
-pub(crate) async fn terminal_render_loop<E>(mut e: E, term: Terminal) -> io::Result<()>
+pub(crate) async fn terminal_render_loop<E>(e: &mut E, term: Terminal<'_>) -> io::Result<()>
 where
     E: ElementExt,
 {
@@ -518,7 +536,7 @@ impl Stream for MockTerminalRenderLoop<'_> {
 }
 
 pub(crate) fn mock_terminal_render_loop<'a, E>(
-    e: E,
+    e: &'a mut E,
     config: MockTerminalConfig,
 ) -> MockTerminalRenderLoop<'a>
 where
@@ -583,7 +601,7 @@ mod tests {
     #[apply(test!)]
     async fn test_terminal_render_loop() {
         let canvases: Vec<_> =
-            mock_terminal_render_loop(element!(MyComponent), MockTerminalConfig::default())
+            mock_terminal_render_loop(&mut element!(MyComponent), MockTerminalConfig::default())
                 .collect()
                 .await;
         let actual = canvases.iter().map(|c| c.to_string()).collect::<Vec<_>>();
@@ -602,7 +620,7 @@ mod tests {
     #[apply(test!)]
     async fn test_terminal_render_loop_send() {
         let (term, _output) = Terminal::mock(MockTerminalConfig::default());
-        await_send_future(terminal_render_loop(element!(MyComponent), term)).await;
+        await_send_future(terminal_render_loop(&mut element!(MyComponent), term)).await;
     }
 
     #[component]
@@ -677,11 +695,24 @@ mod tests {
     #[apply(test!)]
     async fn test_async_ticker_container() {
         let canvases: Vec<_> = mock_terminal_render_loop(
-            element!(AsyncTickerContainer),
+            &mut element!(AsyncTickerContainer),
             MockTerminalConfig::default(),
         )
         .collect()
         .await;
         assert!(!canvases.is_empty());
+    }
+
+    #[test]
+    fn test_negative_dimensions() {
+        let actual = element! {
+            View(width: 10, height: 5, position: Position::Relative) {
+                View(position: Position::Absolute, left: 10, top: 10, right: 10, bottom: 10, overflow: Overflow::Hidden) {
+                    Text(content: "Hello!")
+                }
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "\n\n\n\n\n",);
     }
 }

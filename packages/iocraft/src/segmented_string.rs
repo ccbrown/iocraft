@@ -93,7 +93,7 @@ impl<'a> SegmentedString<'a> {
         index: usize,
         offset: usize,
         end: usize,
-    ) -> SegmentedStringLineSegment {
+    ) -> SegmentedStringLineSegment<'_> {
         let text = self.segments[index][offset..end].trim_end_matches('\n');
         let width = text.width();
         SegmentedStringLineSegment {
@@ -129,7 +129,7 @@ impl<'a> SegmentedString<'a> {
     }
 
     /// Wraps the string into lines of a given width.
-    pub fn wrap(&self, width: usize) -> Vec<SegmentedStringLine> {
+    pub fn wrap(&self, width: usize) -> Vec<SegmentedStringLine<'_>> {
         if self.segments.is_empty() {
             return vec![];
         }

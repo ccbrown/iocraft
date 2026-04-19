@@ -161,7 +161,7 @@ impl InstantiatedComponent {
 
     pub fn update(
         &mut self,
-        context: &mut UpdateContext<'_>,
+        context: &mut UpdateContext<'_, '_>,
         unattached_child_node_ids: &mut Vec<NodeId>,
         component_context_stack: &mut ContextStack<'_>,
         props: AnyProps,

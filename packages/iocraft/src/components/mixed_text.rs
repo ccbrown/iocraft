@@ -1,6 +1,7 @@
 use crate::{
     components::text::{Text, TextAlign, TextDecoration, TextDrawer, TextWrap},
     segmented_string::SegmentedString,
+    strip_ansi::strip_ansi,
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 
@@ -115,6 +116,9 @@ impl Component for MixedText {
         _hooks: Hooks,
         updater: &mut ComponentUpdater,
     ) {
+        for content in props.contents.iter_mut() {
+            content.text = strip_ansi(&content.text).into_owned();
+        }
         let plaintext = props
             .contents
             .iter()
@@ -138,15 +142,23 @@ impl Component for MixedText {
             TextWrap::Wrap => width as usize,
             TextWrap::NoWrap => usize::MAX,
         });
-        let mut drawer = TextDrawer::new(drawer, self.align != TextAlign::Left);
-        for mut line in lines {
+
+        let paddings = lines
+            .iter()
+            .map(|line| Text::alignment_padding(line.width, self.align, width as _))
+            .collect::<Vec<_>>();
+        let x_offset = paddings.iter().copied().min().unwrap_or(0);
+
+        let mut drawer = TextDrawer::new(drawer, x_offset, self.align != TextAlign::Left);
+        for (mut line, padding) in lines.into_iter().zip(paddings) {
             if self.wrap == TextWrap::Wrap {
                 line.trim_end();
             }
-            let padding = Text::alignment_padding(line.width, self.align, width as _);
-            if padding > 0 {
+
+            let additional_padding = padding - x_offset;
+            if additional_padding > 0 {
                 drawer.append_lines(
-                    [format!("{:width$}", "", width = padding).as_str()],
+                    [format!("{:width$}", "", width = additional_padding as usize).as_str()],
                     CanvasTextStyle::default(),
                 );
             }
@@ -183,6 +195,22 @@ mod tests {
                     MixedText(contents: vec![
                         MixedTextContent::new("this is ").color(Color::Red).weight(Weight::Bold).italic(),
                         MixedTextContent::new("a wrapping test").decoration(TextDecoration::Underline),
+                    ])
+                }
+            }
+            .to_string(),
+            "this is a\nwrapping test\n"
+        );
+    }
+
+    #[test]
+    fn test_mixed_text_strips_ansi() {
+        assert_eq!(
+            element! {
+                View(width: 14) {
+                    MixedText(contents: vec![
+                        MixedTextContent::new("\x1b[31mthis is \x1b[0m"),
+                        MixedTextContent::new("\x1b[1ma wrapping test\x1b[0m"),
                     ])
                 }
             }

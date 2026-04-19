@@ -1,6 +1,6 @@
 use crate::{
-    render::MeasureFunc, segmented_string::SegmentedString, CanvasTextStyle, Color, Component,
-    ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
+    render::MeasureFunc, segmented_string::SegmentedString, strip_ansi::strip_ansi,
+    CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 use taffy::{AvailableSpace, Size};
 use unicode_width::UnicodeWidthStr;
@@ -131,34 +131,46 @@ impl Text {
         }
     }
 
-    pub(crate) fn alignment_padding(line_width: usize, align: TextAlign, width: usize) -> usize {
+    pub(crate) fn alignment_padding(line_width: usize, align: TextAlign, width: usize) -> isize {
         match align {
             TextAlign::Left => 0,
-            TextAlign::Right => width - line_width,
-            TextAlign::Center => width / 2 - line_width / 2,
+            TextAlign::Right => width as isize - line_width as isize,
+            TextAlign::Center => width as isize / 2 - line_width as isize / 2,
         }
     }
 
-    fn align(content: String, align: TextAlign, width: usize) -> String {
+    /// Aligns the text, returning the new string and an additional common x offset to apply to all lines.
+    fn align(content: String, align: TextAlign, width: usize) -> (isize, String) {
         match align {
-            TextAlign::Left => content,
-            _ => content
-                .lines()
-                .map(|line| {
-                    format!(
-                        "{:width$}{}",
-                        "",
-                        line,
-                        width = Self::alignment_padding(line.width(), align, width)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            TextAlign::Left => (0, content),
+            _ => {
+                let paddings = content
+                    .lines()
+                    .map(|line| Self::alignment_padding(line.width(), align, width))
+                    .collect::<Vec<_>>();
+
+                let x_offset = paddings.iter().copied().min().unwrap_or(0);
+                let aligned = content
+                    .lines()
+                    .zip(paddings)
+                    .map(|(line, padding)| {
+                        format!(
+                            "{:width$}{}",
+                            "",
+                            line,
+                            width = (padding - x_offset) as usize
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                (x_offset, aligned)
+            }
         }
     }
 }
 
 pub(crate) struct TextDrawer<'a, 'b> {
+    x_offset: isize,
     x: isize,
     y: isize,
     drawer: &'a mut ComponentDrawer<'b>,
@@ -167,9 +179,14 @@ pub(crate) struct TextDrawer<'a, 'b> {
 }
 
 impl<'a, 'b> TextDrawer<'a, 'b> {
-    pub fn new(drawer: &'a mut ComponentDrawer<'b>, skip_leading_whitespace: bool) -> Self {
+    pub fn new(
+        drawer: &'a mut ComponentDrawer<'b>,
+        x_offset: isize,
+        skip_leading_whitespace: bool,
+    ) -> Self {
         TextDrawer {
-            x: 0,
+            x_offset,
+            x: x_offset,
             y: 0,
             drawer,
             line_encountered_non_whitespace: false,
@@ -199,7 +216,7 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
             self.drawer.canvas().set_text(self.x, self.y, line, style);
             if lines.peek().is_some() {
                 self.y += 1;
-                self.x = 0;
+                self.x = self.x_offset;
                 self.line_encountered_non_whitespace = false;
             } else {
                 self.x += line.width() as isize;
@@ -227,7 +244,7 @@ impl Component for Text {
             underline: props.decoration == TextDecoration::Underline,
             italic: props.italic,
         };
-        self.content = props.content.clone();
+        self.content = strip_ansi(&props.content).into_owned();
         self.wrap = props.wrap;
         self.align = props.align;
         updater.set_measure_func(Self::measure_func(self.content.clone(), props.wrap));
@@ -241,8 +258,8 @@ impl Component for Text {
             None,
             AvailableSpace::Definite(width),
         );
-        let content = Self::align(content, self.align, width as _);
-        let mut drawer = TextDrawer::new(drawer, self.align != TextAlign::Left);
+        let (x_offset, content) = Self::align(content, self.align, width as _);
+        let mut drawer = TextDrawer::new(drawer, x_offset, self.align != TextAlign::Left);
         drawer.append_lines(content.lines(), self.style);
     }
 }
@@ -324,5 +341,119 @@ mod tests {
 
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn test_text_strips_ansi() {
+        assert_eq!(
+            element!(Text(content: "\x1b[31mhello\x1b[0m")).to_string(),
+            "hello\n"
+        );
+
+        assert_eq!(
+            element! {
+                View(width: 10) {
+                    Text(content: "\x1b[1mthis is\x1b[0m a wrap test")
+                }
+            }
+            .to_string(),
+            "this is a\nwrap test\n"
+        );
+
+        assert_eq!(
+            element!(Text(content: "no ansi here")).to_string(),
+            "no ansi here\n"
+        );
+    }
+
+    #[test]
+    fn test_alignment_no_wrap_overflow() {
+        assert_eq!(
+            element! {
+                View(
+                    flex_direction: FlexDirection::Column,
+                    width: 9,
+                ) {
+                    Text(
+                        content: "123456789abcdef",
+                        align: TextAlign::Left,
+                        wrap: TextWrap::NoWrap
+                    )
+                }
+            }
+            .to_string(),
+            "123456789\n"
+        );
+
+        assert_eq!(
+            element! {
+                View(
+                    flex_direction: FlexDirection::Column,
+                    width: 9,
+                ) {
+                    Text(
+                        content: "123456789abcdef",
+                        align: TextAlign::Center,
+                        wrap: TextWrap::NoWrap
+                    )
+                }
+            }
+            .to_string(),
+            "456789abc\n"
+        );
+
+        assert_eq!(
+            element! {
+                View(
+                    flex_direction: FlexDirection::Column,
+                    width: 9,
+                ) {
+                    Text(
+                        content: "123456789abcdef\n1",
+                        align: TextAlign::Center,
+                        wrap: TextWrap::NoWrap
+                    )
+                }
+            }
+            .to_string(),
+            "456789abc\n    1\n"
+        );
+
+        // If we expand the outer view, we should be able to see some of the overflowing text.
+        assert_eq!(
+            element! {
+                View(width: 20, padding_left: 2) {
+                    View(
+                        flex_direction: FlexDirection::Column,
+                        width: 9,
+                    ) {
+                        Text(
+                            content: "123456789abcdef",
+                            align: TextAlign::Center,
+                            wrap: TextWrap::NoWrap
+                        )
+                    }
+                }
+            }
+            .to_string(),
+            "23456789abcdef\n"
+        );
+
+        assert_eq!(
+            element! {
+                View(
+                    flex_direction: FlexDirection::Column,
+                    width: 9,
+                ) {
+                    Text(
+                        content: "123456789abcdef",
+                        align: TextAlign::Right,
+                        wrap: TextWrap::NoWrap
+                    )
+                }
+            }
+            .to_string(),
+            "789abcdef\n"
+        );
     }
 }

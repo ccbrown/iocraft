@@ -7,11 +7,15 @@ use core::{
 /// The system context, which is always available to all components.
 pub struct SystemContext {
     should_exit: bool,
+    mouse_capture: Option<bool>,
 }
 
 impl SystemContext {
     pub(crate) fn new() -> Self {
-        Self { should_exit: false }
+        Self {
+            should_exit: false,
+            mouse_capture: None,
+        }
     }
 
     /// If called from a component that is being dynamically rendered, this will cause the render
@@ -22,6 +26,16 @@ impl SystemContext {
 
     pub(crate) fn should_exit(&self) -> bool {
         self.should_exit
+    }
+
+    /// Toggles mouse capture on the terminal. If called from a component that is being dynamically
+    /// rendered, mouse capture will be enabled or disabled after the current render pass.
+    pub fn set_mouse_capture(&mut self, enabled: bool) {
+        self.mouse_capture = Some(enabled);
+    }
+
+    pub(crate) fn mouse_capture(&self) -> Option<bool> {
+        self.mouse_capture
     }
 }
 
@@ -35,7 +49,7 @@ pub enum Context<'a> {
     Ref(&'a (dyn Any + Send + Sync)),
     /// Provides the context via an owned value. Children will be able to get mutable or immutable
     /// references to the context.
-    Owned(Box<(dyn Any + Send + Sync)>),
+    Owned(Box<dyn Any + Send + Sync>),
 }
 
 impl<'a> Context<'a> {
@@ -76,7 +90,7 @@ impl<'a> Context<'a> {
     }
 
     #[doc(hidden)]
-    pub fn borrow(&mut self) -> Context {
+    pub fn borrow(&mut self) -> Context<'_> {
         match self {
             Context::Mut(context) => Context::Mut(*context),
             Context::Ref(context) => Context::Ref(*context),
@@ -117,7 +131,7 @@ impl<'a> ContextStack<'a> {
         }
     }
 
-    pub fn get_context<T: Any>(&self) -> Option<Ref<T>> {
+    pub fn get_context<T: Any>(&self) -> Option<Ref<'_, T>> {
         for context in self.contexts.iter().rev() {
             if let Ok(context) = context.try_borrow() {
                 if let Ok(ret) = Ref::filter_map(context, |context| context.downcast_ref::<T>()) {
@@ -128,7 +142,7 @@ impl<'a> ContextStack<'a> {
         None
     }
 
-    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<T>> {
+    pub fn get_context_mut<T: Any>(&self) -> Option<RefMut<'_, T>> {
         for context in self.contexts.iter().rev() {
             if let Ok(context) = context.try_borrow_mut() {
                 if let Ok(ret) = RefMut::filter_map(context, |context| context.downcast_mut::<T>())

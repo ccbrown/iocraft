@@ -3,6 +3,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+use crossterm::{cursor, QueueableCommand};
 use std::sync::{Arc, Mutex};
 
 mod private {
@@ -12,6 +13,8 @@ mod private {
 
 /// `UseOutput` is a hook that allows you to write to stdout and stderr from a component. The
 /// output will be appended to stdout or stderr, above the rendered component output.
+///
+/// Both `print` and `println` methods are available for writing output with or without newlines.
 ///
 /// # Example
 ///
@@ -23,16 +26,20 @@ mod private {
 ///     let (stdout, stderr) = hooks.use_output();
 ///
 ///     hooks.use_future(async move {
-///         loop {
+///         stdout.println("Hello from iocraft to stdout!");
+///         stderr.println("  And hello to stderr too!");
+///
+///         stdout.print("Working...");
+///         for _ in 0..5 {
 ///             smol::Timer::after(Duration::from_secs(1)).await;
-///             stdout.println("Hello from iocraft to stdout!");
-///             stderr.println("  And hello to stderr too!");
+///             stdout.print(".");
 ///         }
+///         stdout.println("\nDone!");
 ///     });
 ///
 ///     element! {
 ///         View(border_style: BorderStyle::Round, border_color: Color::Green) {
-///             Text(content: "Hello, use_stdio!")
+///             Text(content: "Hello, use_output!")
 ///         }
 ///     }
 /// }
@@ -51,13 +58,16 @@ impl UseOutput for Hooks<'_, '_> {
 
 enum Message {
     Stdout(String),
+    StdoutNoNewline(String),
     Stderr(String),
+    StderrNoNewline(String),
 }
 
 #[derive(Default)]
 struct UseOutputState {
     queue: Vec<Message>,
     waker: Option<Waker>,
+    appended_newline: Option<u16>,
 }
 
 impl UseOutputState {
@@ -65,25 +75,73 @@ impl UseOutputState {
         if self.queue.is_empty() {
             return;
         }
+
+        // Check if we have a terminal - if not, messages stay queued
+        if updater.terminal_mut().is_none() {
+            return;
+        }
+
         updater.clear_terminal_output();
-        let needs_carriage_returns = updater.is_terminal_raw_mode_enabled();
+        let terminal = updater.terminal_mut().unwrap();
+        let needs_carriage_returns = terminal.is_raw_mode_enabled();
+
+        if let Some(col) = self.appended_newline {
+            let _ = terminal
+                .render_output()
+                .queue(cursor::MoveUp(1))
+                .and_then(|w| w.queue(cursor::MoveRight(col)));
+        }
+        // Flush render output to ensure escape sequences are sent before any
+        // cross-stream writes (e.g., stdout messages when rendering to stderr).
+        let _ = terminal.render_output().flush();
+
+        let mut needs_extra_newline = self.appended_newline.is_some();
+
         for msg in self.queue.drain(..) {
             match msg {
                 Message::Stdout(msg) => {
-                    if needs_carriage_returns {
-                        print!("{}\r\n", msg)
+                    let formatted = if needs_carriage_returns {
+                        format!("{}\r\n", msg)
                     } else {
-                        println!("{}", msg)
+                        format!("{}\n", msg)
+                    };
+                    let _ = terminal.stdout().write_all(formatted.as_bytes());
+                    needs_extra_newline = false;
+                }
+                Message::StdoutNoNewline(msg) => {
+                    let _ = terminal.stdout().write_all(msg.as_bytes());
+                    if !msg.is_empty() {
+                        needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
                 Message::Stderr(msg) => {
-                    if needs_carriage_returns {
-                        eprint!("{}\r\n", msg)
+                    let formatted = if needs_carriage_returns {
+                        format!("{}\r\n", msg)
                     } else {
-                        eprintln!("{}", msg)
+                        format!("{}\n", msg)
+                    };
+                    let _ = terminal.stderr().write_all(formatted.as_bytes());
+                    needs_extra_newline = false;
+                }
+                Message::StderrNoNewline(msg) => {
+                    let _ = terminal.stderr().write_all(msg.as_bytes());
+                    if !msg.is_empty() {
+                        needs_extra_newline = !msg.ends_with('\n');
                     }
                 }
             }
+        }
+
+        if needs_extra_newline {
+            if let Ok(pos) = cursor::position() {
+                self.appended_newline = Some(pos.0);
+                let newline = if needs_carriage_returns { "\r\n" } else { "\n" };
+                let _ = terminal.render_output().write_all(newline.as_bytes());
+            } else {
+                self.appended_newline = None;
+            }
+        } else {
+            self.appended_newline = None;
         }
     }
 }
@@ -104,6 +162,16 @@ impl StdoutHandle {
             waker.wake();
         }
     }
+
+    /// Queues a message to be written asynchronously to stdout without a newline, above the
+    /// rendered component output.
+    pub fn print<S: ToString>(&self, msg: S) {
+        let mut state = self.state.lock().unwrap();
+        state.queue.push(Message::StdoutNoNewline(msg.to_string()));
+        if let Some(waker) = state.waker.take() {
+            waker.wake();
+        }
+    }
 }
 
 /// A handle to write to stderr, obtained from [`UseOutput::use_output`].
@@ -118,6 +186,16 @@ impl StderrHandle {
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
         state.queue.push(Message::Stderr(msg.to_string()));
+        if let Some(waker) = state.waker.take() {
+            waker.wake();
+        }
+    }
+
+    /// Queues a message to be written asynchronously to stderr without a newline, above the
+    /// rendered component output.
+    pub fn print<S: ToString>(&self, msg: S) {
+        let mut state = self.state.lock().unwrap();
+        state.queue.push(Message::StderrNoNewline(msg.to_string()));
         if let Some(waker) = state.waker.take() {
             waker.wake();
         }
@@ -192,6 +270,19 @@ mod tests {
                 .poll_change(&mut core::task::Context::from_waker(&noop_waker())),
             Poll::Ready(())
         );
+
+        // Test print methods
+        stdout.print("Hello, ");
+        stdout.print("world!");
+        stderr.print("Error: ");
+        stderr.print("test");
+        stderr.print("Warning: ");
+        stderr.print("print test");
+        assert_eq!(
+            Pin::new(&mut use_output)
+                .poll_change(&mut core::task::Context::from_waker(&noop_waker())),
+            Poll::Ready(())
+        );
     }
 
     #[component]
@@ -200,6 +291,13 @@ mod tests {
         let (stdout, stderr) = hooks.use_output();
         stdout.println("Hello, world!");
         stderr.println("Hello, error!");
+        stdout.print("Testing ");
+        stdout.print("print ");
+        stdout.println("method!");
+        stderr.print("Error: ");
+        stderr.println("test");
+        stderr.print("Warning: ");
+        stderr.println("print test");
         system.exit();
         element!(View)
     }

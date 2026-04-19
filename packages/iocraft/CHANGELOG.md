@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.0...iocraft-v0.8.1) - 2026-04-18
+
+### Added
+
+- re-export taffy crate for user convenience ([#191](https://github.com/ccbrown/iocraft/pull/191))
+- add public read access to cell content ([#186](https://github.com/ccbrown/iocraft/pull/186))
+- strip ANSI escape codes for Text and MixedText ([#185](https://github.com/ccbrown/iocraft/pull/185))
+- Add Home/End and Ctrl+A/E key bindings for TextInput ([#182](https://github.com/ccbrown/iocraft/pull/182))
+
+### Fixed
+
+- correctly overflow center/right+nowrap text ([#193](https://github.com/ccbrown/iocraft/pull/193))
+
+### Other
+
+- remove temporary type alias
+- update rust, fix new clippy warnings ([#181](https://github.com/ccbrown/iocraft/pull/181))
+
+## [0.8.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.18...iocraft-v0.8.0) - 2026-03-06
+
+### Added
+
+- allow configuring render output and stdout/stderr handles ([#157](https://github.com/ccbrown/iocraft/pull/157))
+- add keyboard_scroll prop and expose auto scroll state ([#175](https://github.com/ccbrown/iocraft/pull/175))
+- Add UseComponentRect ([#145](https://github.com/ccbrown/iocraft/pull/145))
+
+### Fixed
+
+- use i32 for use_component_rect to prevent overflow ([#176](https://github.com/ccbrown/iocraft/pull/176))
+
+### Other
+
+- *(deps)* bump crossterm to 0.29.0 ([#178](https://github.com/ccbrown/iocraft/pull/178))
+- document use_component_rect caveat, simplify api ([#174](https://github.com/ccbrown/iocraft/pull/174))
+- Scrolling component ([#170](https://github.com/ccbrown/iocraft/pull/170))
+
+## [0.7.18](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.17...iocraft-v0.7.18) - 2026-02-17
+
+### Added
+
+- add disable_mouse_capture() to fullscreen render loop ([#161](https://github.com/ccbrown/iocraft/pull/161))
+
+### Fixed
+
+- clean visible terminal in addition to scrollback to avoid leaving behind artifacts ([#164](https://github.com/ccbrown/iocraft/pull/164))
+- eliminate extra blank line in inline render mode ([#162](https://github.com/ccbrown/iocraft/pull/162))
+
+## [0.7.17](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.16...iocraft-v0.7.17) - 2026-01-20
+
+### Other
+
+- eliminate any_key dependency ([#154](https://github.com/ccbrown/iocraft/pull/154))
+
+## [0.7.16](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.15...iocraft-v0.7.16) - 2025-11-30
+
+### Fixed
+
+- make render_loop Send again ([#151](https://github.com/ccbrown/iocraft/pull/151))
+
+## [0.7.15](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.14...iocraft-v0.7.15) - 2025-11-02
+
+### Added
+
+- allow disabling ctrl-c handling ([#149](https://github.com/ccbrown/iocraft/pull/149))
+- add clonable immutable Handler ([#146](https://github.com/ccbrown/iocraft/pull/146))
+
+### Fixed
+
+- make fullscreen() future return type more specific
+
+## [0.7.14](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.13...iocraft-v0.7.14) - 2025-10-08
+
+### Fixed
+
+- avoid bg color overflowing at eol ([#143](https://github.com/ccbrown/iocraft/pull/143))
+- End synchronized update on StdTerminal drop ([#140](https://github.com/ccbrown/iocraft/pull/140))
+
+## [0.7.13](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.12...iocraft-v0.7.13) - 2025-09-28
+
+### Added
+
+- use_ref, use_effect, and imperative TextInput control ([#136](https://github.com/ccbrown/iocraft/pull/136))
+- additional state convenience methods
+
+### Fixed
+
+- underflow under certain absolute positioning circumstances ([#138](https://github.com/ccbrown/iocraft/pull/138))
+
+## [0.7.12](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.11...iocraft-v0.7.12) - 2025-09-20
+
+### Fixed
+
+- purge terminal on vertical overflow ([#134](https://github.com/ccbrown/iocraft/pull/134))
+- make TextInput ignore modified keys ([#132](https://github.com/ccbrown/iocraft/pull/132))
+
+## [0.7.11](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.10...iocraft-v0.7.11) - 2025-08-20
+
+### Added
+
+- automatically append newline as needed for use_output ([#124](https://github.com/ccbrown/iocraft/pull/124))
+- add `print` methods for stdout without newlines ([#122](https://github.com/ccbrown/iocraft/pull/122))
+
 ## [0.7.10](https://github.com/ccbrown/iocraft/compare/iocraft-v0.7.9...iocraft-v0.7.10) - 2025-06-20
 
 ### Fixed

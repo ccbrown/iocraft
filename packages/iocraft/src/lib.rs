@@ -13,6 +13,14 @@
 //! - Build fullscreen terminal applications with ease.
 //! - Pass [props](crate::Props) and [context](crate::components::ContextProvider) by reference to avoid unnecessary cloning.
 //!
+//! ## Optional Features
+//!
+//! - `unstable-output-streams`: enables configuring the render stream and stdout/stderr handles for
+//!   render loops. Some crossterm operations bypass the provided writer and write directly to
+//!   stdout ([#652](https://github.com/crossterm-rs/crossterm/issues/652),
+//!   [#957](https://github.com/crossterm-rs/crossterm/pull/957),
+//!   [#1026](https://github.com/crossterm-rs/crossterm/pull/1026)).
+//!
 //! ## Getting Started
 //!
 //! If you're familiar with React, you'll feel right at home with `iocraft`. It uses all the same
@@ -93,6 +101,7 @@
 // The exception is the modules that represent collections of types, namely hooks and components.
 // Those types will remain in their modules for the public API.
 
+mod any_key;
 mod canvas;
 mod component;
 mod context;
@@ -103,6 +112,7 @@ mod multimap;
 mod props;
 mod render;
 pub(crate) mod segmented_string;
+mod strip_ansi;
 mod style;
 mod terminal;
 pub(crate) mod unicode_linebreak;
@@ -123,6 +133,13 @@ mod flattened_exports {
 }
 
 pub use flattened_exports::*;
+
+/// Re-exported [`taffy`] crate, which powers flexbox layout in `iocraft`.
+///
+/// This allows you to reference `taffy` types (e.g. [`taffy::Size`],
+/// [`taffy::AvailableSpace`]) in your own code without adding a separate
+/// `taffy` dependency to your `Cargo.toml`.
+pub use taffy;
 
 /// Components for crafting your UI.
 pub mod components;

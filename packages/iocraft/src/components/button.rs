@@ -1,7 +1,7 @@
 use crate::{
     component, components::View, element, hooks::UseTerminalEvents, AnyElement,
-    FullscreenMouseEvent, Handler, Hooks, KeyCode, KeyEvent, KeyEventKind, MouseEventKind, Props,
-    TerminalEvent,
+    FullscreenMouseEvent, HandlerMut, Hooks, KeyCode, KeyEvent, KeyEventKind, MouseEventKind,
+    Props, TerminalEvent,
 };
 
 /// The props which can be passed to the [`Button`] component.
@@ -17,7 +17,7 @@ pub struct ButtonProps<'a> {
     ///
     /// - By clicking on it with the mouse while in fullscreen mode.
     /// - By pressing the Enter or Space key while [`has_focus`](Self::has_focus) is `true`.
-    pub handler: Handler<'static, ()>,
+    pub handler: HandlerMut<'static, ()>,
 
     /// True if the button has focus and should process keyboard input.
     pub has_focus: bool,

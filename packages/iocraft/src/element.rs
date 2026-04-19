@@ -1,17 +1,18 @@
 use crate::{
+    any_key::AnyKey,
     component::{Component, ComponentHelper, ComponentHelperExt},
     mock_terminal_render_loop,
     props::AnyProps,
     render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
-use any_key::AnyHash;
 use crossterm::terminal;
 use futures::Stream;
 use std::{
     fmt::Debug,
     future::Future,
     hash::Hash,
-    io::{self, stderr, stdout, IsTerminal, Write},
+    io::{self, stderr, stdout, IsTerminal, LineWriter, Write},
+    pin::Pin,
     sync::Arc,
 };
 
@@ -60,7 +61,7 @@ where
 /// Used to identify an element within the scope of its parent. This is used to minimize the number
 /// of times components are destroyed and recreated from render-to-render.
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ElementKey(Arc<Box<dyn AnyHash + Send + Sync>>);
+pub struct ElementKey(Arc<Box<dyn AnyKey + Send + Sync>>);
 
 impl ElementKey {
     /// Constructs a new key.
@@ -157,7 +158,7 @@ pub trait ElementExt: private::Sealed + Sized {
     fn key(&self) -> &ElementKey;
 
     #[doc(hidden)]
-    fn props_mut(&mut self) -> AnyProps;
+    fn props_mut(&mut self) -> AnyProps<'_>;
 
     #[doc(hidden)]
     fn helper(&self) -> Box<dyn ComponentHelperExt>;
@@ -217,12 +218,18 @@ pub trait ElementExt: private::Sealed + Sized {
         }
     }
 
-    /// Renders the element in a loop, allowing it to be dynamic and interactive.
+    /// Returns a future which renders the element in a loop, allowing it to be dynamic and
+    /// interactive.
     ///
-    /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
-    /// a file, this will probably not produce the desired result. You can determine whether stdout
+    /// This method should only be used when stdio is a TTY terminal. If for example, stdout is a
+    /// file, this will probably not produce the desired result. You can determine whether stdout
     /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
-    fn render_loop(&mut self) -> impl Future<Output = io::Result<()>>;
+    ///
+    /// The behavior of the render loop can be configured via the methods on the returned future
+    /// before awaiting it.
+    fn render_loop(&mut self) -> RenderLoopFuture<'_, Self> {
+        RenderLoopFuture::new(self)
+    }
 
     /// Renders the element in a loop using a mock terminal, allowing you to simulate terminal
     /// events for testing purposes.
@@ -259,14 +266,266 @@ pub trait ElementExt: private::Sealed + Sized {
     fn mock_terminal_render_loop(
         &mut self,
         config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas>;
+    ) -> impl Stream<Item = Canvas> {
+        mock_terminal_render_loop(self, config)
+    }
 
     /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
     ///
-    /// This method should only be used if when stdio is a TTY terminal. If for example, stdout is
-    /// a file, this will probably not produce the desired result. You can determine whether stdout
+    /// This method should only be used when stdio is a TTY terminal. If for example, stdout is a
+    /// file, this will probably not produce the desired result. You can determine whether stdout
     /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
-    fn fullscreen(&mut self) -> impl Future<Output = io::Result<()>>;
+    ///
+    /// This is equivalent to `self.render_loop().fullscreen()`.
+    fn fullscreen(&mut self) -> RenderLoopFuture<'_, Self> {
+        self.render_loop().fullscreen()
+    }
+}
+
+/// Specifies which handle to render the TUI to.
+#[cfg_attr(not(feature = "unstable-output-streams"), doc(hidden))]
+#[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Output {
+    /// Render to the stdout handle (default).
+    #[default]
+    Stdout,
+    /// Render to the stderr handle.
+    Stderr,
+}
+
+#[derive(Default)]
+enum RenderLoopFutureState<'a, E: ElementExt> {
+    #[default]
+    Empty,
+    Init {
+        fullscreen: bool,
+        mouse_capture: Option<bool>,
+        ignore_ctrl_c: bool,
+        output: Output,
+        stdout_writer: Option<Box<dyn Write + Send + 'a>>,
+        stderr_writer: Option<Box<dyn Write + Send + 'a>>,
+        element: &'a mut E,
+    },
+    Running(Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'a>>),
+}
+
+/// A future that renders an element in a loop, allowing it to be dynamic and interactive.
+///
+/// This is created by the [`ElementExt::render_loop`] method.
+///
+/// Before awaiting the future, you can use its methods to configure its behavior.
+pub struct RenderLoopFuture<'a, E: ElementExt + 'a> {
+    state: RenderLoopFutureState<'a, E>,
+}
+
+impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
+    pub(crate) fn new(element: &'a mut E) -> Self {
+        Self {
+            state: RenderLoopFutureState::Init {
+                fullscreen: false,
+                mouse_capture: None,
+                ignore_ctrl_c: false,
+                output: Output::default(),
+                stdout_writer: None,
+                stderr_writer: None,
+                element,
+            },
+        }
+    }
+
+    /// Renders the element as fullscreen in a loop, allowing it to be dynamic and interactive.
+    ///
+    /// This method should only be used when stdio is a TTY terminal. If for example, stdout is a
+    /// file, this will probably not produce the desired result. You can determine whether stdout
+    /// is a terminal with [`IsTerminal`](std::io::IsTerminal).
+    pub fn fullscreen(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { fullscreen, .. } => {
+                *fullscreen = true;
+            }
+            _ => panic!("fullscreen() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Enables mouse capture. By default, mouse capture is only enabled in fullscreen mode. Call
+    /// this method to enable it in inline mode as well.
+    pub fn enable_mouse_capture(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { mouse_capture, .. } => {
+                *mouse_capture = Some(true);
+            }
+            _ => panic!("enable_mouse_capture() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Disables mouse capture for fullscreen mode. By default, fullscreen mode enables mouse
+    /// capture via crossterm's `EnableMouseCapture`. Call this method to opt out.
+    pub fn disable_mouse_capture(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { mouse_capture, .. } => {
+                *mouse_capture = Some(false);
+            }
+            _ => panic!("disable_mouse_capture() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// If the terminal is in raw mode, Ctrl-C presses will not trigger the usual interrupt
+    /// signals. By default, if the terminal is in raw mode for any reason, iocraft will listen for
+    /// Ctrl-C and stop the render loop in response. If you would like to prevent this behavior and
+    /// implement your own handling for Ctrl-C, you can call this method.
+    pub fn ignore_ctrl_c(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { ignore_ctrl_c, .. } => {
+                *ignore_ctrl_c = true;
+            }
+            _ => panic!("ignore_ctrl_c() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Set the stdout handle for hook output and TUI rendering (when output is Stdout).
+    ///
+    /// See [`output`](Self::output) for known crossterm caveats when mixing streams.
+    ///
+    /// Default: `std::io::stdout()`
+    #[cfg(feature = "unstable-output-streams")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
+    pub fn stdout<W: Write + Send + 'a>(mut self, writer: W) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { stdout_writer, .. } => {
+                *stdout_writer = Some(Box::new(writer));
+            }
+            _ => panic!("stdout() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Set the stderr handle for hook output and TUI rendering (when output is Stderr).
+    ///
+    /// See [`output`](Self::output) for known crossterm caveats when mixing streams.
+    ///
+    /// Default: `LineWriter::new(std::io::stderr())`
+    #[cfg(feature = "unstable-output-streams")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
+    pub fn stderr<W: Write + Send + 'a>(mut self, writer: W) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { stderr_writer, .. } => {
+                *stderr_writer = Some(Box::new(writer));
+            }
+            _ => panic!("stderr() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Choose which handle to render the TUI to.
+    ///
+    /// When set to [`Output::Stderr`], the TUI will be rendered to the stderr handle.
+    /// This is useful for CLI tools that need to pipe stdout to other programs
+    /// while still displaying a TUI to the user.
+    ///
+    /// ## Known crossterm caveats
+    ///
+    /// Some crossterm operations bypass the provided writer and write directly to
+    /// stdout, which can cause issues when stdout is piped:
+    ///
+    /// - Cursor position queries always write to stdout
+    ///   ([#652](https://github.com/crossterm-rs/crossterm/issues/652),
+    ///   [#957](https://github.com/crossterm-rs/crossterm/pull/957)).
+    /// - Keyboard enhancement queries fall back to stdout on unix
+    ///   ([#1026](https://github.com/crossterm-rs/crossterm/pull/1026)).
+    ///
+    /// Default: [`Output::Stdout`]
+    #[cfg(feature = "unstable-output-streams")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unstable-output-streams")))]
+    pub fn output(mut self, output: Output) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { output: o, .. } => {
+                *o = output;
+            }
+            _ => panic!("output() must be called before polling the future"),
+        }
+        self
+    }
+}
+
+impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
+    type Output = io::Result<()>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        loop {
+            match &mut self.state {
+                RenderLoopFutureState::Init { .. } => {
+                    let (
+                        fullscreen,
+                        mouse_capture,
+                        ignore_ctrl_c,
+                        output,
+                        stdout_writer,
+                        stderr_writer,
+                        element,
+                    ) = match std::mem::replace(&mut self.state, RenderLoopFutureState::Empty) {
+                        RenderLoopFutureState::Init {
+                            fullscreen,
+                            mouse_capture,
+                            ignore_ctrl_c,
+                            output,
+                            stdout_writer,
+                            stderr_writer,
+                            element,
+                        } => (
+                            fullscreen,
+                            mouse_capture,
+                            ignore_ctrl_c,
+                            output,
+                            stdout_writer,
+                            stderr_writer,
+                            element,
+                        ),
+                        _ => unreachable!(),
+                    };
+                    let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
+                    let stdout_handle = stdout_writer.unwrap_or_else(|| Box::new(stdout()));
+                    // Unlike stdout, stderr is unbuffered by default in the standard library
+                    let stderr_handle =
+                        stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr())));
+
+                    let mut terminal = match Terminal::new(
+                        stdout_handle,
+                        stderr_handle,
+                        output,
+                        fullscreen,
+                        effective_mouse_capture,
+                    ) {
+                        Ok(t) => t,
+                        Err(e) => return std::task::Poll::Ready(Err(e)),
+                    };
+                    if effective_mouse_capture && !fullscreen {
+                        if let Err(e) = terminal.enable_mouse_capture() {
+                            return std::task::Poll::Ready(Err(e));
+                        }
+                    }
+                    if ignore_ctrl_c {
+                        terminal.ignore_ctrl_c();
+                    }
+                    let fut = Box::pin(terminal_render_loop(element, terminal));
+                    self.state = RenderLoopFutureState::Running(fut);
+                }
+                RenderLoopFutureState::Running(fut) => {
+                    return fut.as_mut().poll(cx);
+                }
+                RenderLoopFutureState::Empty => {
+                    panic!("polled after completion");
+                }
+            }
+        }
+    }
 }
 
 impl ElementExt for AnyElement<'_> {
@@ -274,7 +533,7 @@ impl ElementExt for AnyElement<'_> {
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         self.props.borrow()
     }
 
@@ -286,21 +545,6 @@ impl ElementExt for AnyElement<'_> {
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(self, config)
-    }
-
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::fullscreen()?).await
-    }
 }
 
 impl ElementExt for &mut AnyElement<'_> {
@@ -308,7 +552,7 @@ impl ElementExt for &mut AnyElement<'_> {
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         self.props.borrow()
     }
 
@@ -319,21 +563,6 @@ impl ElementExt for &mut AnyElement<'_> {
 
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(&mut **self, max_width)
-    }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(&mut **self, config)
-    }
-
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::fullscreen()?).await
     }
 }
 
@@ -345,7 +574,7 @@ where
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         AnyProps::borrowed(&mut self.props)
     }
 
@@ -357,20 +586,6 @@ where
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(self, max_width)
     }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(self, config)
-    }
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(self, Terminal::fullscreen()?).await
-    }
 }
 
 impl<T> ElementExt for &mut Element<'_, T>
@@ -381,7 +596,7 @@ where
         &self.key
     }
 
-    fn props_mut(&mut self) -> AnyProps {
+    fn props_mut(&mut self) -> AnyProps<'_> {
         AnyProps::borrowed(&mut self.props)
     }
 
@@ -393,26 +608,12 @@ where
     fn render(&mut self, max_width: Option<usize>) -> Canvas {
         render(&mut **self, max_width)
     }
-
-    async fn render_loop(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::new()?).await
-    }
-
-    fn mock_terminal_render_loop(
-        &mut self,
-        config: MockTerminalConfig,
-    ) -> impl Stream<Item = Canvas> {
-        mock_terminal_render_loop(&mut **self, config)
-    }
-
-    async fn fullscreen(&mut self) -> io::Result<()> {
-        terminal_render_loop(&mut **self, Terminal::fullscreen()?).await
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use futures::Future;
 
     #[allow(clippy::unnecessary_mut_passed)]
     #[test]
@@ -440,5 +641,14 @@ mod tests {
         let mut any_element_ref: AnyElement = (&mut view_element).into();
         any_element_ref.print();
         any_element_ref.eprint();
+    }
+
+    #[test]
+    fn test_render_loop_future() {
+        fn assert_send<F: Future + Send>(_f: F) {}
+
+        let mut element = element!(View);
+        let render_loop_future = element.render_loop();
+        assert_send(render_loop_future);
     }
 }

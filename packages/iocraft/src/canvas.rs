@@ -71,14 +71,28 @@ pub struct CanvasTextStyle {
     pub italic: bool,
 }
 
-#[derive(Clone, Default, PartialEq)]
-struct Cell {
-    background_color: Option<Color>,
+/// A single cell on a [`Canvas`], containing optional text and background color.
+#[non_exhaustive]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CanvasCell {
+    /// The background color of this cell, if set.
+    pub background_color: Option<Color>,
     character: Option<Character>,
 }
 
-impl Cell {
-    fn is_empty(&self) -> bool {
+impl CanvasCell {
+    /// Returns the text content of this cell, or `None` if empty.
+    pub fn text(&self) -> Option<&str> {
+        self.character.as_ref().map(|ch| ch.value.as_str())
+    }
+
+    /// Returns the text style of this cell, or `None` if the cell is empty.
+    pub fn text_style(&self) -> Option<&CanvasTextStyle> {
+        self.character.as_ref().map(|ch| &ch.style)
+    }
+
+    /// Returns `true` if the cell has no content and no background color.
+    pub fn is_empty(&self) -> bool {
         self.background_color.is_none() && self.character.is_none()
     }
 }
@@ -93,7 +107,7 @@ impl Cell {
 #[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
-    cells: Vec<Vec<Cell>>,
+    cells: Vec<Vec<CanvasCell>>,
 }
 
 impl Canvas {
@@ -101,7 +115,7 @@ impl Canvas {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
-            cells: vec![vec![Cell::default(); width]; height],
+            cells: vec![vec![CanvasCell::default(); width]; height],
         }
     }
 
@@ -113,6 +127,50 @@ impl Canvas {
     /// Returns the height of the canvas.
     pub fn height(&self) -> usize {
         self.cells.len()
+    }
+
+    /// Returns a reference to the cell at the given position, or `None` if
+    /// out of bounds.
+    pub fn cell(&self, x: usize, y: usize) -> Option<&CanvasCell> {
+        self.cells.get(y).and_then(|row| row.get(x))
+    }
+
+    /// Extracts plain text from a rectangular region of the canvas.
+    ///
+    /// Each row within the region produces one line in the result, separated
+    /// by newlines. Trailing whitespace on each line is trimmed. Out-of-bounds
+    /// coordinates are clamped silently.
+    pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
+        let mut lines = Vec::with_capacity(h);
+        for row_idx in y..y + h {
+            let Some(row) = self.cells.get(row_idx) else {
+                lines.push(String::new());
+                continue;
+            };
+            let start = x.min(row.len());
+            let end = (x + w).min(row.len());
+            let slice = &row[start..end];
+            let last_non_empty = slice.iter().rposition(|cell| cell.character.is_some());
+            let trim_end = match last_non_empty {
+                Some(i) => i + 1,
+                None => {
+                    lines.push(String::new());
+                    continue;
+                }
+            };
+            let mut s = String::with_capacity(trim_end);
+            for cell in &slice[..trim_end] {
+                match cell.character.as_ref() {
+                    Some(ch) => s.push_str(&ch.value),
+                    None => s.push(' '),
+                }
+            }
+            lines.push(s);
+        }
+        lines.join(
+            "
+",
+        )
     }
 
     fn clear_text(&mut self, x: usize, y: usize, w: usize, h: usize) {
@@ -175,7 +233,7 @@ impl Canvas {
         clip_y: isize,
         clip_width: usize,
         clip_height: usize,
-    ) -> CanvasSubviewMut {
+    ) -> CanvasSubviewMut<'_> {
         CanvasSubviewMut {
             y,
             x,
@@ -231,15 +289,6 @@ impl Canvas {
                         text_style = CanvasTextStyle::default();
                     }
 
-                    if cell.background_color != background_color {
-                        write!(
-                            w,
-                            csi!("{}m"),
-                            Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
-                        )?;
-                        background_color = cell.background_color;
-                    }
-
                     if let Some(c) = &cell.character {
                         if c.style.color != text_style.color {
                             write!(
@@ -281,8 +330,25 @@ impl Canvas {
                     // cursor won't change position and the last character would be erased
                     // if we did it later
                     // see: https://github.com/ccbrown/iocraft/issues/83
+
+                    // make sure to reset the background before clearing
+                    // see: https://github.com/ccbrown/iocraft/issues/142
+                    if background_color.is_some() {
+                        write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
+                        background_color = None;
+                    }
+
                     write!(w, csi!("K"))?;
                     did_clear_line = true;
+                }
+
+                if ansi && cell.background_color != background_color {
+                    write!(
+                        w,
+                        csi!("{}m"),
+                        Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
+                    )?;
+                    background_color = cell.background_color;
                 }
 
                 if let Some(c) = &cell.character {
@@ -359,6 +425,46 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl CanvasSubviewMut<'_> {
+    /// Returns a reference to a cell at the given **relative** subview position.
+    ///
+    /// Returns `None` if the resulting absolute position is out of bounds or
+    /// outside the clip region.
+    pub fn cell(&self, x: isize, y: isize) -> Option<&CanvasCell> {
+        let abs_x = self.x + x;
+        let abs_y = self.y + y;
+        if abs_x < self.clip_x
+            || abs_y < self.clip_y
+            || abs_x < 0
+            || abs_y < 0
+            || abs_x >= self.clip_x + self.clip_width as isize
+            || abs_y >= self.clip_y + self.clip_height as isize
+        {
+            return None;
+        }
+        self.canvas.cell(abs_x as usize, abs_y as usize)
+    }
+
+    /// Extracts plain text from a rectangular region using **relative** subview
+    /// coordinates. The region is clamped to the clip bounds.
+    pub fn get_text(&self, x: isize, y: isize, w: usize, h: usize) -> String {
+        let mut left = self.x + x;
+        let mut top = self.y + y;
+        let mut right = left + w as isize;
+        let mut bottom = top + h as isize;
+
+        left = left.max(self.clip_x).max(0);
+        top = top.max(self.clip_y).max(0);
+        right = right.min(self.clip_x + self.clip_width as isize).max(0);
+        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
+
+        self.canvas.get_text(
+            left as _,
+            top as _,
+            (right - left).max(0) as _,
+            (bottom - top).max(0) as _,
+        )
+    }
+
     /// Fills the region with the given color.
     pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
         let mut left = self.x + x;
@@ -489,6 +595,90 @@ mod tests {
         write!(expected, csi!("K")).unwrap();
         write!(expected, "\r\n").unwrap();
         write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_canvas_full_background_color() {
+        let mut canvas = Canvas::new(6, 3);
+        assert_eq!(canvas.width(), 6);
+        assert_eq!(canvas.height(), 3);
+
+        canvas
+            .subview_mut(0, 0, 0, 0, 6, 6)
+            .set_background_color(0, 0, 6, 6, Color::Red);
+
+        let mut actual = Vec::new();
+        canvas.write_ansi(&mut actual).unwrap();
+
+        // the important thing here is that the background color is reset before each line is
+        // cleared and before each newline
+        // see: https://github.com/ccbrown/iocraft/issues/142
+
+        let mut expected = Vec::new();
+
+        // line 1
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "     ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, " ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        // line 2
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "     ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, " ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        // line 3
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, "     ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, " ").unwrap();
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::BackgroundColor(Color::Reset)
+        )
+        .unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
@@ -688,5 +878,107 @@ mod tests {
         write!(expected, "\r\n").unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_cell_read() {
+        let mut canvas = Canvas::new(10, 3);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "hello", CanvasTextStyle::default());
+        assert_eq!(canvas.cell(0, 0).and_then(|c| c.text()), Some("h"));
+        assert_eq!(canvas.cell(4, 0).and_then(|c| c.text()), Some("o"));
+        assert_eq!(canvas.cell(5, 0).and_then(|c| c.text()), None);
+        assert_eq!(canvas.cell(99, 99), None);
+    }
+
+    #[test]
+    fn test_get_text_single_row() {
+        let mut canvas = Canvas::new(10, 3);
+        let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 3);
+        sv.set_text(0, 0, "hello", CanvasTextStyle::default());
+        sv.set_text(2, 1, "ab", CanvasTextStyle::default());
+        drop(sv);
+        assert_eq!(canvas.get_text(0, 0, 10, 1), "hello");
+        assert_eq!(canvas.get_text(0, 1, 10, 1), "  ab");
+        assert_eq!(canvas.get_text(0, 2, 10, 1), "");
+    }
+
+    #[test]
+    fn test_get_text_multi_row() {
+        let mut canvas = Canvas::new(10, 3);
+        let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 3);
+        sv.set_text(0, 0, "line one", CanvasTextStyle::default());
+        sv.set_text(0, 1, "line two", CanvasTextStyle::default());
+        drop(sv);
+        assert_eq!(
+            canvas.get_text(0, 0, 10, 3),
+            "line one
+line two
+"
+        );
+    }
+
+    #[test]
+    fn test_get_text_partial_row() {
+        let mut canvas = Canvas::new(10, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "abcdef", CanvasTextStyle::default());
+        assert_eq!(canvas.get_text(2, 0, 3, 1), "cde");
+    }
+
+    #[test]
+    fn test_cell_text_style() {
+        let mut canvas = Canvas::new(10, 1);
+        let style = CanvasTextStyle {
+            weight: Weight::Bold,
+            ..Default::default()
+        };
+        canvas
+            .subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "hi", style);
+        let cell = canvas.cell(0, 0).unwrap();
+        let ts = cell.text_style().unwrap();
+        assert_eq!(ts.weight, Weight::Bold);
+        // Empty cell returns None.
+        assert!(canvas.cell(5, 0).unwrap().text_style().is_none());
+    }
+
+    #[test]
+    fn test_cell_is_empty() {
+        let mut canvas = Canvas::new(5, 1);
+        assert!(canvas.cell(0, 0).unwrap().is_empty());
+        canvas
+            .subview_mut(0, 0, 0, 0, 5, 1)
+            .set_text(0, 0, "a", CanvasTextStyle::default());
+        assert!(!canvas.cell(0, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_subview_cell_relative_coords() {
+        let mut canvas = Canvas::new(10, 5);
+        // Subview at offset (2, 1) with clip matching subview area
+        let mut sv = canvas.subview_mut(2, 1, 2, 1, 6, 3);
+        sv.set_text(0, 0, "abc", CanvasTextStyle::default());
+        // Read back via subview using relative coordinates
+        assert_eq!(sv.cell(0, 0).and_then(|c| c.text()), Some("a"));
+        assert_eq!(sv.cell(2, 0).and_then(|c| c.text()), Some("c"));
+        // Out of clip bounds → None
+        assert_eq!(sv.cell(-1, 0), None);
+        assert_eq!(sv.cell(6, 0), None);
+        assert_eq!(sv.cell(0, -1), None);
+        assert_eq!(sv.cell(0, 3), None);
+    }
+
+    #[test]
+    fn test_subview_get_text_relative_coords() {
+        let mut canvas = Canvas::new(10, 5);
+        let mut sv = canvas.subview_mut(2, 1, 2, 1, 6, 3);
+        sv.set_text(0, 0, "hello", CanvasTextStyle::default());
+        sv.set_text(0, 1, "world", CanvasTextStyle::default());
+        // Read back relative to subview origin
+        assert_eq!(sv.get_text(0, 0, 6, 1), "hello");
+        assert_eq!(sv.get_text(0, 0, 6, 2), "hello\nworld");
     }
 }

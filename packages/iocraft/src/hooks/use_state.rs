@@ -49,6 +49,13 @@ pub trait UseState: private::Sealed {
     where
         T: Unpin + Sync + Send + 'static,
         F: FnOnce() -> T;
+
+    /// Creates a new state with its initial value default constructed.
+    ///
+    /// When the state changes, the component will be re-rendered.
+    fn use_state_default<T>(&mut self) -> State<T>
+    where
+        T: Default + Unpin + Sync + Send + 'static;
 }
 
 impl UseState for Hooks<'_, '_> {
@@ -59,6 +66,13 @@ impl UseState for Hooks<'_, '_> {
     {
         self.use_hook(move || UseStateImpl::new(initial_value()))
             .state
+    }
+
+    fn use_state_default<T>(&mut self) -> State<T>
+    where
+        T: Default + Unpin + Sync + Send + 'static,
+    {
+        self.use_state(T::default)
     }
 }
 
@@ -170,8 +184,17 @@ impl<T: Sync + Send + 'static> Copy for State<T> {}
 
 impl<T: Copy + Sync + Send + 'static> State<T> {
     /// Gets a copy of the current value of the state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the owner of the state has been dropped.
     pub fn get(&self) -> T {
         *self.read()
+    }
+
+    /// Gets a copy of the current value of the state, if its owner has not been dropped.
+    pub fn try_get(&self) -> Option<T> {
+        self.try_read().map(|v| *v)
     }
 }
 
@@ -192,7 +215,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// # Panics
     ///
     /// Panics if the owner of the state has been dropped.
-    pub fn read(&self) -> StateRef<T> {
+    pub fn read(&self) -> StateRef<'_, T> {
         self.try_read()
             .expect("attempt to read state after owner was dropped")
     }
@@ -205,7 +228,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, writes to one will be blocked for as long as any
     /// reference returned by this method exists.</div>
-    pub fn try_read(&self) -> Option<StateRef<T>> {
+    pub fn try_read(&self) -> Option<StateRef<'_, T>> {
         loop {
             match self.inner.try_read() {
                 Ok(inner) => break Some(StateRef { inner }),
@@ -227,7 +250,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// # Panics
     ///
     /// Panics if the owner of the state has been dropped.
-    pub fn write(&mut self) -> StateMutRef<T> {
+    pub fn write(&mut self) -> StateMutRef<'_, T> {
         self.try_write()
             .expect("attempt to write state after owner was dropped")
     }
@@ -240,7 +263,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// <div class="warning">It is possible to create a deadlock using this method. If you have
     /// multiple copies of the same state, operations on one will be blocked for as long as any
     /// reference returned by this method exists.</div>
-    pub fn try_write(&mut self) -> Option<StateMutRef<T>> {
+    pub fn try_write(&mut self) -> Option<StateMutRef<'_, T>> {
         self.inner.try_write().ok().map(|inner| StateMutRef {
             inner,
             did_deref_mut: false,
@@ -325,8 +348,8 @@ impl<T: ops::DivAssign<T> + Copy + Sync + Send + 'static> ops::DivAssign<T> for 
 }
 
 impl<T: Hash + Sync + Send> Hash for State<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.read().hash(state)
+    fn hash<H: Hasher>(&self, hash: &mut H) {
+        self.read().hash(hash)
     }
 }
 
