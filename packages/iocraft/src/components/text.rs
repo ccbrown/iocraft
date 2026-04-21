@@ -325,12 +325,15 @@ mod tests {
             canvas.write_ansi(&mut actual).unwrap();
 
             let mut expected = Vec::new();
+            // row 0
             write!(expected, csi!("0m")).unwrap();
             write!(expected, "   ").unwrap();
             write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
             write!(expected, "this is an").unwrap();
             write!(expected, csi!("K")).unwrap();
+            write!(expected, csi!("0m")).unwrap();
             write!(expected, "\r\n").unwrap();
+            // row 1
             write!(expected, csi!("0m")).unwrap();
             write!(expected, " ").unwrap();
             write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
