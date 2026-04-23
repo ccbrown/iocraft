@@ -23,6 +23,9 @@ pub struct MixedTextContent {
 
     /// Whether to italicize the text.
     pub italic: bool,
+
+    /// Whether to invert the text's foreground and background colors.
+    pub invert: bool,
 }
 
 impl MixedTextContent {
@@ -55,6 +58,12 @@ impl MixedTextContent {
     /// Returns a new [`MixedTextContent`] with italic text.
     pub fn italic(mut self) -> Self {
         self.italic = true;
+        self
+    }
+
+    /// Returns a new [`MixedTextContent`] with inverted foreground and background colors.
+    pub fn invert(mut self) -> Self {
+        self.invert = true;
         self
     }
 }
@@ -170,6 +179,7 @@ impl Component for MixedText {
                     weight: content.weight,
                     underline: content.decoration == TextDecoration::Underline,
                     italic: content.italic,
+                    invert: content.invert,
                 };
                 if segments.peek().is_some() {
                     drawer.append_lines([segment.text], style);
@@ -201,6 +211,17 @@ mod tests {
             .to_string(),
             "this is a\nwrapping test\n"
         );
+    }
+
+    #[test]
+    fn test_mixed_text_invert() {
+        let canvas = element! {
+            MixedText(contents: vec![
+                MixedTextContent::new("foo").invert(),
+            ])
+        }
+        .render(None);
+        assert!(canvas.cell(0, 0).unwrap().text_style().unwrap().invert);
     }
 
     #[test]
