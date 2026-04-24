@@ -69,6 +69,9 @@ pub struct CanvasTextStyle {
 
     /// Whether the text is italicized.
     pub italic: bool,
+
+    /// Whether the foreground and background colors should be inverted.
+    pub invert: bool,
 }
 
 /// A single cell on a [`Canvas`], containing optional text and background color.
@@ -280,7 +283,10 @@ impl Canvas {
                         if !c.style.italic && text_style.italic {
                             needs_reset = true;
                         }
-                    } else if text_style.underline {
+                        if !c.style.invert && text_style.invert {
+                            needs_reset = true;
+                        }
+                    } else if text_style.underline || text_style.invert {
                         needs_reset = true;
                     }
                     if needs_reset {
@@ -312,6 +318,10 @@ impl Canvas {
 
                         if c.style.italic && !text_style.italic {
                             write!(w, csi!("{}m"), Attribute::Italic.sgr())?;
+                        }
+
+                        if c.style.invert && !text_style.invert {
+                            write!(w, csi!("{}m"), Attribute::Reverse.sgr())?;
                         }
 
                         text_style = c.style;
@@ -754,6 +764,25 @@ mod tests {
                 ..Default::default()
             },
         );
+        canvas.subview_mut(7, 0, 7, 0, 1, 1).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Green),
+                invert: true,
+                ..Default::default()
+            },
+        );
+        canvas.subview_mut(8, 0, 8, 0, 1, 1).set_text(
+            0,
+            0,
+            ".",
+            CanvasTextStyle {
+                color: Some(Color::Green),
+                ..Default::default()
+            },
+        );
 
         let mut actual = Vec::new();
         canvas.write_ansi(&mut actual).unwrap();
@@ -785,6 +814,18 @@ mod tests {
         write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
         write!(expected, ".").unwrap();
 
+        write!(
+            expected,
+            csi!("{}m"),
+            Colored::ForegroundColor(Color::Green)
+        )
+        .unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("{}m"), Attribute::Reverse.sgr()).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("0m")).unwrap();
         write!(
             expected,
             csi!("{}m"),
@@ -933,6 +974,7 @@ line two
         let mut canvas = Canvas::new(10, 1);
         let style = CanvasTextStyle {
             weight: Weight::Bold,
+            invert: true,
             ..Default::default()
         };
         canvas
@@ -941,6 +983,7 @@ line two
         let cell = canvas.cell(0, 0).unwrap();
         let ts = cell.text_style().unwrap();
         assert_eq!(ts.weight, Weight::Bold);
+        assert!(ts.invert);
         // Empty cell returns None.
         assert!(canvas.cell(5, 0).unwrap().text_style().is_none());
     }

@@ -61,6 +61,9 @@ pub struct TextProps {
 
     /// Whether to italicize the text.
     pub italic: bool,
+
+    /// Whether to invert the text's foreground and background colors.
+    pub invert: bool,
 }
 
 /// `Text` is a component that renders a text string.
@@ -243,6 +246,7 @@ impl Component for Text {
             weight: props.weight,
             underline: props.decoration == TextDecoration::Underline,
             italic: props.italic,
+            invert: props.invert,
         };
         self.content = strip_ansi(&props.content).into_owned();
         self.wrap = props.wrap;
@@ -364,6 +368,12 @@ mod tests {
             element!(Text(content: "no ansi here")).to_string(),
             "no ansi here\n"
         );
+    }
+
+    #[test]
+    fn test_text_invert() {
+        let canvas = element!(Text(content: "foo", invert: true)).render(None);
+        assert!(canvas.cell(0, 0).unwrap().text_style().unwrap().invert);
     }
 
     #[test]
