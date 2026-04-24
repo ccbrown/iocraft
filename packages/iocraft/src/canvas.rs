@@ -286,7 +286,7 @@ impl Canvas {
                         if !c.style.invert && text_style.invert {
                             needs_reset = true;
                         }
-                    } else if text_style.underline || text_style.italic || text_style.invert {
+                    } else if text_style.underline || text_style.invert {
                         needs_reset = true;
                     }
                     if needs_reset {
