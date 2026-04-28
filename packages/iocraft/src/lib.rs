@@ -92,6 +92,7 @@
 
 #![allow(clippy::needless_doctest_main)]
 #![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 // # Organization
 //
