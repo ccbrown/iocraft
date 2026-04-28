@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - enable doc_cfg for docs generation
 
+### Other
+
+- *(iocraft)* release v0.8.2 ([#194](https://github.com/ccbrown/iocraft/pull/194))
+
+## [0.8.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.1...iocraft-v0.8.2) - 2026-04-28
+
+### Added
+
+- add inverted text style ([#196](https://github.com/ccbrown/iocraft/pull/196))
+
+### Fixed
+
+- enable doc_cfg for docs generation
+
 ## [0.8.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.0...iocraft-v0.8.1) - 2026-04-18
 
 ### Added
