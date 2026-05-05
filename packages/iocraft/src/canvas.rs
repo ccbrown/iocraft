@@ -260,11 +260,15 @@ impl Canvas {
         self.width == other.width && self.row(y) == other.row(y)
     }
 
+    /// Writes a single row.
+    ///
+    /// In ANSI mode the caller must ensure that SGR state is reset (e.g. via
+    /// `CSI 0 m`) before invoking this method; the function does not emit a
+    /// leading reset of its own. It always leaves SGR state reset on return,
+    /// so consecutive calls (or any subsequent writer use) start from a clean
+    /// state.
     fn write_row_impl<W: Write>(&self, y: usize, mut w: W, ansi: bool) -> io::Result<()> {
         let row = self.row(y);
-        if ansi {
-            write!(w, csi!("0m"))?;
-        }
 
         let mut background_color = None;
         let mut text_style = CanvasTextStyle::default();
@@ -373,6 +377,12 @@ impl Canvas {
         Ok(())
     }
 
+    /// Writes a single row's ANSI representation without a trailing newline.
+    ///
+    /// The caller must ensure SGR state is reset before this is called (the
+    /// terminal's default state qualifies). The function leaves SGR state
+    /// reset on return, so a sequence of calls — separated only by cursor
+    /// movement — will each start from a clean state.
     pub(crate) fn write_ansi_row_without_newline<W: Write>(
         &self,
         y: usize,
@@ -387,6 +397,11 @@ impl Canvas {
         ansi: bool,
         omit_final_newline: bool,
     ) -> io::Result<()> {
+        if ansi {
+            // Seed clean SGR state for the first row. Subsequent rows rely on
+            // the trailing reset of the previous row.
+            write!(w, csi!("0m"))?;
+        }
         for y in 0..self.cells.len() {
             self.write_row_impl(y, &mut w, ansi)?;
             let is_final_line = y == self.cells.len() - 1;
@@ -601,7 +616,6 @@ mod tests {
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
         // row 1
-        write!(expected, csi!("0m")).unwrap();
         write!(expected, "  ").unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "   ").unwrap();
@@ -615,7 +629,6 @@ mod tests {
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
         // row 2
-        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
@@ -665,7 +678,6 @@ mod tests {
         write!(expected, "\r\n").unwrap();
 
         // line 2
-        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
         write!(
@@ -687,7 +699,6 @@ mod tests {
         write!(expected, "\r\n").unwrap();
 
         // line 3
-        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
         write!(
@@ -907,12 +918,10 @@ mod tests {
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
         // row 1
-        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
         // row 2 (final, no newline)
-        write!(expected, csi!("0m")).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
 
@@ -1104,12 +1113,12 @@ line two
             .subview_mut(0, 0, 0, 0, 10, 2)
             .set_text(0, 1, "world", CanvasTextStyle::default());
 
-        // each row should render independently with its own reset
+        // Each row renders without a leading reset (caller's contract is to
+        // provide clean SGR state) but always leaves SGR state reset on return.
         let mut row0 = Vec::new();
         canvas.write_ansi_row_without_newline(0, &mut row0).unwrap();
 
         let mut expected0 = Vec::new();
-        write!(expected0, csi!("0m")).unwrap();
         write!(expected0, "hello").unwrap();
         write!(expected0, csi!("K")).unwrap();
         write!(expected0, csi!("0m")).unwrap();
@@ -1119,7 +1128,6 @@ line two
         canvas.write_ansi_row_without_newline(1, &mut row1).unwrap();
 
         let mut expected1 = Vec::new();
-        write!(expected1, csi!("0m")).unwrap();
         write!(expected1, "world").unwrap();
         write!(expected1, csi!("K")).unwrap();
         write!(expected1, csi!("0m")).unwrap();

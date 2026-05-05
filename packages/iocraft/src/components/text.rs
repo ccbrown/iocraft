@@ -338,7 +338,6 @@ mod tests {
             write!(expected, csi!("0m")).unwrap();
             write!(expected, "\r\n").unwrap();
             // row 1
-            write!(expected, csi!("0m")).unwrap();
             write!(expected, " ").unwrap();
             write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
             write!(expected, "alignment test").unwrap();
