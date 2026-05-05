@@ -470,10 +470,12 @@ impl<'a> Tree<'a> {
                 let output = self.render(terminal_size.map(|(w, _)| w as usize), Some(&mut term));
                 if output.did_clear_terminal_output || prev_canvas.as_ref() != Some(&output.canvas)
                 {
-                    if !output.did_clear_terminal_output {
-                        term.clear_canvas()?;
-                    }
-                    term.write_canvas(&output.canvas)?;
+                    let prev = if output.did_clear_terminal_output {
+                        None
+                    } else {
+                        prev_canvas.as_ref()
+                    };
+                    term.write_canvas(prev, &output.canvas)?;
                 }
                 prev_canvas = Some(output.canvas);
                 Ok(())
