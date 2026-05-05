@@ -35,7 +35,7 @@ fn Example(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     element! {
         View(
             width,
-            height: height - (time.get().timestamp() % 10) as u16,
+            height,
             background_color: Color::DarkGrey,
             border_style: BorderStyle::Double,
             border_color: Color::Blue,
