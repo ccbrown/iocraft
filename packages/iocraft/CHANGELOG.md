@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.2...iocraft-v0.8.3) - 2026-05-09
+
+### Added
+
+- add row-level diff rendering  ([#179](https://github.com/ccbrown/iocraft/pull/179))
+
+### Fixed
+
+- clear fullscreen terminal on resize ([#200](https://github.com/ccbrown/iocraft/pull/200))
+
 ## [0.8.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.1...iocraft-v0.8.2) - 2026-04-28
 
 ### Added
