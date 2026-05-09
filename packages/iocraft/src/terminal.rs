@@ -154,6 +154,7 @@ struct StdTerminal<'a> {
     enabled_keyboard_enhancement: bool,
     prev_canvas_top_row: u16,
     prev_canvas_height: u16,
+    prev_size_on_write: Option<(u16, u16)>,
     size: Option<(u16, u16)>,
 }
 
@@ -234,6 +235,19 @@ impl TerminalImpl for StdTerminal<'_> {
         };
 
         if self.fullscreen {
+            if self.prev_size_on_write != self.size {
+                // If the terminal is changing size, clear it to make sure we don't leave
+                // artifacts. This is especially important when the terminal is shrinking, since
+                // characters might flow outside of the visible terminal, where they can't be
+                // cleared with `\033[K` and oddly may re-enter the terminal as visible characters
+                // are cleared.
+                self.clear_canvas()?;
+                self.prev_canvas_height = canvas.height() as _;
+                self.prev_size_on_write = self.size;
+                canvas.write_ansi_without_final_newline(&mut *self.dest)?;
+                return Ok(());
+            }
+
             // Fullscreen: absolute positioning.
             let top_row = self.prev_canvas_top_row;
             let max_height = prev.height().max(canvas.height());
@@ -255,6 +269,8 @@ impl TerminalImpl for StdTerminal<'_> {
             }
             self.prev_canvas_height = canvas.height() as _;
             return Ok(());
+        } else {
+            self.prev_size_on_write = self.size;
         }
 
         // Inline: row diff with relative cursor movement.
@@ -394,6 +410,7 @@ impl<'a> StdTerminal<'a> {
             prev_canvas_top_row: 0,
             prev_canvas_height: 0,
             size: None,
+            prev_size_on_write: None,
         };
         term.dest.queue(cursor::Hide)?;
         if fullscreen {
