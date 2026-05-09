@@ -997,6 +997,7 @@ mod tests {
             prev_canvas_top_row,
             prev_canvas_height,
             size: None,
+            prev_size_on_write: None,
         }
     }
 
@@ -1020,6 +1021,7 @@ mod tests {
             prev_canvas_top_row: 0,
             prev_canvas_height,
             size: Some(term_size),
+            prev_size_on_write: None,
         }
     }
 
