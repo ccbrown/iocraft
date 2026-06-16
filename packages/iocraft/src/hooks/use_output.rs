@@ -133,6 +133,12 @@ impl UseOutputState {
         }
 
         if needs_extra_newline {
+            // Flush stdout and stderr so the terminal processes all written bytes
+            // before we query the cursor position. Without this, the cursor position
+            // would reflect the state before the no-newline message was rendered,
+            // causing subsequent appended output to be placed at the wrong column.
+            let _ = terminal.stdout().flush();
+            let _ = terminal.stderr().flush();
             if let Ok(pos) = cursor::position() {
                 self.appended_newline = Some(pos.0);
                 let newline = if needs_carriage_returns { "\r\n" } else { "\n" };
