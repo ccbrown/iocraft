@@ -1,6 +1,6 @@
 use crate::{
     component,
-    components::{TextDrawer, TextWrap, View},
+    components::{TextDecoration, TextDrawer, TextWrap, View},
     element,
     hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
@@ -83,8 +83,8 @@ pub struct TextInputProps {
     /// The weight (boldness) of the text.
     pub weight: Weight,
 
-    /// Whether the text is underlined.
-    pub underline: bool,
+    /// The text decoration.
+    pub decoration: TextDecoration,
 
     /// Whether the text is italicized.
     pub italic: bool,
@@ -566,7 +566,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     buffer,
                     color: props.color,
                     weight: props.weight,
-                    underline: props.underline,
+                    underline: props.decoration == TextDecoration::Underline,
                     italic: props.italic,
                     invert: props.invert,
                 )
