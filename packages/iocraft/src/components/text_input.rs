@@ -6,7 +6,7 @@ use crate::{
     segmented_string::SegmentedString,
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, HandlerMut,
     Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
-    Props, Size, TerminalEvent,
+    Props, Size, TerminalEvent, Weight,
 };
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -79,6 +79,9 @@ impl TextInputHandle {
 pub struct TextInputProps {
     /// The color to make the text.
     pub color: Option<Color>,
+
+    /// The weight (boldness) of the text.
+    pub weight: Weight,
 
     /// The current value.
     pub value: String,
@@ -247,6 +250,7 @@ impl TextBuffer {
 #[derive(Default, Props)]
 struct TextBufferViewProps {
     color: Option<Color>,
+    weight: Weight,
     buffer: Arc<TextBuffer>,
 }
 
@@ -271,6 +275,7 @@ impl Component for TextBufferView {
     ) {
         self.text_style = CanvasTextStyle {
             color: props.color,
+            weight: props.weight,
             ..Default::default()
         };
         self.buffer = props.buffer.clone();
@@ -546,6 +551,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 TextBufferView(
                     buffer,
                     color: props.color,
+                    weight: props.weight,
                 )
             }
         }
