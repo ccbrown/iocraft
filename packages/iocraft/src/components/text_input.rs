@@ -412,6 +412,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         } else if cursor_col < scroll_offset_col.get() {
             scroll_offset_col.set(cursor_col as _);
         }
+
+        // Scroll back when the content shrinks so it isn't cut off.
+        let content_width = props.value.width() as u16;
+        let max_scroll_offset_col = (content_width + 1).saturating_sub(width);
+        if scroll_offset_col.get() > max_scroll_offset_col {
+            scroll_offset_col.set(max_scroll_offset_col);
+        }
     }
 
     hooks.use_terminal_events({
