@@ -1,12 +1,12 @@
 use crate::{
     component,
-    components::{TextDrawer, TextWrap, View},
+    components::{TextDecoration, TextDrawer, TextWrap, View},
     element,
     hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, HandlerMut,
     Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
-    Props, Size, TerminalEvent,
+    Props, Size, TerminalEvent, Weight,
 };
 use std::sync::Arc;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -79,6 +79,18 @@ impl TextInputHandle {
 pub struct TextInputProps {
     /// The color to make the text.
     pub color: Option<Color>,
+
+    /// The weight (boldness) of the text.
+    pub weight: Weight,
+
+    /// The text decoration.
+    pub decoration: TextDecoration,
+
+    /// Whether the text is italicized.
+    pub italic: bool,
+
+    /// Whether the foreground and background colors are inverted.
+    pub invert: bool,
 
     /// The current value.
     pub value: String,
@@ -247,6 +259,10 @@ impl TextBuffer {
 #[derive(Default, Props)]
 struct TextBufferViewProps {
     color: Option<Color>,
+    weight: Weight,
+    underline: bool,
+    italic: bool,
+    invert: bool,
     buffer: Arc<TextBuffer>,
 }
 
@@ -271,7 +287,10 @@ impl Component for TextBufferView {
     ) {
         self.text_style = CanvasTextStyle {
             color: props.color,
-            ..Default::default()
+            weight: props.weight,
+            underline: props.underline,
+            italic: props.italic,
+            invert: props.invert,
         };
         self.buffer = props.buffer.clone();
         updater.set_layout_style(
@@ -553,6 +572,10 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 TextBufferView(
                     buffer,
                     color: props.color,
+                    weight: props.weight,
+                    underline: props.decoration == TextDecoration::Underline,
+                    italic: props.italic,
+                    invert: props.invert,
                 )
             }
         }
