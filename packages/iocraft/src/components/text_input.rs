@@ -83,6 +83,15 @@ pub struct TextInputProps {
     /// The weight (boldness) of the text.
     pub weight: Weight,
 
+    /// Whether the text is underlined.
+    pub underline: bool,
+
+    /// Whether the text is italicized.
+    pub italic: bool,
+
+    /// Whether the foreground and background colors are inverted.
+    pub invert: bool,
+
     /// The current value.
     pub value: String,
 
@@ -251,6 +260,9 @@ impl TextBuffer {
 struct TextBufferViewProps {
     color: Option<Color>,
     weight: Weight,
+    underline: bool,
+    italic: bool,
+    invert: bool,
     buffer: Arc<TextBuffer>,
 }
 
@@ -276,7 +288,9 @@ impl Component for TextBufferView {
         self.text_style = CanvasTextStyle {
             color: props.color,
             weight: props.weight,
-            ..Default::default()
+            underline: props.underline,
+            italic: props.italic,
+            invert: props.invert,
         };
         self.buffer = props.buffer.clone();
         updater.set_layout_style(
@@ -552,6 +566,9 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     buffer,
                     color: props.color,
                     weight: props.weight,
+                    underline: props.underline,
+                    italic: props.italic,
+                    invert: props.invert,
                 )
             }
         }
