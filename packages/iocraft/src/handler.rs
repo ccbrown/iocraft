@@ -5,9 +5,9 @@ use std::{ops::DerefMut, sync::Arc};
 ///
 /// Any function that takes a single argument and returns `()` can be converted into a `HandlerMut`,
 /// and it can be invoked using function call syntax.
-pub struct HandlerMut<'a, T>(bool, Box<dyn FnMut(T) + Send + Sync + 'a>);
+pub struct HandlerMut<'a, T, R = ()>(bool, Box<dyn FnMut(T) -> R + Send + Sync + 'a>);
 
-impl<T> HandlerMut<'_, T> {
+impl<T, R: Default> HandlerMut<'_, T, R> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
@@ -19,30 +19,30 @@ impl<T> HandlerMut<'_, T> {
     }
 }
 
-impl<T> Default for HandlerMut<'_, T> {
+impl<T, R: Default> Default for HandlerMut<'_, T, R> {
     fn default() -> Self {
-        Self(false, Box::new(|_| {}))
+        Self(false, Box::new(|_| Default::default()))
     }
 }
 
-impl<'a, T, F> From<F> for HandlerMut<'a, T>
+impl<'a, T, F, R> From<F> for HandlerMut<'a, T, R>
 where
-    F: FnMut(T) + Send + Sync + 'a,
+    F: FnMut(T) -> R + Send + Sync + 'a,
 {
     fn from(f: F) -> Self {
         Self(true, Box::new(f))
     }
 }
 
-impl<'a, T: 'a> Deref for HandlerMut<'a, T> {
-    type Target = dyn FnMut(T) + Send + Sync + 'a;
+impl<'a, T: 'a, R> Deref for HandlerMut<'a, T, R> {
+    type Target = dyn FnMut(T) -> R + Send + Sync + 'a;
 
     fn deref(&self) -> &Self::Target {
         self.1.as_ref()
     }
 }
 
-impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
+impl<'a, T: 'a, R> DerefMut for HandlerMut<'a, T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.1.as_mut()
     }
@@ -78,48 +78,50 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
 /// # }
 /// ```
 #[derive(Clone)]
-pub struct Handler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
+pub struct Handler<T, R = ()>(bool, Arc<dyn Fn(T) -> R + Send + Sync + 'static>);
 
-impl<T> Handler<T> {
+impl<T, R> Handler<T, R> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
     }
 }
 
-impl<T> Deref for Handler<T> {
-    type Target = dyn Fn(T) + Send + Sync + 'static;
+impl<T, R> Deref for Handler<T, R> {
+    type Target = dyn Fn(T) -> R + Send + Sync + 'static;
 
     fn deref(&self) -> &Self::Target {
         self.1.as_ref()
     }
 }
 
-impl<T> Default for Handler<T> {
+impl<T, R: Default> Default for Handler<T, R> {
     fn default() -> Self {
-        Self(false, Arc::new(|_| {}))
+        Self(false, Arc::new(|_| Default::default()))
     }
 }
 
-impl<T, F> From<F> for Handler<T>
+impl<T, F, R> From<F> for Handler<T, R>
 where
-    F: Fn(T) + Send + Sync + 'static,
+    F: Fn(T) -> R + Send + Sync + 'static,
 {
     fn from(f: F) -> Self {
         Self(true, Arc::new(f))
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> Handler<T> {
+impl<T: Clone + Send + Sync + 'static, R: Clone + 'static> Handler<T, R> {
     /// Creates a new `Handler` that uses a constant value for it's input.
-    pub fn bind(&self, value: T) -> Handler<()> {
+    pub fn bind(&self, value: T) -> Handler<(), R> {
         let handler = self.clone();
         Handler::from(move |_| handler(value.clone()))
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> From<Handler<T>> for HandlerMut<'static, T> {
-    fn from(handler: Handler<T>) -> Self {
+impl<T: Clone + Send + Sync + 'static, R: 'static> From<Handler<T, R>>
+    for HandlerMut<'static, T, R>
+{
+    fn from(handler: Handler<T, R>) -> Self {
         Self::from(move |value| handler.1(value))
     }
 }
