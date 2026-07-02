@@ -1,11 +1,11 @@
 use crate::{
     any_key::AnyKey,
+    backend::terminal_size,
     component::{Component, ComponentHelper, ComponentHelperExt},
     mock_terminal_render_loop,
     props::AnyProps,
     render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
-use crossterm::terminal;
 use futures::Stream;
 use std::{
     fmt::Debug,
@@ -152,6 +152,23 @@ mod private {
     impl<T> Sealed for &mut Element<'_, T> where T: Component {}
 }
 
+/// Renders `el` sized to the terminal width when `is_terminal` is true and the
+/// terminal size can be determined, writing ANSI escape codes. Otherwise writes
+/// it unstyled, without width constraints.
+fn write_sized_or_plain<E: ElementExt, W: Write>(
+    el: &mut E,
+    w: W,
+    is_terminal: bool,
+) -> io::Result<()> {
+    if is_terminal {
+        if let Ok((width, _)) = terminal_size() {
+            let canvas = el.render(Some(width as _));
+            return canvas.write_ansi(w);
+        }
+    }
+    el.write(w)
+}
+
 /// A trait implemented by all element types, providing methods for common operations on them.
 pub trait ElementExt: private::Sealed + Sized {
     /// Returns the key of the element.
@@ -191,31 +208,23 @@ pub trait ElementExt: private::Sealed + Sized {
         canvas.write(w)
     }
 
-    /// Renders the element and writes it to the given raw file descriptor. If the file descriptor
-    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes.
+    /// Renders the element and writes it to the given file descriptor. If the file descriptor
+    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes. If the
+    /// terminal size cannot be determined, the output is written unstyled, without width
+    /// constraints.
     #[cfg(unix)]
-    fn write_to_raw_fd<F: Write + std::os::fd::AsRawFd>(&mut self, fd: F) -> io::Result<()> {
-        use crossterm::tty::IsTty;
-        if fd.is_tty() {
-            let (width, _) = terminal::size()?;
-            let canvas = self.render(Some(width as _));
-            canvas.write_ansi(fd)
-        } else {
-            self.write(fd)
-        }
+    fn write_to_raw_fd<F: Write + std::os::fd::AsFd>(&mut self, fd: F) -> io::Result<()> {
+        let is_terminal = fd.as_fd().is_terminal();
+        write_sized_or_plain(self, fd, is_terminal)
     }
 
     /// Renders the element and writes it to the given writer also implementing
     /// [`IsTerminal`](std::io::IsTerminal). If the writer is a terminal, the canvas will be
-    /// rendered based on its size, with ANSI escape codes.
+    /// rendered based on its size, with ANSI escape codes. If the terminal size cannot be
+    /// determined, the output is written unstyled, without width constraints.
     fn write_to_is_terminal<W: Write + IsTerminal>(&mut self, w: W) -> io::Result<()> {
-        if w.is_terminal() {
-            let (width, _) = terminal::size()?;
-            let canvas = self.render(Some(width as _));
-            canvas.write_ansi(w)
-        } else {
-            self.write(w)
-        }
+        let is_terminal = w.is_terminal();
+        write_sized_or_plain(self, w, is_terminal)
     }
 
     /// Returns a future which renders the element in a loop, allowing it to be dynamic and

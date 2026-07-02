@@ -1,17 +1,19 @@
 [package]
 name = "iocraft"
-version = "0.8.3"
+version = "0.9.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Create beautifully crafted CLI programs and text output with a declarative React-like Rust API."
 repository = "https://github.com/ccbrown/iocraft"
 
 [features]
-default = []
+default = ["crossterm"]
+# Enables the built-in crossterm-backed terminal (iocraft's default backend).
+crossterm = ["dep:crossterm"]
 unstable-output-streams = []
 
 [dependencies]
-crossterm = { version = "0.29.0", features = ["event-stream"] }
+crossterm = { version = "0.29.0", features = ["event-stream"], optional = true }
 futures = "0.3.30"
 taffy = { version = "0.5.2", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
 iocraft-macros = { version = "0.2.4", path = "../iocraft-macros" }

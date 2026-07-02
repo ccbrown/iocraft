@@ -270,8 +270,8 @@ impl Component for Text {
 
 #[cfg(test)]
 mod tests {
+    use crate::color::{csi, sgr};
     use crate::prelude::*;
-    use crossterm::{csi, style::Attribute};
     use std::io::Write;
 
     #[test]
@@ -332,14 +332,14 @@ mod tests {
             // row 0
             write!(expected, csi!("0m")).unwrap();
             write!(expected, "   ").unwrap();
-            write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+            write!(expected, csi!("{}m"), sgr::UNDERLINED).unwrap();
             write!(expected, "this is an").unwrap();
             write!(expected, csi!("K")).unwrap();
             write!(expected, csi!("0m")).unwrap();
             write!(expected, "\r\n").unwrap();
             // row 1
             write!(expected, " ").unwrap();
-            write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+            write!(expected, csi!("{}m"), sgr::UNDERLINED).unwrap();
             write!(expected, "alignment test").unwrap();
             write!(expected, csi!("K")).unwrap();
             write!(expected, csi!("0m")).unwrap();
