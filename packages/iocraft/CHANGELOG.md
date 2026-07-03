@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- add a `TerminalBackend` trait decoupling the renderer from crossterm, gated behind the new (default-on) `crossterm` feature.
+
+### Changed
+
+- `Color`, `KeyCode`, `KeyModifiers`, `KeyEventKind`, `MouseEventKind`, and `MouseButton` are now iocraft-owned types (in `crate::color`/`crate::event`) re-exported from the crate root, rather than re-exports of the crossterm types. `From` conversions to/from the crossterm equivalents are provided when the `crossterm` feature is enabled. Code that fed these directly into crossterm APIs now needs an explicit `.into()`.
+- `ElementExt::write_to_raw_fd` now takes `F: AsFd` instead of `F: AsRawFd`.
+
+### Removed
+
+- `KeyEventState` is no longer re-exported. iocraft's `KeyEvent` never carried a `state` field, so the type was unused; import it from `crossterm` directly if needed.
+
 ## [0.8.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.2...iocraft-v0.8.3) - 2026-05-09
 
 ### Added

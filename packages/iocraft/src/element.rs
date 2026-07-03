@@ -153,17 +153,37 @@ mod private {
 }
 
 /// Renders `el` sized to the terminal width when `is_terminal` is true and the
-/// terminal size can be determined, writing ANSI escape codes. Otherwise writes
-/// it unstyled, without width constraints.
+/// terminal size can be determined, writing ANSI escape codes. When no terminal
+/// backend is compiled in, it is written unstyled, without width constraints. A
+/// genuine failure to query the size of a real terminal is propagated.
 fn write_sized_or_plain<E: ElementExt, W: Write>(
     el: &mut E,
     w: W,
     is_terminal: bool,
 ) -> io::Result<()> {
+    write_sized_or_plain_with(el, w, is_terminal, terminal_size)
+}
+
+/// Core of [`write_sized_or_plain`] with the size source injected, so the
+/// fallback-vs-propagate logic can be tested without a real terminal.
+fn write_sized_or_plain_with<E: ElementExt, W: Write>(
+    el: &mut E,
+    w: W,
+    is_terminal: bool,
+    size: impl FnOnce() -> io::Result<(u16, u16)>,
+) -> io::Result<()> {
     if is_terminal {
-        if let Ok((width, _)) = terminal_size() {
-            let canvas = el.render(Some(width as _));
-            return canvas.write_ansi(w);
+        match size() {
+            Ok((width, _)) => {
+                let canvas = el.render(Some(width as _));
+                return canvas.write_ansi(w);
+            }
+            // No backend is compiled in to report a size; fall back to plain,
+            // unconstrained output rather than failing.
+            Err(e) if e.kind() == io::ErrorKind::Unsupported => {}
+            // The terminal exists but its size couldn't be determined; surface
+            // it, matching the pre-backend behavior.
+            Err(e) => return Err(e),
         }
     }
     el.write(w)
@@ -209,8 +229,8 @@ pub trait ElementExt: private::Sealed + Sized {
     }
 
     /// Renders the element and writes it to the given file descriptor. If the file descriptor
-    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes. If the
-    /// terminal size cannot be determined, the output is written unstyled, without width
+    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes. When no
+    /// terminal backend is compiled in, the output is written unstyled, without width
     /// constraints.
     #[cfg(unix)]
     fn write_to_raw_fd<F: Write + std::os::fd::AsFd>(&mut self, fd: F) -> io::Result<()> {
@@ -220,8 +240,8 @@ pub trait ElementExt: private::Sealed + Sized {
 
     /// Renders the element and writes it to the given writer also implementing
     /// [`IsTerminal`](std::io::IsTerminal). If the writer is a terminal, the canvas will be
-    /// rendered based on its size, with ANSI escape codes. If the terminal size cannot be
-    /// determined, the output is written unstyled, without width constraints.
+    /// rendered based on its size, with ANSI escape codes. When no terminal backend is compiled
+    /// in, the output is written unstyled, without width constraints.
     fn write_to_is_terminal<W: Write + IsTerminal>(&mut self, w: W) -> io::Result<()> {
         let is_terminal = w.is_terminal();
         write_sized_or_plain(self, w, is_terminal)
@@ -659,5 +679,36 @@ mod tests {
         let mut element = element!(View);
         let render_loop_future = element.render_loop();
         assert_send(render_loop_future);
+    }
+
+    #[test]
+    fn test_write_sized_or_plain_size_error_handling() {
+        use super::write_sized_or_plain_with;
+        use std::io;
+
+        // A genuine failure to size a real terminal is propagated, rather than
+        // silently downgrading to unstyled output.
+        let mut el = element!(View);
+        let mut out = Vec::new();
+        let err = write_sized_or_plain_with(&mut el, &mut out, true, || {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "no size"))
+        })
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        // When no backend can report a size (Unsupported), fall back to plain
+        // output without error.
+        let mut out = Vec::new();
+        write_sized_or_plain_with(&mut el, &mut out, true, || {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "no backend"))
+        })
+        .unwrap();
+
+        // A non-terminal writer never queries the size and writes plain output.
+        let mut out = Vec::new();
+        write_sized_or_plain_with(&mut el, &mut out, false, || {
+            panic!("size must not be queried for a non-terminal")
+        })
+        .unwrap();
     }
 }

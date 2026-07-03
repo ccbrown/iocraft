@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::OnceLock;
 
 /// Builds a CSI (Control Sequence Introducer) escape string at compile time,
 /// e.g. `csi!("0m")` produces `"\x1b[0m"`. Mirrors crossterm's `csi!` so call
@@ -129,16 +130,32 @@ pub(crate) mod sgr {
     pub const REVERSE: u8 = 7;
 }
 
+/// Whether color output is disabled via the `NO_COLOR` environment variable
+/// (see <https://no-color.org/>). The variable is read once and memoized, so
+/// this stays cheap on the per-cell render path. Matches crossterm, which
+/// applies the same suppression inside `Colored`'s `Display`.
+fn color_output_disabled() -> bool {
+    static DISABLED: OnceLock<bool> = OnceLock::new();
+    *DISABLED.get_or_init(|| std::env::var("NO_COLOR").map(|v| !v.is_empty()).unwrap_or(false))
+}
+
 /// Wraps a [`Color`] so it renders as the SGR parameters for a foreground or
 /// background color, e.g. `38;5;9` or `49`. Used with `write!` inside a
-/// `CSI … m` sequence. The encoding is identical to what crossterm emits.
+/// `CSI … m` sequence. The encoding is identical to what crossterm emits,
+/// including emitting nothing when `NO_COLOR` is set.
 pub(crate) enum SgrColor {
     Foreground(Color),
     Background(Color),
 }
 
-impl fmt::Display for SgrColor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl SgrColor {
+    /// Writes the SGR parameters, or nothing when `disabled` is true (the
+    /// `NO_COLOR` case). Split out from [`fmt::Display`] so it can be tested
+    /// without touching the process-wide memoized flag.
+    fn write_params(&self, f: &mut impl fmt::Write, disabled: bool) -> fmt::Result {
+        if disabled {
+            return Ok(());
+        }
         let (color, reset, prefix) = match *self {
             SgrColor::Foreground(c) => (c, "39", "38;"),
             SgrColor::Background(c) => (c, "49", "48;"),
@@ -168,6 +185,12 @@ impl fmt::Display for SgrColor {
             Color::AnsiValue(v) => write!(f, "5;{v}"),
             Color::Reset => unreachable!("Reset returned early above"),
         }
+    }
+}
+
+impl fmt::Display for SgrColor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_params(f, color_output_disabled())
     }
 }
 
@@ -265,6 +288,27 @@ mod tests {
             SgrColor::Background(Color::Rgb { r: 4, g: 5, b: 6 }).to_string(),
             "48;2;4;5;6"
         );
+    }
+
+    #[test]
+    fn no_color_suppresses_sgr_output() {
+        // With NO_COLOR in effect, no SGR parameters are emitted (matching
+        // crossterm), so the surrounding `CSI … m` collapses to a plain reset.
+        // Without it, the normal parameters are produced.
+        for color in [Color::Red, Color::Reset, Color::Rgb { r: 1, g: 2, b: 3 }] {
+            for sgr in [SgrColor::Foreground(color), SgrColor::Background(color)] {
+                let mut disabled = String::new();
+                sgr.write_params(&mut disabled, true).unwrap();
+                assert_eq!(disabled, "", "expected no output for {color:?} when disabled");
+
+                let mut enabled = String::new();
+                sgr.write_params(&mut enabled, false).unwrap();
+                assert!(
+                    !enabled.is_empty(),
+                    "expected SGR params for {color:?} when enabled"
+                );
+            }
+        }
     }
 
     #[cfg(feature = "crossterm")]
