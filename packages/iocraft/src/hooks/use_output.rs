@@ -1,9 +1,8 @@
-use crate::{ComponentUpdater, Hook, Hooks};
+use crate::{backend::Passthrough, element::Output, ComponentUpdater, Hook, Hooks};
 use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use crossterm::{cursor, QueueableCommand};
 use std::sync::{Arc, Mutex};
 
 mod private {
@@ -56,21 +55,33 @@ impl UseOutput for Hooks<'_, '_> {
     }
 }
 
-enum Message {
-    Stdout(String),
-    StdoutNoNewline(String),
-    Stderr(String),
-    StderrNoNewline(String),
-}
-
 #[derive(Default)]
 struct UseOutputState {
-    queue: Vec<Message>,
+    queue: Vec<Passthrough<'static>>,
     waker: Option<Waker>,
-    appended_newline: Option<u16>,
 }
 
 impl UseOutputState {
+    fn push(&mut self, stream: Output, mut content: String, mut newline: bool) {
+        if !newline && content.ends_with('\n') {
+            // Move the trailing newline into the flag so the backend chooses
+            // the line terminator (see `Passthrough`).
+            content.pop();
+            if content.ends_with('\r') {
+                content.pop();
+            }
+            newline = true;
+        }
+        self.queue.push(Passthrough {
+            stream,
+            content: content.into(),
+            newline,
+        });
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
+    }
+
     fn exec(&mut self, updater: &mut ComponentUpdater) {
         if self.queue.is_empty() {
             return;
@@ -82,73 +93,12 @@ impl UseOutputState {
         }
 
         updater.clear_terminal_output();
+
+        // The backend owns placement, newline choice (`\r\n` vs `\n`), and any
+        // cursor re-anchoring.
         let terminal = updater.terminal_mut().unwrap();
-        let needs_carriage_returns = terminal.is_raw_mode_enabled();
-
-        if let Some(col) = self.appended_newline {
-            let _ = terminal
-                .render_output()
-                .queue(cursor::MoveUp(1))
-                .and_then(|w| w.queue(cursor::MoveRight(col)));
-        }
-        // Flush render output to ensure escape sequences are sent before any
-        // cross-stream writes (e.g., stdout messages when rendering to stderr).
-        let _ = terminal.render_output().flush();
-
-        let mut needs_extra_newline = self.appended_newline.is_some();
-
-        for msg in self.queue.drain(..) {
-            match msg {
-                Message::Stdout(msg) => {
-                    let formatted = if needs_carriage_returns {
-                        format!("{}\r\n", msg)
-                    } else {
-                        format!("{}\n", msg)
-                    };
-                    let _ = terminal.stdout().write_all(formatted.as_bytes());
-                    needs_extra_newline = false;
-                }
-                Message::StdoutNoNewline(msg) => {
-                    let _ = terminal.stdout().write_all(msg.as_bytes());
-                    if !msg.is_empty() {
-                        needs_extra_newline = !msg.ends_with('\n');
-                    }
-                }
-                Message::Stderr(msg) => {
-                    let formatted = if needs_carriage_returns {
-                        format!("{}\r\n", msg)
-                    } else {
-                        format!("{}\n", msg)
-                    };
-                    let _ = terminal.stderr().write_all(formatted.as_bytes());
-                    needs_extra_newline = false;
-                }
-                Message::StderrNoNewline(msg) => {
-                    let _ = terminal.stderr().write_all(msg.as_bytes());
-                    if !msg.is_empty() {
-                        needs_extra_newline = !msg.ends_with('\n');
-                    }
-                }
-            }
-        }
-
-        if needs_extra_newline {
-            // Flush stdout and stderr so the terminal processes all written bytes
-            // before we query the cursor position. Without this, the cursor position
-            // would reflect the state before the no-newline message was rendered,
-            // causing subsequent appended output to be placed at the wrong column.
-            let _ = terminal.stdout().flush();
-            let _ = terminal.stderr().flush();
-            if let Ok(pos) = cursor::position() {
-                self.appended_newline = Some(pos.0);
-                let newline = if needs_carriage_returns { "\r\n" } else { "\n" };
-                let _ = terminal.render_output().write_all(newline.as_bytes());
-            } else {
-                self.appended_newline = None;
-            }
-        } else {
-            self.appended_newline = None;
-        }
+        let _ = terminal.print_above(&self.queue);
+        self.queue.clear();
     }
 }
 
@@ -163,20 +113,14 @@ impl StdoutHandle {
     /// output.
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
-        state.queue.push(Message::Stdout(msg.to_string()));
-        if let Some(waker) = state.waker.take() {
-            waker.wake();
-        }
+        state.push(Output::Stdout, msg.to_string(), true);
     }
 
     /// Queues a message to be written asynchronously to stdout without a newline, above the
     /// rendered component output.
     pub fn print<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
-        state.queue.push(Message::StdoutNoNewline(msg.to_string()));
-        if let Some(waker) = state.waker.take() {
-            waker.wake();
-        }
+        state.push(Output::Stdout, msg.to_string(), false);
     }
 }
 
@@ -191,20 +135,14 @@ impl StderrHandle {
     /// output.
     pub fn println<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
-        state.queue.push(Message::Stderr(msg.to_string()));
-        if let Some(waker) = state.waker.take() {
-            waker.wake();
-        }
+        state.push(Output::Stderr, msg.to_string(), true);
     }
 
     /// Queues a message to be written asynchronously to stderr without a newline, above the
     /// rendered component output.
     pub fn print<S: ToString>(&self, msg: S) {
         let mut state = self.state.lock().unwrap();
-        state.queue.push(Message::StderrNoNewline(msg.to_string()));
-        if let Some(waker) = state.waker.take() {
-            waker.wake();
-        }
+        state.push(Output::Stderr, msg.to_string(), false);
     }
 }
 
@@ -289,6 +227,23 @@ mod tests {
                 .poll_change(&mut core::task::Context::from_waker(&noop_waker())),
             Poll::Ready(())
         );
+    }
+
+    #[test]
+    fn test_print_trailing_newline_normalization() {
+        let mut state = UseOutputState::default();
+        state.push(Output::Stdout, "done\n".to_string(), false);
+        state.push(Output::Stdout, "crlf\r\n".to_string(), false);
+        state.push(Output::Stdout, "blank\n\n".to_string(), true);
+
+        // A trailing newline in no-newline content moves into the flag.
+        assert_eq!(state.queue[0].content, "done");
+        assert!(state.queue[0].newline);
+        assert_eq!(state.queue[1].content, "crlf");
+        assert!(state.queue[1].newline);
+        // println content is left untouched; its newlines are intentional.
+        assert_eq!(state.queue[2].content, "blank\n\n");
+        assert!(state.queue[2].newline);
     }
 
     #[component]

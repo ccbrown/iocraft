@@ -103,10 +103,13 @@
 // Those types will remain in their modules for the public API.
 
 mod any_key;
+mod backend;
 mod canvas;
+mod color;
 mod component;
 mod context;
 mod element;
+mod event;
 mod handler;
 mod hook;
 mod multimap;
