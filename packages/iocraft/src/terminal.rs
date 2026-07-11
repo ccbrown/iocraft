@@ -151,6 +151,7 @@ struct StdTerminal<'a> {
     fullscreen: bool,
     mouse_capture: bool,
     raw_mode_enabled: bool,
+    supports_keyboard_enhancement: bool,
     enabled_keyboard_enhancement: bool,
     prev_canvas_top_row: u16,
     prev_canvas_height: u16,
@@ -399,13 +400,20 @@ impl<'a> StdTerminal<'a> {
         fullscreen: bool,
         mouse_capture: bool,
     ) -> io::Result<Self> {
+        let input_is_terminal = stdin().is_terminal();
+        // The probe blocks on a query response, and some terminals (e.g. WezTerm)
+        // don't answer queries while a synchronized update is open — probing lazily
+        // from within a render would stall until the query times out.
+        let supports_keyboard_enhancement =
+            input_is_terminal && terminal::supports_keyboard_enhancement().unwrap_or(false);
         let mut term = Self {
             dest,
             alt,
-            input_is_terminal: stdin().is_terminal(),
+            input_is_terminal,
             fullscreen,
             mouse_capture,
             raw_mode_enabled: false,
+            supports_keyboard_enhancement,
             enabled_keyboard_enhancement: false,
             prev_canvas_top_row: 0,
             prev_canvas_height: 0,
@@ -422,7 +430,7 @@ impl<'a> StdTerminal<'a> {
     fn set_raw_mode_enabled(&mut self, raw_mode_enabled: bool) -> io::Result<()> {
         if raw_mode_enabled != self.raw_mode_enabled {
             if raw_mode_enabled {
-                if terminal::supports_keyboard_enhancement().unwrap_or(false) {
+                if self.supports_keyboard_enhancement {
                     self.dest.execute(event::PushKeyboardEnhancementFlags(
                         event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
                     ))?;
@@ -993,6 +1001,7 @@ mod tests {
             fullscreen: true,
             mouse_capture: false,
             raw_mode_enabled: false,
+            supports_keyboard_enhancement: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_top_row,
             prev_canvas_height,
@@ -1017,6 +1026,7 @@ mod tests {
             fullscreen: false,
             mouse_capture: false,
             raw_mode_enabled: false,
+            supports_keyboard_enhancement: false,
             enabled_keyboard_enhancement: false,
             prev_canvas_top_row: 0,
             prev_canvas_height,
