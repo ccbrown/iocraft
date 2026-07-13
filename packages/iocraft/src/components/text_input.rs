@@ -597,20 +597,11 @@ fn new_cursor_offset(
     hint: NewCursorOffsetHint,
 ) -> usize {
     let has_same_head = value.len() >= cursor_offset
-        && value
-            .chars()
-            .zip(prev_value.chars())
-            .take(cursor_offset)
-            .all(|(a, b)| a == b);
+        && value.as_bytes()[..cursor_offset] == prev_value.as_bytes()[..cursor_offset];
 
     let tail_len = prev_value.len() - cursor_offset;
     let has_same_tail = value.len() >= tail_len
-        && value
-            .chars()
-            .rev()
-            .zip(prev_value.chars().rev())
-            .take(tail_len)
-            .all(|(a, b)| a == b);
+        && value.as_bytes()[value.len() - tail_len..] == prev_value.as_bytes()[cursor_offset..];
 
     if value.len() >= prev_value.len() && has_same_head && has_same_tail {
         // insertion (or no change)
@@ -855,6 +846,18 @@ mod tests {
 
     #[test]
     fn test_new_cursor_offset() {
+        let mixed_text = "你好世界，Hello World";
+        let cursor_offset = mixed_text.find('W').unwrap();
+        assert_eq!(
+            new_cursor_offset(
+                mixed_text,
+                cursor_offset,
+                "你好世界，Hello aWorld",
+                NewCursorOffsetHint::None
+            ),
+            cursor_offset + 1
+        );
+
         assert_eq!(
             new_cursor_offset("", 0, "foo", NewCursorOffsetHint::None),
             3
