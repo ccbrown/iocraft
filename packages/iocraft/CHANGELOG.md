@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.3...iocraft-v0.8.4) - 2026-07-13
+
+### Added
+
+- *(TextInput)* add weight/underline/italic/invert style props ([#209](https://github.com/ccbrown/iocraft/pull/209))
+
+### Fixed
+
+- *(text_input)* preserve cursor after Unicode insertion ([#212](https://github.com/ccbrown/iocraft/pull/212))
+- probe keyboard enhancement support before the first synchronized update ([#211](https://github.com/ccbrown/iocraft/pull/211))
+- *(text_input)* scroll offset not recalculated when deleting in fixed width inputs ([#207](https://github.com/ccbrown/iocraft/pull/207))
+- *(use_output)* corruption during async delays and stderr.print() not flushing ([#205](https://github.com/ccbrown/iocraft/pull/205))
+
 ## [0.8.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.2...iocraft-v0.8.3) - 2026-05-09
 
 ### Added
