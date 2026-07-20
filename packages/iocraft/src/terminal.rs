@@ -1,4 +1,7 @@
-use crate::{canvas::Canvas, element::Output};
+use crate::{
+    canvas::{Canvas, Cursor, CursorShape},
+    element::Output,
+};
 use crossterm::{
     cursor,
     event::{self, Event, EventStream},
@@ -123,6 +126,10 @@ trait TerminalImpl: Write + Send {
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
     fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()>;
+    /// Places (or hides) the real terminal cursor after the canvas is written.
+    fn write_cursor(&mut self, _cursor: Option<&Cursor>) -> io::Result<()> {
+        Ok(())
+    }
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
     fn dest(&mut self) -> &mut dyn Write;
     fn alt(&mut self) -> &mut dyn Write;
@@ -221,6 +228,27 @@ impl TerminalImpl for StdTerminal<'_> {
         }
 
         clear_canvas_inline(&mut *self.dest, self.prev_canvas_height)
+    }
+
+    fn write_cursor(&mut self, cursor: Option<&Cursor>) -> io::Result<()> {
+        match cursor {
+            Some(c) => {
+                let style = match c.shape {
+                    CursorShape::Default => cursor::SetCursorStyle::DefaultUserShape,
+                    CursorShape::Block => cursor::SetCursorStyle::SteadyBlock,
+                    CursorShape::Bar => cursor::SetCursorStyle::SteadyBar,
+                    CursorShape::Underline => cursor::SetCursorStyle::SteadyUnderScore,
+                };
+                self.dest
+                    .queue(cursor::MoveTo(c.x, self.prev_canvas_top_row + c.y))?
+                    .queue(style)?
+                    .queue(cursor::Show)?;
+            }
+            None => {
+                self.dest.queue(cursor::Hide)?;
+            }
+        }
+        Ok(())
     }
 
     fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
@@ -629,6 +657,10 @@ impl<'a> Terminal<'a> {
 
     pub fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
         self.inner.write_canvas(prev, canvas)
+    }
+
+    pub fn write_cursor(&mut self, cursor: Option<&Cursor>) -> io::Result<()> {
+        self.inner.write_cursor(cursor)
     }
 
     pub fn received_ctrl_c(&self) -> bool {
