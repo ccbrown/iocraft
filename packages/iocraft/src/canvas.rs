@@ -100,6 +100,35 @@ impl CanvasCell {
     }
 }
 
+/// The shape of the terminal cursor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CursorShape {
+    /// The terminal's default cursor shape.
+    #[default]
+    Default,
+    /// A block cursor.
+    Block,
+    /// A vertical bar cursor.
+    Bar,
+    /// An underline cursor.
+    Underline,
+}
+
+/// A request to place the real terminal cursor at a canvas cell.
+///
+/// A low-level component can request this during drawing via
+/// [`ComponentDrawer::set_cursor`](crate::ComponentDrawer::set_cursor). If no
+/// component requests a cursor, the terminal cursor stays hidden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cursor {
+    /// Column, in canvas coordinates.
+    pub x: u16,
+    /// Row, in canvas coordinates.
+    pub y: u16,
+    /// The desired cursor shape.
+    pub shape: CursorShape,
+}
+
 /// `Canvas` is the medium that output is drawn to before being rendered to the terminal or other
 /// destinations.
 ///
@@ -111,6 +140,7 @@ impl CanvasCell {
 pub struct Canvas {
     width: usize,
     cells: Vec<Vec<CanvasCell>>,
+    cursor: Option<Cursor>,
 }
 
 impl Canvas {
@@ -119,6 +149,7 @@ impl Canvas {
         Self {
             width,
             cells: vec![vec![CanvasCell::default(); width]; height],
+            cursor: None,
         }
     }
 
@@ -136,6 +167,17 @@ impl Canvas {
     /// out of bounds.
     pub fn cell(&self, x: usize, y: usize) -> Option<&CanvasCell> {
         self.cells.get(y).and_then(|row| row.get(x))
+    }
+
+    /// Returns the requested terminal cursor, if any component set one.
+    pub fn cursor(&self) -> Option<Cursor> {
+        self.cursor
+    }
+
+    /// Requests the terminal cursor be placed at the given canvas cell. The last
+    /// request wins, so the most recently drawn (topmost) component takes it.
+    pub fn set_cursor(&mut self, cursor: Cursor) {
+        self.cursor = Some(cursor);
     }
 
     /// Extracts plain text from a rectangular region of the canvas.

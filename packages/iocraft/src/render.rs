@@ -1,5 +1,5 @@
 use crate::{
-    canvas::{Canvas, CanvasSubviewMut},
+    canvas::{Canvas, CanvasSubviewMut, Cursor, CursorShape},
     component::{ComponentHelperExt, Components, InstantiatedComponent},
     context::{Context, ContextStack, SystemContext},
     element::ElementExt,
@@ -270,6 +270,20 @@ impl ComponentDrawer<'_> {
         )
     }
 
+    /// Requests that the real terminal cursor be placed at `(x, y)`, relative to
+    /// this component's top-left, with the given shape. The most recently drawn
+    /// (topmost) requester wins; if no component requests a cursor, the terminal
+    /// cursor stays hidden.
+    pub fn set_cursor(&mut self, x: u16, y: u16, shape: CursorShape) {
+        let abs_x = (self.node_position.x + x as i16).max(0) as u16;
+        let abs_y = (self.node_position.y + y as i16).max(0) as u16;
+        self.context.canvas.set_cursor(Cursor {
+            x: abs_x,
+            y: abs_y,
+            shape,
+        });
+    }
+
     /// Prepares to begin drawing a node by moving to the node's position and invoking the given
     /// closure.
     pub(crate) fn for_child_node_layout<F>(&mut self, node_id: NodeId, f: F)
@@ -476,6 +490,7 @@ impl<'a> Tree<'a> {
                         prev_canvas.as_ref()
                     };
                     term.write_canvas(prev, &output.canvas)?;
+                    term.write_cursor(output.canvas.cursor().as_ref())?;
                 }
                 prev_canvas = Some(output.canvas);
                 Ok(())
@@ -598,6 +613,61 @@ mod tests {
                 #((0..2).map(|i| element! { MyInnerComponent(key: i, label: format!("c{}", i)) }))
             }
         }
+    }
+
+    #[test]
+    fn test_component_cursor() {
+        #[derive(Default, Props)]
+        struct CursorProbeProps;
+
+        #[derive(Default)]
+        struct CursorProbe;
+
+        impl Component for CursorProbe {
+            type Props<'a> = CursorProbeProps;
+
+            fn new(_props: &Self::Props<'_>) -> Self {
+                Self
+            }
+
+            fn update(
+                &mut self,
+                _props: &mut Self::Props<'_>,
+                _hooks: Hooks,
+                updater: &mut ComponentUpdater,
+            ) {
+                updater.set_layout_style(
+                    LayoutStyle {
+                        flex_grow: 1.0,
+                        ..Default::default()
+                    }
+                    .into(),
+                );
+            }
+
+            fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
+                // request the cursor 2 cells right of this component's top-left
+                drawer.set_cursor(2, 0, CursorShape::Bar);
+            }
+        }
+
+        // padding offsets the probe to (3, 1); set_cursor(2, 0) -> absolute (5, 1)
+        let canvas = render(
+            element! {
+                View(padding_left: 3u16, padding_top: 1u16, width: 10u16, height: 3u16) {
+                    CursorProbe
+                }
+            },
+            None,
+        );
+        assert_eq!(
+            canvas.cursor(),
+            Some(Cursor {
+                x: 5,
+                y: 1,
+                shape: CursorShape::Bar,
+            })
+        );
     }
 
     #[apply(test!)]
