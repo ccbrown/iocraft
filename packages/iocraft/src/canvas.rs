@@ -7,7 +7,7 @@ use std::{
     env,
     fmt::{self, Display},
     io::{self, Write},
-    sync::Once,
+    sync::{Arc, Once},
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -80,6 +80,8 @@ pub struct CanvasTextStyle {
 pub struct CanvasCell {
     /// The background color of this cell, if set.
     pub background_color: Option<Color>,
+    /// The OSC 8 hyperlink target for this cell, if set.
+    pub hyperlink: Option<Arc<str>>,
     character: Option<Character>,
 }
 
@@ -200,6 +202,18 @@ impl Canvas {
         }
     }
 
+    fn set_hyperlink(&mut self, x: usize, y: usize, w: usize, h: usize, url: Option<Arc<str>>) {
+        for y in y..y + h {
+            if let Some(row) = self.cells.get_mut(y) {
+                for x in x..x + w {
+                    if x < row.len() {
+                        row[x].hyperlink = url.clone();
+                    }
+                }
+            }
+        }
+    }
+
     fn set_text_row_chars<I>(&mut self, mut x: usize, y: usize, chars: I, style: CanvasTextStyle)
     where
         I: IntoIterator<Item = char>,
@@ -271,6 +285,7 @@ impl Canvas {
         let row = self.row(y);
 
         let mut background_color = None;
+        let mut hyperlink: Option<Arc<str>> = None;
         let mut text_style = CanvasTextStyle::default();
         let mut col = 0;
         let mut did_clear_line = false;
@@ -341,6 +356,10 @@ impl Canvas {
             }
 
             if ansi && col >= self.width {
+                if hyperlink.is_some() {
+                    write!(w, "\x1b]8;;\x1b\\")?; // close any open OSC 8 link
+                    hyperlink = None;
+                }
                 if background_color.is_some() {
                     write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
                     background_color = None;
@@ -359,6 +378,15 @@ impl Canvas {
                 background_color = cell.background_color;
             }
 
+            if ansi && cell.hyperlink != hyperlink {
+                // OSC 8: close the previous link, then open the new one (if any).
+                match &cell.hyperlink {
+                    Some(url) => write!(w, "\x1b]8;;{}\x1b\\", url)?,
+                    None => write!(w, "\x1b]8;;\x1b\\")?,
+                }
+                hyperlink = cell.hyperlink.clone();
+            }
+
             if let Some(c) = &cell.character {
                 write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
             } else {
@@ -366,6 +394,9 @@ impl Canvas {
             }
         }
         if ansi {
+            if hyperlink.is_some() {
+                write!(w, "\x1b]8;;\x1b\\")?; // close any open OSC 8 link
+            }
             if background_color.is_some() {
                 write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
             }
@@ -516,6 +547,27 @@ impl CanvasSubviewMut<'_> {
         );
     }
 
+    /// Sets the OSC 8 hyperlink for a rectangular region.
+    pub fn set_hyperlink(&mut self, x: isize, y: isize, w: usize, h: usize, url: Option<Arc<str>>) {
+        let mut left = self.x + x;
+        let mut top = self.y + y;
+        let mut right = left + w as isize;
+        let mut bottom = top + h as isize;
+
+        left = left.max(self.clip_x).max(0);
+        top = top.max(self.clip_y).max(0);
+        right = right.min(self.clip_x + self.clip_width as isize).max(0);
+        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
+
+        self.canvas.set_hyperlink(
+            left as _,
+            top as _,
+            (right - left).max(0) as _,
+            (bottom - top).max(0) as _,
+            url,
+        );
+    }
+
     /// Removes text from the region.
     pub fn clear_text(&mut self, x: isize, y: isize, w: usize, h: usize) {
         let mut left = self.x + x;
@@ -629,6 +681,32 @@ mod tests {
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
         // row 2
+        write!(expected, csi!("K")).unwrap();
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, "\r\n").unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_canvas_hyperlink() {
+        let mut canvas = Canvas::new(5, 1);
+        let url: Arc<str> = Arc::from("http://x");
+        {
+            let mut sub = canvas.subview_mut(0, 0, 0, 0, 5, 1);
+            sub.set_text(0, 0, "link", CanvasTextStyle::default());
+            sub.set_hyperlink(0, 0, 4, 1, Some(url.clone()));
+        }
+
+        let mut actual = Vec::new();
+        canvas.write_ansi(&mut actual).unwrap();
+
+        let mut expected = Vec::new();
+        write!(expected, csi!("0m")).unwrap();
+        // OSC 8 open, the linked text, then OSC 8 close before clearing the row.
+        write!(expected, "\x1b]8;;{url}\x1b\\").unwrap();
+        write!(expected, "link").unwrap();
+        write!(expected, "\x1b]8;;\x1b\\").unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
