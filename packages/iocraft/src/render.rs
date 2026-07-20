@@ -14,7 +14,7 @@ use core::{
     task::{self, Poll},
 };
 use futures::{
-    future::{select, FutureExt, LocalBoxFuture},
+    future::{select, Either, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
 };
 use std::io;
@@ -493,7 +493,11 @@ impl<'a> Tree<'a> {
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
-            select(self.root_component.wait().boxed(), term.wait().boxed()).await;
+            if let Either::Right((result, _)) =
+                select(self.root_component.wait().boxed(), term.wait().boxed()).await
+            {
+                result?;
+            }
             if term.received_ctrl_c() {
                 break;
             }
@@ -623,6 +627,18 @@ mod tests {
     async fn test_terminal_render_loop_send() {
         let (term, _output) = Terminal::mock(MockTerminalConfig::default());
         await_send_future(terminal_render_loop(&mut element!(MyComponent), term)).await;
+    }
+
+    #[apply(test!)]
+    async fn test_terminal_render_loop_propagates_input_errors() {
+        let term = Terminal::mock_with_event_error(io::Error::other("input failed"));
+
+        let error = terminal_render_loop(&mut element!(View), term)
+            .await
+            .expect_err("terminal input errors should stop the render loop");
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(error.to_string(), "input failed");
     }
 
     #[component]
