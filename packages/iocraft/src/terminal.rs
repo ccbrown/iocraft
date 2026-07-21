@@ -123,7 +123,7 @@ trait TerminalImpl: Write + Send {
     fn is_raw_mode_enabled(&self) -> bool;
     fn clear_canvas(&mut self) -> io::Result<()>;
     fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()>;
-    fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>>;
+    fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>>;
     fn dest(&mut self) -> &mut dyn Write;
     fn alt(&mut self) -> &mut dyn Write;
 }
@@ -354,7 +354,7 @@ impl TerminalImpl for StdTerminal<'_> {
         Ok(())
     }
 
-    fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
+    fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
         if !self.input_is_terminal {
             return Ok(stream::pending().boxed());
         }
@@ -364,21 +364,25 @@ impl TerminalImpl for StdTerminal<'_> {
         Ok(EventStream::new()
             .filter_map(|event| async move {
                 match event {
-                    Ok(Event::Key(event)) => Some(TerminalEvent::Key(KeyEvent {
+                    Ok(Event::Key(event)) => Some(Ok(TerminalEvent::Key(KeyEvent {
                         code: event.code,
                         modifiers: event.modifiers,
                         kind: event.kind,
-                    })),
+                    }))),
                     Ok(Event::Mouse(event)) => {
-                        Some(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
+                        Some(Ok(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
                             modifiers: event.modifiers,
                             column: event.column,
                             row: event.row,
                             kind: event.kind,
-                        }))
+                        })))
                     }
-                    Ok(Event::Resize(width, height)) => Some(TerminalEvent::Resize(width, height)),
-                    _ => None,
+                    Ok(Event::Resize(width, height)) => {
+                        Some(Ok(TerminalEvent::Resize(width, height)))
+                    }
+                    // Ignore crossterm events that iocraft does not expose.
+                    Ok(_) => None,
+                    Err(error) => Some(Err(error)),
                 }
             })
             .boxed())
@@ -552,10 +556,10 @@ impl TerminalImpl for MockTerminal {
         Ok(())
     }
 
-    fn event_stream(&mut self) -> io::Result<BoxStream<'static, TerminalEvent>> {
+    fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
         let mut events = stream::pending().boxed();
         mem::swap(&mut events, &mut self.config.events);
-        Ok(events.chain(stream::pending()).boxed())
+        Ok(events.map(Ok).chain(stream::pending()).boxed())
     }
 
     fn dest(&mut self) -> &mut dyn Write {
@@ -570,7 +574,7 @@ impl TerminalImpl for MockTerminal {
 pub(crate) struct Terminal<'a> {
     inner: Box<dyn TerminalImpl + 'a>,
     output: Output,
-    event_stream: Option<BoxStream<'static, TerminalEvent>>,
+    event_stream: Option<BoxStream<'static, io::Result<TerminalEvent>>>,
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
     received_ctrl_c: bool,
     ignore_ctrl_c: bool,
@@ -666,10 +670,11 @@ impl<'a> Terminal<'a> {
         f(t.inner)
     }
 
-    pub async fn wait(&mut self) {
+    pub async fn wait(&mut self) -> io::Result<()> {
         match &mut self.event_stream {
             Some(event_stream) => {
                 while let Some(event) = event_stream.next().await {
+                    let event = event?;
                     if !self.ignore_ctrl_c {
                         if let TerminalEvent::Key(KeyEvent {
                             code: KeyCode::Char('c'),
@@ -680,7 +685,7 @@ impl<'a> Terminal<'a> {
                             self.received_ctrl_c = true;
                         }
                         if self.received_ctrl_c {
-                            return;
+                            return Ok(());
                         }
                     }
                     self.subscribers.retain(|subscriber| {
@@ -696,6 +701,10 @@ impl<'a> Terminal<'a> {
                         }
                     });
                 }
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "terminal event stream ended",
+                ))
             }
             None => pending().await,
         }
@@ -728,6 +737,13 @@ impl Terminal<'static> {
             },
             output_stream,
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mock_with_event_error(error: io::Error) -> Self {
+        let (mut terminal, _output) = Self::mock(MockTerminalConfig::default());
+        terminal.event_stream = Some(stream::once(async move { Err(error) }).boxed());
+        terminal
     }
 }
 
