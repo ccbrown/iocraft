@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.4...iocraft-v0.8.5) - 2026-07-21
+
+### Fixed
+
+- propagate terminal input errors ([#218](https://github.com/ccbrown/iocraft/pull/218))
+- *(iocraft)* correct CSI final byte class and strip DCS/APC/PM sequences ([#214](https://github.com/ccbrown/iocraft/pull/214))
+
 ## [0.8.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.3...iocraft-v0.8.4) - 2026-07-13
 
 ### Added
