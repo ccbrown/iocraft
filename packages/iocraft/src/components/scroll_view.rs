@@ -135,6 +135,21 @@ fn clamp_offset(offset: i32, content_height: u16, viewport_height: u16) -> i32 {
     offset.clamp(0, max_offset(content_height, viewport_height))
 }
 
+fn user_scrolled_up_after_scroll(
+    user_scrolled_up: bool,
+    current_offset: i32,
+    new_offset: i32,
+    max_offset: i32,
+) -> bool {
+    if new_offset < current_offset {
+        true
+    } else if new_offset > current_offset && new_offset >= max_offset {
+        false
+    } else {
+        user_scrolled_up
+    }
+}
+
 const DEFAULT_SCROLL_STEP: u16 = 3;
 
 // -- Scrollbar component --
@@ -366,17 +381,26 @@ pub fn ScrollView<'a>(
             };
 
             if let Some(delta) = delta {
-                let new_offset =
-                    clamp_offset(scroll_offset.get() + delta, content_height.get(), vh.get());
+                let max = max_offset(content_height.get(), vh.get());
+                let current_offset = if auto_scroll && !user_scrolled_up.get() {
+                    max
+                } else {
+                    scroll_offset.get()
+                };
+                let new_offset = clamp_offset(
+                    current_offset.saturating_add(delta),
+                    content_height.get(),
+                    vh.get(),
+                );
                 scroll_offset.set(new_offset);
 
                 if auto_scroll {
-                    let max = max_offset(content_height.get(), vh.get());
-                    if delta < 0 {
-                        user_scrolled_up.set(true);
-                    } else if new_offset >= max {
-                        user_scrolled_up.set(false);
-                    }
+                    user_scrolled_up.set(user_scrolled_up_after_scroll(
+                        user_scrolled_up.get(),
+                        current_offset,
+                        new_offset,
+                        max,
+                    ));
                 }
             }
         }
@@ -519,6 +543,7 @@ fn ScrollViewContentMeasurer<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::user_scrolled_up_after_scroll;
     use crate::prelude::*;
     use futures::stream::{self, StreamExt};
     use macro_rules_attribute::apply;
@@ -633,6 +658,63 @@ mod tests {
 
         let output = canvases.last().unwrap().to_string();
         assert!(output.contains("Short"));
+    }
+
+    #[apply(test!)]
+    async fn test_auto_scroll_ignores_input_when_content_is_shorter_than_viewport() {
+        #[component]
+        fn ShortAutoScrollContent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let mut system = hooks.use_context_mut::<SystemContext>();
+            let mut done = hooks.use_state(|| false);
+
+            hooks.use_terminal_events(move |event| {
+                if let TerminalEvent::Key(KeyEvent {
+                    code: KeyCode::Char('q'),
+                    kind: KeyEventKind::Press,
+                    ..
+                }) = event
+                {
+                    done.set(true);
+                }
+            });
+
+            if done.get() {
+                system.exit();
+            }
+
+            element! {
+                View(width: 8, height: 6) {
+                    ScrollView(auto_scroll: true, scrollbar: Some(false)) {
+                        Text(content: "Line1\nLine2\nLine3")
+                    }
+                }
+            }
+        }
+
+        let baseline = element!(ShortAutoScrollContent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
+            ])))
+            .map(|canvas| canvas.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+        let after_scroll = element!(ShortAutoScrollContent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Up)),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
+            ])))
+            .map(|canvas| canvas.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+        assert_eq!(after_scroll.last(), baseline.last());
+    }
+
+    #[test]
+    fn test_auto_scroll_state_ignores_input_when_scroll_range_is_zero() {
+        assert!(user_scrolled_up_after_scroll(true, 0, 0, 0));
+        assert!(!user_scrolled_up_after_scroll(false, 0, 0, 0));
     }
 
     #[apply(test!)]
