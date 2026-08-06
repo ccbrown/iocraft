@@ -279,11 +279,13 @@ impl TerminalImpl for StdTerminal<'_> {
         let new_height = canvas.height();
         let max_height = prev_height.max(new_height);
         let mut current_y = prev_height.saturating_sub(1);
+        let mut after_first_change = false;
 
         for y in 0..max_height {
-            if prev.row_eq(canvas, y) {
+            if !after_first_change && prev.row_eq(canvas, y) {
                 continue;
             }
+            after_first_change = true;
             // If a changed row has scrolled off the top of the visible area,
             // we can't reach it with cursor movement — fall back to full rewrite.
             if let Some((_cols, term_h)) = self.size {
@@ -803,6 +805,22 @@ mod tests {
         let writer = TestWriter::default();
         let buf = writer.buf.clone();
         (writer, buf)
+    }
+
+    fn canvas_from_rows(rows: &[&str]) -> Canvas {
+        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+        let mut c = Canvas::new(width, rows.len());
+        for (y, row) in rows.iter().enumerate() {
+            if !row.is_empty() {
+                c.subview_mut(0, 0, 0, 0, width, rows.len()).set_text(
+                    0,
+                    y as isize,
+                    row,
+                    CanvasTextStyle::default(),
+                );
+            }
+        }
+        c
     }
 
     #[test]
@@ -1516,6 +1534,34 @@ mod tests {
         assert_eq!(vt.line(1).text(), "ccc       ");
         assert_eq!(vt.line(2).text(), "ddd       ");
         assert_eq!(vt.cursor().row, 2, "cursor on last row of final canvas");
+    }
+
+    #[test]
+    fn test_inline_no_duplicate_when_blank_row_shifts_down() {
+        let prev = canvas_from_rows(&["text1", "", "text2"]);
+        let next = canvas_from_rows(&["text1", "text_new", "", "text2"]);
+
+        // Terminal is 5 rows tall — taller than both canvases, so no scroll.
+        let (_diff, vt) = inline_diff_vt(&prev, &next, (10, 5));
+
+        let mut seen: Vec<String> = Vec::new();
+        for line in vt.lines() {
+            let text = line.text().trim().to_string();
+            if !text.is_empty() {
+                seen.push(text);
+            }
+        }
+
+        assert_eq!(
+            seen.iter().filter(|l| *l == "text2").count(),
+            1,
+            "text2 must appear exactly once: {seen:?}"
+        );
+        assert_eq!(
+            seen,
+            ["text1", "text_new", "text2"],
+            "expected ordered lines"
+        );
     }
 
     #[test]
