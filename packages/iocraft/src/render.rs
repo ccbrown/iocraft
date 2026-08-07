@@ -410,7 +410,7 @@ impl<'a> Tree<'a> {
                 .set_style(
                     self.wrapper_node_id,
                     Style {
-                        max_size: Size {
+                        size: Size {
                             width: Dimension::Length(w as _),
                             height: Dimension::Auto,
                         },
@@ -762,5 +762,16 @@ mod tests {
         .render(Some(10));
         assert_eq!(canvas.width(), 10);
         assert!(canvas.height() > 1, "text should wrap");
+    }
+
+    #[test]
+    fn test_full_width_expands_to_terminal_width() {
+        let canvas = element! {
+            View(width: 100pct, border_style: BorderStyle::Single) {
+                Text(content: "short", wrap: TextWrap::Wrap)
+            }
+        }
+        .render(Some(10));
+        assert_eq!(canvas.get_text(0, 1, 10, 1), "│short   │");
     }
 }
