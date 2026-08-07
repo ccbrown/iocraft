@@ -1100,7 +1100,7 @@ line two
         let b = Canvas::new(10, 2);
 
         // row 1 is out of bounds for a, but exists (empty) in b
-        assert!(a.row_eq(&b, 1));
+        assert!(!a.row_eq(&b, 1));
     }
 
     #[test]
