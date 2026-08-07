@@ -19,7 +19,8 @@ use futures::{
 };
 use std::io;
 use taffy::{
-    AvailableSpace, Display, Layout, NodeId, Overflow, Point, Rect, Size, Style, TaffyTree,
+    AvailableSpace, Dimension, Display, Layout, NodeId, Overflow, Point, Rect, Size, Style,
+    TaffyTree,
 };
 
 pub(crate) struct UpdateContext<'a, 'w> {
@@ -402,6 +403,23 @@ impl<'a> Tree<'a> {
             .set_children(self.wrapper_node_id, &wrapper_child_node_ids)
             .expect("we should be able to set the children");
 
+        // Set wrapper max width for `width: 100pct` to work because available_space in
+        // compute_layout_with_measure is not enough:
+        if let Some(w) = max_width {
+            self.layout_engine
+                .set_style(
+                    self.wrapper_node_id,
+                    Style {
+                        max_size: Size {
+                            width: Dimension::Length(w as _),
+                            height: Dimension::Auto,
+                        },
+                        ..Default::default()
+                    },
+                )
+                .expect("we should be able to set the style");
+        }
+
         self.layout_engine
             .compute_layout_with_measure(
                 self.wrapper_node_id,
@@ -732,5 +750,17 @@ mod tests {
         }
         .to_string();
         assert_eq!(actual, "\n\n\n\n\n",);
+    }
+
+    #[test]
+    fn test_root_full_width_clamps_to_terminal_width() {
+        let canvas = element! {
+            View(width: 100pct) {
+                Text(content: "12345678901234567890", wrap: TextWrap::Wrap)
+            }
+        }
+        .render(Some(10));
+        assert_eq!(canvas.width(), 10);
+        assert!(canvas.height() > 1, "text should wrap");
     }
 }
