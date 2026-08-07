@@ -248,12 +248,12 @@ impl Canvas {
         }
     }
 
-    fn row(&self, y: usize) -> &[CanvasCell] {
+    fn row(&self, y: usize) -> Option<&[CanvasCell]> {
         let Some(row) = self.cells.get(y) else {
-            return &[];
+            return None;
         };
         let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
-        &row[..last_non_empty.map_or(0, |i| i + 1)]
+        Some(&row[..last_non_empty.map_or(0, |i| i + 1)])
     }
 
     pub(crate) fn row_eq(&self, other: &Self, y: usize) -> bool {
@@ -268,7 +268,7 @@ impl Canvas {
     /// so consecutive calls (or any subsequent writer use) start from a clean
     /// state.
     fn write_row_impl<W: Write>(&self, y: usize, mut w: W, ansi: bool) -> io::Result<()> {
-        let row = self.row(y);
+        let row = self.row(y).unwrap_or(&[]);
 
         let mut background_color = None;
         let mut text_style = CanvasTextStyle::default();
