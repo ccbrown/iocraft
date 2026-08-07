@@ -249,9 +249,7 @@ impl Canvas {
     }
 
     fn row(&self, y: usize) -> Option<&[CanvasCell]> {
-        let Some(row) = self.cells.get(y) else {
-            return None;
-        };
+        let row = self.cells.get(y)?;
         let last_non_empty = row.iter().rposition(|cell| !cell.is_empty());
         Some(&row[..last_non_empty.map_or(0, |i| i + 1)])
     }
