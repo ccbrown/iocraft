@@ -26,6 +26,9 @@ pub struct MixedTextContent {
 
     /// Whether to invert the text's foreground and background colors.
     pub invert: bool,
+
+    /// The OSC 8 hyperlink target, if the text is a link.
+    pub hyperlink: Option<String>,
 }
 
 impl MixedTextContent {
@@ -64,6 +67,12 @@ impl MixedTextContent {
     /// Returns a new [`MixedTextContent`] with inverted foreground and background colors.
     pub fn invert(mut self) -> Self {
         self.invert = true;
+        self
+    }
+
+    /// Returns a new [`MixedTextContent`] wrapped in the given OSC 8 hyperlink.
+    pub fn hyperlink(mut self, url: impl ToString) -> Self {
+        self.hyperlink = Some(url.to_string());
         self
     }
 }
@@ -169,6 +178,7 @@ impl Component for MixedText {
                 drawer.append_lines(
                     [format!("{:width$}", "", width = additional_padding as usize).as_str()],
                     CanvasTextStyle::default(),
+                    None,
                 );
             }
             let mut segments = line.segments.into_iter().peekable();
@@ -182,9 +192,9 @@ impl Component for MixedText {
                     invert: content.invert,
                 };
                 if segments.peek().is_some() {
-                    drawer.append_lines([segment.text], style);
+                    drawer.append_lines([segment.text], style, content.hyperlink.as_deref());
                 } else {
-                    drawer.append_lines([segment.text, ""], style);
+                    drawer.append_lines([segment.text, ""], style, content.hyperlink.as_deref());
                 }
             }
         }
@@ -211,6 +221,28 @@ mod tests {
             .to_string(),
             "this is a\nwrapping test\n"
         );
+    }
+
+    #[test]
+    fn test_mixed_text_hyperlink() {
+        let mut out = Vec::new();
+        element! {
+            View(width: 30) {
+                MixedText(contents: vec![
+                    MixedTextContent::new("click "),
+                    MixedTextContent::new("here").hyperlink("http://example.org"),
+                ])
+            }
+        }
+        .render(None)
+        .write_ansi(&mut out)
+        .unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(
+            s.contains("\x1b]8;;http://example.org\x1b\\here\x1b]8;;\x1b\\"),
+            "must wrap text in OSC 8: {s:?}"
+        );
+        assert!(s.contains("click"), "non-link text kept: {s:?}");
     }
 
     #[test]
