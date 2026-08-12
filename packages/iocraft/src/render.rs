@@ -516,7 +516,7 @@ impl<'a> Tree<'a> {
             {
                 result?;
             }
-            if term.received_ctrl_c() {
+            if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
         }
