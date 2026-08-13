@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.4...iocraft-v0.8.5) - 2026-08-13
+
+### Added
+
+- add auto_grow prop to TextInput for content-driven height ([#225](https://github.com/ccbrown/iocraft/pull/225))
+- *(iocraft)* support OSC 8 hyperlinks in the canvas ([#216](https://github.com/ccbrown/iocraft/pull/216))
+
+### Fixed
+
+- check should_exit after select in terminal_render_loop ([#226](https://github.com/ccbrown/iocraft/pull/226))
+- set max width to enable full width layout ([#223](https://github.com/ccbrown/iocraft/pull/223))
+- don't consider empty rows equal to non-existent rows ([#222](https://github.com/ccbrown/iocraft/pull/222))
+- *(scroll-view)* preserve auto-scroll state on no-op input ([#220](https://github.com/ccbrown/iocraft/pull/220))
+- propagate terminal input errors ([#218](https://github.com/ccbrown/iocraft/pull/218))
+- *(iocraft)* correct CSI final byte class and strip DCS/APC/PM sequences ([#214](https://github.com/ccbrown/iocraft/pull/214))
+
+### Other
+
+- Implement Hyperlinks in Text and MixedText ([#224](https://github.com/ccbrown/iocraft/pull/224))
+
 ## [0.8.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.3...iocraft-v0.8.4) - 2026-07-13
 
 ### Added
