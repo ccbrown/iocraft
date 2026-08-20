@@ -1,11 +1,13 @@
 use crate::{
     any_key::AnyKey,
+    backend::TerminalBackend,
     component::{Component, ComponentHelper, ComponentHelperExt},
     mock_terminal_render_loop,
     props::AnyProps,
-    render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
+    render,
+    terminal::{default_terminal_size, default_terminal_write},
+    terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
-use crossterm::terminal;
 use futures::Stream;
 use std::{
     fmt::Debug,
@@ -152,6 +154,43 @@ mod private {
     impl<T> Sealed for &mut Element<'_, T> where T: Component {}
 }
 
+/// Renders `el` sized to the terminal width when `is_terminal` is true and the
+/// terminal size can be determined, writing ANSI escape codes. When no terminal
+/// backend is compiled in, it is written unstyled, without width constraints. A
+/// genuine failure to query the size of a real terminal is propagated.
+fn write_sized_or_plain<E: ElementExt, W: Write>(
+    el: &mut E,
+    w: W,
+    is_terminal: bool,
+) -> io::Result<()> {
+    write_sized_or_plain_with(el, w, is_terminal, default_terminal_size)
+}
+
+/// Core of [`write_sized_or_plain`] with the size source injected, so the
+/// fallback-vs-propagate logic can be tested without a real terminal.
+fn write_sized_or_plain_with<E: ElementExt, W: Write>(
+    el: &mut E,
+    w: W,
+    is_terminal: bool,
+    size: impl FnOnce() -> io::Result<(u16, u16)>,
+) -> io::Result<()> {
+    if is_terminal {
+        match size() {
+            Ok((width, _)) => {
+                let canvas = el.render(Some(width as _));
+                return default_terminal_write(&canvas, w);
+            }
+            // No backend is compiled in to report a size; fall back to plain,
+            // unconstrained output rather than failing.
+            Err(e) if e.kind() == io::ErrorKind::Unsupported => {}
+            // The terminal exists but its size couldn't be determined; surface
+            // it, matching the pre-backend behavior.
+            Err(e) => return Err(e),
+        }
+    }
+    el.write(w)
+}
+
 /// A trait implemented by all element types, providing methods for common operations on them.
 pub trait ElementExt: private::Sealed + Sized {
     /// Returns the key of the element.
@@ -191,31 +230,23 @@ pub trait ElementExt: private::Sealed + Sized {
         canvas.write(w)
     }
 
-    /// Renders the element and writes it to the given raw file descriptor. If the file descriptor
-    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes.
+    /// Renders the element and writes it to the given file descriptor. If the file descriptor
+    /// is a TTY, the canvas will be rendered based on its size, with ANSI escape codes. When no
+    /// terminal backend is compiled in, the output is written unstyled, without width
+    /// constraints.
     #[cfg(unix)]
-    fn write_to_raw_fd<F: Write + std::os::fd::AsRawFd>(&mut self, fd: F) -> io::Result<()> {
-        use crossterm::tty::IsTty;
-        if fd.is_tty() {
-            let (width, _) = terminal::size()?;
-            let canvas = self.render(Some(width as _));
-            canvas.write_ansi(fd)
-        } else {
-            self.write(fd)
-        }
+    fn write_to_raw_fd<F: Write + std::os::fd::AsFd>(&mut self, fd: F) -> io::Result<()> {
+        let is_terminal = fd.as_fd().is_terminal();
+        write_sized_or_plain(self, fd, is_terminal)
     }
 
     /// Renders the element and writes it to the given writer also implementing
     /// [`IsTerminal`](std::io::IsTerminal). If the writer is a terminal, the canvas will be
-    /// rendered based on its size, with ANSI escape codes.
+    /// rendered based on its size, with ANSI escape codes. When no terminal backend is compiled
+    /// in, the output is written unstyled, without width constraints.
     fn write_to_is_terminal<W: Write + IsTerminal>(&mut self, w: W) -> io::Result<()> {
-        if w.is_terminal() {
-            let (width, _) = terminal::size()?;
-            let canvas = self.render(Some(width as _));
-            canvas.write_ansi(w)
-        } else {
-            self.write(w)
-        }
+        let is_terminal = w.is_terminal();
+        write_sized_or_plain(self, w, is_terminal)
     }
 
     /// Returns a future which renders the element in a loop, allowing it to be dynamic and
@@ -305,6 +336,7 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
         output: Output,
         stdout_writer: Option<Box<dyn Write + Send + 'a>>,
         stderr_writer: Option<Box<dyn Write + Send + 'a>>,
+        backend: Option<Box<dyn TerminalBackend + 'a>>,
         element: &'a mut E,
     },
     Running(Pin<Box<dyn Future<Output = io::Result<()>> + Send + 'a>>),
@@ -329,6 +361,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
                 output: Output::default(),
                 stdout_writer: None,
                 stderr_writer: None,
+                backend: None,
                 element,
             },
         }
@@ -383,6 +416,24 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
                 *ignore_ctrl_c = true;
             }
             _ => panic!("ignore_ctrl_c() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Uses `backend` for rendering, terminal sizing, input, mouse capture,
+    /// synchronized updates, and passthrough output.
+    ///
+    /// The backend replaces iocraft's built-in crossterm backend. It is also
+    /// responsible for any backend-specific initialization and cleanup. The
+    /// configured fullscreen and mouse-capture settings are passed to it when
+    /// the render loop starts; output stream settings only apply to the
+    /// built-in backend.
+    pub fn backend<B: TerminalBackend + 'a>(mut self, backend: B) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { backend: b, .. } => {
+                *b = Some(Box::new(backend));
+            }
+            _ => panic!("backend() must be called before polling the future"),
         }
         self
     }
@@ -469,6 +520,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         output,
                         stdout_writer,
                         stderr_writer,
+                        backend,
                         element,
                     ) = match std::mem::replace(&mut self.state, RenderLoopFutureState::Empty) {
                         RenderLoopFutureState::Init {
@@ -478,6 +530,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                             output,
                             stdout_writer,
                             stderr_writer,
+                            backend,
                             element,
                         } => (
                             fullscreen,
@@ -486,27 +539,29 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                             output,
                             stdout_writer,
                             stderr_writer,
+                            backend,
                             element,
                         ),
                         _ => unreachable!(),
                     };
                     let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
-                    let stdout_handle = stdout_writer.unwrap_or_else(|| Box::new(stdout()));
-                    // Unlike stdout, stderr is unbuffered by default in the standard library
-                    let stderr_handle =
-                        stderr_writer.unwrap_or_else(|| Box::new(LineWriter::new(stderr())));
-
-                    let mut terminal = match Terminal::new(
-                        stdout_handle,
-                        stderr_handle,
-                        output,
-                        fullscreen,
-                        effective_mouse_capture,
-                    ) {
-                        Ok(t) => t,
-                        Err(e) => return std::task::Poll::Ready(Err(e)),
+                    let mut terminal = match backend {
+                        Some(backend) => Terminal::with_backend(backend),
+                        None => {
+                            let stdout_handle = stdout_writer.unwrap_or_else(|| Box::new(stdout()));
+                            // Unlike stdout, stderr is unbuffered by default in the standard library
+                            let stderr_handle = stderr_writer
+                                .unwrap_or_else(|| Box::new(LineWriter::new(stderr())));
+                            match Terminal::new(stdout_handle, stderr_handle, output) {
+                                Ok(t) => t,
+                                Err(e) => return std::task::Poll::Ready(Err(e)),
+                            }
+                        }
                     };
-                    if effective_mouse_capture && !fullscreen {
+                    if let Err(e) = terminal.set_fullscreen(fullscreen) {
+                        return std::task::Poll::Ready(Err(e));
+                    }
+                    if effective_mouse_capture {
                         if let Err(e) = terminal.enable_mouse_capture() {
                             return std::task::Poll::Ready(Err(e));
                         }
@@ -613,9 +668,88 @@ where
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use futures::Future;
+    use futures::{stream, stream::BoxStream, Future, StreamExt};
+    use std::{
+        io,
+        sync::{Arc, Mutex},
+    };
 
-    #[allow(clippy::unnecessary_mut_passed)]
+    struct RecordingBackend {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+        canvases: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RecordingBackend {
+        fn record(&self, call: &'static str) {
+            self.calls.lock().unwrap().push(call);
+        }
+    }
+
+    impl TerminalBackend for RecordingBackend {
+        fn refresh_size(&mut self) {
+            self.record("refresh_size");
+        }
+
+        fn size(&self) -> Option<(u16, u16)> {
+            self.record("size");
+            Some((42, 7))
+        }
+
+        fn set_fullscreen(&mut self, enabled: bool) -> io::Result<()> {
+            assert!(enabled);
+            self.record("set_fullscreen");
+            Ok(())
+        }
+
+        fn set_mouse_capture(&mut self, enabled: bool) -> io::Result<()> {
+            assert!(enabled);
+            self.record("set_mouse_capture");
+            Ok(())
+        }
+
+        fn begin_frame(&mut self) -> io::Result<()> {
+            self.record("begin_frame");
+            Ok(())
+        }
+
+        fn end_frame(&mut self) -> io::Result<()> {
+            self.record("end_frame");
+            Ok(())
+        }
+
+        fn clear_canvas(&mut self) -> io::Result<()> {
+            self.record("clear_canvas");
+            Ok(())
+        }
+
+        fn write_canvas(&mut self, _prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
+            self.record("write_canvas");
+            self.canvases.lock().unwrap().push(canvas.to_string());
+            Ok(())
+        }
+
+        fn print_above(&mut self, messages: &[Passthrough<'_>]) -> io::Result<()> {
+            assert_eq!(messages.len(), 1);
+            self.record("print_above");
+            Ok(())
+        }
+
+        fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
+            self.record("event_stream");
+            Ok(stream::pending().boxed())
+        }
+    }
+
+    #[component]
+    fn CustomBackendComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let size = hooks.use_terminal_size();
+        let (stdout, _) = hooks.use_output();
+        stdout.println("above");
+        hooks.use_context_mut::<SystemContext>().exit();
+        element!(Text(content: format!("{}x{}", size.0, size.1)))
+    }
+
+    #[allow(clippy::needless_borrow, clippy::unnecessary_mut_passed)]
     #[test]
     fn test_element() {
         let mut view_element = element!(View);
@@ -650,5 +784,69 @@ mod tests {
         let mut element = element!(View);
         let render_loop_future = element.render_loop();
         assert_send(render_loop_future);
+    }
+
+    #[test]
+    fn test_render_loop_uses_custom_backend_for_all_terminal_operations() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let canvases = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: calls.clone(),
+            canvases: canvases.clone(),
+        };
+        let mut element = element!(CustomBackendComponent);
+
+        smol::block_on(element.render_loop().fullscreen().backend(backend)).unwrap();
+
+        assert_eq!(canvases.lock().unwrap().as_slice(), ["42x7\n"]);
+        let calls = calls.lock().unwrap();
+        for expected in [
+            "set_fullscreen",
+            "set_mouse_capture",
+            "refresh_size",
+            "size",
+            "begin_frame",
+            "event_stream",
+            "clear_canvas",
+            "print_above",
+            "write_canvas",
+            "end_frame",
+        ] {
+            assert!(
+                calls.contains(&expected),
+                "missing backend call: {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_write_sized_or_plain_size_error_handling() {
+        use super::write_sized_or_plain_with;
+        use std::io;
+
+        // A genuine failure to size a real terminal is propagated, rather than
+        // silently downgrading to unstyled output.
+        let mut el = element!(View);
+        let mut out = Vec::new();
+        let err = write_sized_or_plain_with(&mut el, &mut out, true, || {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "no size"))
+        })
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        // When no backend can report a size (Unsupported), fall back to plain
+        // output without error.
+        let mut out = Vec::new();
+        write_sized_or_plain_with(&mut el, &mut out, true, || {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "no backend"))
+        })
+        .unwrap();
+
+        // A non-terminal writer never queries the size and writes plain output.
+        let mut out = Vec::new();
+        write_sized_or_plain_with(&mut el, &mut out, false, || {
+            panic!("size must not be queried for a non-terminal")
+        })
+        .unwrap();
     }
 }

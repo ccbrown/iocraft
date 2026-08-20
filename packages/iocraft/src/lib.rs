@@ -103,10 +103,13 @@
 // Those types will remain in their modules for the public API.
 
 mod any_key;
+pub mod backend;
 mod canvas;
+mod color;
 mod component;
 mod context;
 mod element;
+mod event;
 mod handler;
 mod hook;
 mod multimap;
@@ -119,6 +122,7 @@ mod terminal;
 pub(crate) mod unicode_linebreak;
 
 mod flattened_exports {
+    pub use crate::backend::*;
     pub use crate::canvas::*;
     pub use crate::component::*;
     pub use crate::context::*;

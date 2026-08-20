@@ -1,9 +1,6 @@
-use crate::{canvas::Canvas, element::Output};
-use crossterm::{
-    cursor,
-    event::{self, Event, EventStream},
-    terminal, ExecutableCommand, QueueableCommand,
-};
+use crate::backend::{Passthrough, TerminalBackend};
+use crate::canvas::Canvas;
+use crate::element::Output;
 use futures::{
     channel::mpsc,
     future::pending,
@@ -11,15 +8,26 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    io::{self, stdin, IsTerminal, Write},
+    io::{self, Write},
     mem,
     pin::Pin,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
 };
 
-// Re-exports for basic types.
-pub use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers, MouseEventKind};
+#[cfg(feature = "crossterm")]
+use crossterm::{
+    cursor,
+    event::{self, Event, EventStream},
+    terminal, ExecutableCommand, QueueableCommand,
+};
+#[cfg(feature = "crossterm")]
+use std::io::{stdin, IsTerminal};
+
+// Re-exports for basic input event types (owned by iocraft; see `crate::event`).
+pub use crate::event::{
+    KeyCode, KeyEventKind, KeyModifiers, MediaKeyCode, ModifierKeyCode, MouseButton, MouseEventKind,
+};
 
 /// An event fired when a key is pressed.
 #[non_exhaustive]
@@ -111,23 +119,7 @@ impl Stream for TerminalEvents {
     }
 }
 
-trait TerminalImpl: Write + Send {
-    fn refresh_size(&mut self) {}
-    fn size(&self) -> Option<(u16, u16)> {
-        None
-    }
-    fn set_mouse_capture(&mut self, _enabled: bool) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn is_raw_mode_enabled(&self) -> bool;
-    fn clear_canvas(&mut self) -> io::Result<()>;
-    fn write_canvas(&mut self, prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()>;
-    fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>>;
-    fn dest(&mut self) -> &mut dyn Write;
-    fn alt(&mut self) -> &mut dyn Write;
-}
-
+#[cfg(feature = "crossterm")]
 fn clear_canvas_inline(
     dest: &mut (impl Write + ?Sized),
     prev_canvas_height: u16,
@@ -144,10 +136,17 @@ fn clear_canvas_inline(
     }
 }
 
-struct StdTerminal<'a> {
+/// A [`TerminalBackend`] that renders ANSI escape sequences to stdout/stderr
+/// via crossterm. This is iocraft's default backend.
+#[cfg(feature = "crossterm")]
+pub(crate) struct CrosstermBackend<'a> {
     input_is_terminal: bool,
+    /// The render destination (whichever of stdout/stderr `output` selects).
     dest: Box<dyn Write + Send + 'a>,
+    /// The other standard stream.
     alt: Box<dyn Write + Send + 'a>,
+    /// Which standard stream `dest` corresponds to.
+    output: Output,
     fullscreen: bool,
     mouse_capture: bool,
     raw_mode_enabled: bool,
@@ -157,25 +156,150 @@ struct StdTerminal<'a> {
     prev_canvas_height: u16,
     prev_size_on_write: Option<(u16, u16)>,
     size: Option<(u16, u16)>,
+    /// Column recorded after a no-newline passthrough write, so the next
+    /// `print_above` can re-anchor the cursor. See [`Self::print_above`].
+    ///
+    /// This is deliberately backend-wide rather than per `use_output` hook:
+    /// there is only one physical cursor, so output from different hooks
+    /// interleaves the same way plain `print!`/`println!` calls would.
+    passthrough_appended_newline: Option<u16>,
 }
 
-impl Write for StdTerminal<'_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.dest.write(buf)
+#[cfg(feature = "crossterm")]
+impl CrosstermBackend<'_> {
+    /// Returns the writer for the given standard stream. `dest` is the render
+    /// target; the other stream is `alt`.
+    fn stream_writer(&mut self, stream: Output) -> &mut (dyn Write + Send) {
+        if stream == self.output {
+            &mut *self.dest
+        } else {
+            &mut *self.alt
+        }
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.dest.flush()
+    /// The fallible body of [`TerminalBackend::print_above`]. Per-message
+    /// writes are best effort: a failed message doesn't prevent later messages
+    /// (possibly bound for the other stream) from being written. Returns the
+    /// first error encountered.
+    fn print_above_impl(&mut self, messages: &[Passthrough<'_>]) -> io::Result<()> {
+        let needs_carriage_returns = self.raw_mode_enabled;
+        let newline: &[u8] = if needs_carriage_returns {
+            b"\r\n"
+        } else {
+            b"\n"
+        };
+
+        // If we appended a newline after the last no-newline message, move back
+        // up to that column so this batch continues where it left off.
+        if let Some(col) = self.passthrough_appended_newline {
+            self.dest
+                .queue(cursor::MoveUp(1))
+                .and_then(|w| w.queue(cursor::MoveRight(col)))?;
+        }
+        // Flush the render stream so its escape sequences are emitted before any
+        // cross-stream writes (e.g. stdout messages when rendering to stderr).
+        self.dest.flush()?;
+
+        let mut needs_extra_newline = self.passthrough_appended_newline.is_some();
+        let mut first_err = None;
+
+        for msg in messages {
+            let w = self.stream_writer(msg.stream);
+            let mut result =
+                write_passthrough_content(&mut *w, &msg.content, needs_carriage_returns);
+            if result.is_ok() && msg.newline {
+                result = w.write_all(newline);
+            }
+            match result {
+                Ok(()) => {
+                    if msg.newline {
+                        needs_extra_newline = false;
+                    } else if !msg.content.is_empty() {
+                        // `Passthrough` content without the newline flag never
+                        // ends with a newline (use_output normalizes it), so a
+                        // trailing newline must be appended and re-anchored.
+                        needs_extra_newline = true;
+                    }
+                }
+                Err(err) => {
+                    if first_err.is_none() {
+                        first_err = Some(err);
+                    }
+                }
+            }
+        }
+        if let Some(err) = first_err {
+            return Err(err);
+        }
+
+        if needs_extra_newline {
+            // Flush both streams so the terminal has processed everything before
+            // we query the cursor position, otherwise the recorded column would
+            // reflect stale state.
+            self.dest.flush()?;
+            self.alt.flush()?;
+            if let Ok(pos) = cursor::position() {
+                self.passthrough_appended_newline = Some(pos.0);
+                self.dest.write_all(newline)?;
+            } else {
+                self.passthrough_appended_newline = None;
+            }
+        } else {
+            self.passthrough_appended_newline = None;
+        }
+        Ok(())
     }
 }
 
-impl TerminalImpl for StdTerminal<'_> {
+/// Writes passthrough content, translating embedded `\n` to `\r\n` when the
+/// terminal is in raw mode, where a bare `\n` doesn't return the cursor to
+/// column 0 and multi-line content would stair-step.
+#[cfg(feature = "crossterm")]
+fn write_passthrough_content(
+    w: &mut (dyn Write + Send),
+    content: &str,
+    needs_carriage_returns: bool,
+) -> io::Result<()> {
+    if !needs_carriage_returns || !content.contains('\n') {
+        return w.write_all(content.as_bytes());
+    }
+    for (i, segment) in content.split('\n').enumerate() {
+        if i > 0 {
+            w.write_all(b"\r\n")?;
+        }
+        w.write_all(segment.as_bytes())?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "crossterm")]
+impl TerminalBackend for CrosstermBackend<'_> {
+    fn query_size() -> io::Result<(u16, u16)> {
+        terminal::size()
+    }
+
+    fn write_once<W: Write>(canvas: &Canvas, writer: W) -> io::Result<()> {
+        canvas.write_ansi(writer)
+    }
+
     fn refresh_size(&mut self) {
-        self.size = terminal::size().ok()
+        self.size = Self::query_size().ok()
     }
 
     fn size(&self) -> Option<(u16, u16)> {
         self.size
+    }
+
+    fn set_fullscreen(&mut self, enabled: bool) -> io::Result<()> {
+        if self.fullscreen != enabled {
+            if enabled {
+                self.dest.queue(terminal::EnterAlternateScreen)?;
+            } else {
+                self.dest.queue(terminal::LeaveAlternateScreen)?;
+            }
+            self.fullscreen = enabled;
+        }
+        Ok(())
     }
 
     fn set_mouse_capture(&mut self, enabled: bool) -> io::Result<()> {
@@ -190,10 +314,6 @@ impl TerminalImpl for StdTerminal<'_> {
             }
         }
         Ok(())
-    }
-
-    fn is_raw_mode_enabled(&self) -> bool {
-        self.raw_mode_enabled
     }
 
     fn clear_canvas(&mut self) -> io::Result<()> {
@@ -354,6 +474,30 @@ impl TerminalImpl for StdTerminal<'_> {
         Ok(())
     }
 
+    fn begin_frame(&mut self) -> io::Result<()> {
+        self.dest.execute(terminal::BeginSynchronizedUpdate)?;
+        Ok(())
+    }
+
+    fn end_frame(&mut self) -> io::Result<()> {
+        self.dest.execute(terminal::EndSynchronizedUpdate)?;
+        Ok(())
+    }
+
+    fn print_above(&mut self, messages: &[Passthrough<'_>]) -> io::Result<()> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+        let result = self.print_above_impl(messages);
+        if result.is_err() {
+            // After a failed or partial write the cursor position is unknown,
+            // so never re-anchor onto it. The worst case is a stray blank line
+            // rather than overwriting previously rendered output.
+            self.passthrough_appended_newline = None;
+        }
+        result
+    }
+
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
         if !self.input_is_terminal {
             return Ok(stream::pending().boxed());
@@ -365,16 +509,16 @@ impl TerminalImpl for StdTerminal<'_> {
             .filter_map(|event| async move {
                 match event {
                     Ok(Event::Key(event)) => Some(Ok(TerminalEvent::Key(KeyEvent {
-                        code: event.code,
-                        modifiers: event.modifiers,
-                        kind: event.kind,
+                        code: event.code.into(),
+                        modifiers: event.modifiers.into(),
+                        kind: event.kind.into(),
                     }))),
                     Ok(Event::Mouse(event)) => {
                         Some(Ok(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
-                            modifiers: event.modifiers,
+                            modifiers: event.modifiers.into(),
                             column: event.column,
                             row: event.row,
-                            kind: event.kind,
+                            kind: event.kind.into(),
                         })))
                     }
                     Ok(Event::Resize(width, height)) => {
@@ -387,23 +531,54 @@ impl TerminalImpl for StdTerminal<'_> {
             })
             .boxed())
     }
+}
 
-    fn dest(&mut self) -> &mut dyn Write {
-        &mut *self.dest
+/// Queries the size using the built-in backend without creating a render
+/// session. One-shot element rendering uses this so even its terminal access
+/// crosses the same backend boundary as render loops.
+pub(crate) fn default_terminal_size() -> io::Result<(u16, u16)> {
+    #[cfg(feature = "crossterm")]
+    {
+        <CrosstermBackend<'static> as TerminalBackend>::query_size()
     }
-
-    fn alt(&mut self) -> &mut dyn Write {
-        &mut *self.alt
+    #[cfg(not(feature = "crossterm"))]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "terminal size is unavailable without a terminal backend",
+        ))
     }
 }
 
-impl<'a> StdTerminal<'a> {
+/// Writes one canvas using the built-in backend without creating a render
+/// session.
+pub(crate) fn default_terminal_write<W: Write>(canvas: &Canvas, writer: W) -> io::Result<()> {
+    #[cfg(feature = "crossterm")]
+    {
+        <CrosstermBackend<'static> as TerminalBackend>::write_once(canvas, writer)
+    }
+    #[cfg(not(feature = "crossterm"))]
+    {
+        let _ = (canvas, writer);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "terminal output is unavailable without a terminal backend",
+        ))
+    }
+}
+
+#[cfg(feature = "crossterm")]
+impl<'a> CrosstermBackend<'a> {
     fn new(
-        dest: Box<dyn Write + Send + 'a>,
-        alt: Box<dyn Write + Send + 'a>,
-        fullscreen: bool,
-        mouse_capture: bool,
+        stdout: Box<dyn Write + Send + 'a>,
+        stderr: Box<dyn Write + Send + 'a>,
+        output: Output,
     ) -> io::Result<Self> {
+        // dest is the render destination, alt is the other stream
+        let (dest, alt) = match output {
+            Output::Stdout => (stdout, stderr),
+            Output::Stderr => (stderr, stdout),
+        };
         let input_is_terminal = stdin().is_terminal();
         // The probe blocks on a query response, and some terminals (e.g. WezTerm)
         // don't answer queries while a synchronized update is open — probing lazily
@@ -413,9 +588,10 @@ impl<'a> StdTerminal<'a> {
         let mut term = Self {
             dest,
             alt,
+            output,
             input_is_terminal,
-            fullscreen,
-            mouse_capture,
+            fullscreen: false,
+            mouse_capture: false,
             raw_mode_enabled: false,
             supports_keyboard_enhancement,
             enabled_keyboard_enhancement: false,
@@ -423,11 +599,9 @@ impl<'a> StdTerminal<'a> {
             prev_canvas_height: 0,
             size: None,
             prev_size_on_write: None,
+            passthrough_appended_newline: None,
         };
         term.dest.queue(cursor::Hide)?;
-        if fullscreen {
-            term.dest.queue(terminal::EnterAlternateScreen)?;
-        }
         Ok(term)
     }
 
@@ -459,7 +633,8 @@ impl<'a> StdTerminal<'a> {
     }
 }
 
-impl Drop for StdTerminal<'_> {
+#[cfg(feature = "crossterm")]
+impl Drop for CrosstermBackend<'_> {
     fn drop(&mut self) {
         let _ = self.set_raw_mode_enabled(false);
         if self.fullscreen {
@@ -512,8 +687,6 @@ impl Default for MockTerminalConfig {
 struct MockTerminal {
     config: MockTerminalConfig,
     output: mpsc::UnboundedSender<Canvas>,
-    dummy_dest: io::Sink,
-    dummy_alt: io::Sink,
 }
 
 impl MockTerminal {
@@ -524,29 +697,13 @@ impl MockTerminal {
             Self {
                 config,
                 output: output_tx,
-                dummy_dest: io::sink(),
-                dummy_alt: io::sink(),
             },
             output,
         )
     }
 }
 
-impl Write for MockTerminal {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl TerminalImpl for MockTerminal {
-    fn is_raw_mode_enabled(&self) -> bool {
-        false
-    }
-
+impl TerminalBackend for MockTerminal {
     fn clear_canvas(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -556,24 +713,20 @@ impl TerminalImpl for MockTerminal {
         Ok(())
     }
 
+    fn print_above(&mut self, _messages: &[Passthrough<'_>]) -> io::Result<()> {
+        // The mock terminal discards passthrough output.
+        Ok(())
+    }
+
     fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
         let mut events = stream::pending().boxed();
         mem::swap(&mut events, &mut self.config.events);
         Ok(events.map(Ok).chain(stream::pending()).boxed())
     }
-
-    fn dest(&mut self) -> &mut dyn Write {
-        &mut self.dummy_dest
-    }
-
-    fn alt(&mut self) -> &mut dyn Write {
-        &mut self.dummy_alt
-    }
 }
 
 pub(crate) struct Terminal<'a> {
-    inner: Box<dyn TerminalImpl + 'a>,
-    output: Output,
+    inner: Box<dyn TerminalBackend + 'a>,
     event_stream: Option<BoxStream<'static, io::Result<TerminalEvent>>>,
     subscribers: Vec<Weak<Mutex<TerminalEventsInner>>>,
     received_ctrl_c: bool,
@@ -581,26 +734,41 @@ pub(crate) struct Terminal<'a> {
 }
 
 impl<'a> Terminal<'a> {
-    pub fn new(
-        stdout: Box<dyn Write + Send + 'a>,
-        stderr: Box<dyn Write + Send + 'a>,
-        output: Output,
-        fullscreen: bool,
-        mouse_capture: bool,
-    ) -> io::Result<Self> {
-        // dest is the render destination, alt is the other stream
-        let (dest, alt) = match output {
-            Output::Stdout => (stdout, stderr),
-            Output::Stderr => (stderr, stdout),
-        };
-        Ok(Self {
-            inner: Box::new(StdTerminal::new(dest, alt, fullscreen, mouse_capture)?),
-            output,
+    /// Builds a terminal from an arbitrary [`TerminalBackend`].
+    pub fn with_backend(backend: Box<dyn TerminalBackend + 'a>) -> Self {
+        Self {
+            inner: backend,
             event_stream: None,
             subscribers: Vec::new(),
             received_ctrl_c: false,
             ignore_ctrl_c: false,
-        })
+        }
+    }
+
+    /// Builds a terminal backed by crossterm, rendering to `output` (with the
+    /// other stream available for passthrough writes).
+    #[cfg(feature = "crossterm")]
+    pub fn new(
+        stdout: Box<dyn Write + Send + 'a>,
+        stderr: Box<dyn Write + Send + 'a>,
+        output: Output,
+    ) -> io::Result<Self> {
+        Ok(Self::with_backend(Box::new(CrosstermBackend::new(
+            stdout, stderr, output,
+        )?)))
+    }
+
+    /// Without a terminal backend compiled in, construction always fails.
+    #[cfg(not(feature = "crossterm"))]
+    pub fn new(
+        _stdout: Box<dyn Write + Send + 'a>,
+        _stderr: Box<dyn Write + Send + 'a>,
+        _output: Output,
+    ) -> io::Result<Self> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "no terminal backend is enabled; enable the `crossterm` feature",
+        ))
     }
 
     pub fn enable_mouse_capture(&mut self) -> io::Result<()> {
@@ -611,12 +779,12 @@ impl<'a> Terminal<'a> {
         self.inner.set_mouse_capture(false)
     }
 
-    pub fn ignore_ctrl_c(&mut self) {
-        self.ignore_ctrl_c = true;
+    pub fn set_fullscreen(&mut self, enabled: bool) -> io::Result<()> {
+        self.inner.set_fullscreen(enabled)
     }
 
-    pub fn is_raw_mode_enabled(&self) -> bool {
-        self.inner.is_raw_mode_enabled()
+    pub fn ignore_ctrl_c(&mut self) {
+        self.ignore_ctrl_c = true;
     }
 
     pub fn refresh_size(&mut self) {
@@ -639,25 +807,9 @@ impl<'a> Terminal<'a> {
         self.received_ctrl_c
     }
 
-    /// Returns a mutable reference to the stdout handle.
-    pub fn stdout(&mut self) -> &mut dyn Write {
-        match self.output {
-            Output::Stdout => self.inner.dest(),
-            Output::Stderr => self.inner.alt(),
-        }
-    }
-
-    /// Returns a mutable reference to the stderr handle.
-    pub fn stderr(&mut self) -> &mut dyn Write {
-        match self.output {
-            Output::Stdout => self.inner.alt(),
-            Output::Stderr => self.inner.dest(),
-        }
-    }
-
-    /// Returns a mutable reference to the render output handle (stdout or stderr based on output setting).
-    pub fn render_output(&mut self) -> &mut dyn Write {
-        self.inner.dest()
+    /// Emits passthrough output above the rendered canvas (used by `use_output`).
+    pub fn print_above(&mut self, messages: &[Passthrough<'_>]) -> io::Result<()> {
+        self.inner.print_above(messages)
     }
 
     /// Wraps a series of terminal updates in a synchronized update block, making sure to end the
@@ -726,17 +878,7 @@ impl<'a> Terminal<'a> {
 impl Terminal<'static> {
     pub fn mock(config: MockTerminalConfig) -> (Self, MockTerminalOutputStream) {
         let (term, output_stream) = MockTerminal::new(config);
-        (
-            Self {
-                inner: Box::new(term),
-                output: Output::Stdout,
-                event_stream: None,
-                subscribers: Vec::new(),
-                received_ctrl_c: false,
-                ignore_ctrl_c: false,
-            },
-            output_stream,
-        )
+        (Self::with_backend(Box::new(term)), output_stream)
     }
 
     #[cfg(test)]
@@ -747,36 +889,26 @@ impl Terminal<'static> {
     }
 }
 
-impl Write for Terminal<'_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
-    }
-}
-
 /// Synchronized update terminal guard.
-/// Enters synchronized update on creation, exits when dropped.
+/// Begins a frame on creation, ends it when dropped (even on error or panic).
 pub(crate) struct SynchronizedUpdate<'a, 'b> {
     inner: &'a mut Terminal<'b>,
 }
 
 impl<'a, 'b> SynchronizedUpdate<'a, 'b> {
     pub fn begin(terminal: &'a mut Terminal<'b>) -> io::Result<Self> {
-        terminal.execute(terminal::BeginSynchronizedUpdate)?;
+        terminal.inner.begin_frame()?;
         Ok(Self { inner: terminal })
     }
 }
 
 impl Drop for SynchronizedUpdate<'_, '_> {
     fn drop(&mut self) {
-        let _ = self.inner.execute(terminal::EndSynchronizedUpdate);
+        let _ = self.inner.inner.end_frame();
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "crossterm"))]
 mod tests {
     use super::*;
     use crate::prelude::*;
@@ -813,15 +945,72 @@ mod tests {
             Box::new(std::io::stdout()),
             Box::new(std::io::stderr()),
             Output::Stdout,
-            false,
-            true,
         )
         .unwrap();
-        assert!(!terminal.is_raw_mode_enabled());
         assert!(!terminal.received_ctrl_c());
-        assert!(!terminal.is_raw_mode_enabled());
         let canvas = Canvas::new(10, 1);
         terminal.write_canvas(None, &canvas).unwrap();
+    }
+
+    #[test]
+    fn test_print_above_write_error_best_effort() {
+        struct FailingWriter;
+        impl Write for FailingWriter {
+            fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken pipe"))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let (dest, dest_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, 0);
+        term.alt = Box::new(FailingWriter);
+        term.passthrough_appended_newline = Some(3);
+
+        let messages = [
+            Passthrough {
+                stream: Output::Stderr, // the alt stream, which fails
+                content: "lost".into(),
+                newline: true,
+            },
+            Passthrough {
+                stream: Output::Stdout, // the render stream, which works
+                content: "kept".into(),
+                newline: true,
+            },
+        ];
+        let result = term.print_above(&messages);
+        assert!(result.is_err());
+
+        // Later messages must still be written after an earlier write fails.
+        let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
+        assert!(written.contains("kept"), "got: {written:?}");
+
+        // After an error the cursor position is unknown, so the re-anchor
+        // state must reset rather than go stale.
+        assert_eq!(term.passthrough_appended_newline, None);
+    }
+
+    #[test]
+    fn test_print_above_translates_newlines_in_raw_mode() {
+        let (dest, dest_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, 0);
+        term.raw_mode_enabled = true;
+
+        let messages = [Passthrough {
+            stream: Output::Stdout,
+            content: "line1\nline2".into(),
+            newline: true,
+        }];
+        term.print_above(&messages).unwrap();
+
+        // Embedded newlines must become \r\n in raw mode, or multi-line
+        // content stair-steps.
+        let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
+        assert_eq!(written, "line1\r\nline2\r\n");
+        assert_eq!(term.passthrough_appended_newline, None);
     }
 
     fn render_canvas_to_vt(canvas: &Canvas, cols: usize, rows: usize) -> avt::Vt {
@@ -960,7 +1149,7 @@ mod tests {
         let mut setup = Vec::new();
         write!(setup, "log\r\n").unwrap();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -994,7 +1183,7 @@ mod tests {
         canvas.write_ansi_without_final_newline(&mut setup).unwrap();
         write!(setup, "\r\ntail").unwrap();
         setup.queue(cursor::MoveTo(0, 0)).unwrap();
-        setup.extend_from_slice(&*clear_buf.lock().unwrap());
+        setup.extend_from_slice(&clear_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1009,11 +1198,12 @@ mod tests {
         dest: TestWriter,
         prev_canvas_top_row: u16,
         prev_canvas_height: u16,
-    ) -> StdTerminal<'static> {
-        StdTerminal {
+    ) -> CrosstermBackend<'static> {
+        CrosstermBackend {
             input_is_terminal: false,
             dest: Box::new(dest),
             alt: Box::new(io::sink()),
+            output: Output::Stdout,
             fullscreen: true,
             mouse_capture: false,
             raw_mode_enabled: false,
@@ -1023,10 +1213,11 @@ mod tests {
             prev_canvas_height,
             size: None,
             prev_size_on_write: None,
+            passthrough_appended_newline: None,
         }
     }
 
-    fn new_inline_term(dest: TestWriter, prev_canvas_height: u16) -> StdTerminal<'static> {
+    fn new_inline_term(dest: TestWriter, prev_canvas_height: u16) -> CrosstermBackend<'static> {
         new_inline_term_with_size(dest, prev_canvas_height, (10, 10))
     }
 
@@ -1034,11 +1225,12 @@ mod tests {
         dest: TestWriter,
         prev_canvas_height: u16,
         term_size: (u16, u16),
-    ) -> StdTerminal<'static> {
-        StdTerminal {
+    ) -> CrosstermBackend<'static> {
+        CrosstermBackend {
             input_is_terminal: false,
             dest: Box::new(dest),
             alt: Box::new(io::sink()),
+            output: Output::Stdout,
             fullscreen: false,
             mouse_capture: false,
             raw_mode_enabled: false,
@@ -1048,6 +1240,7 @@ mod tests {
             prev_canvas_height,
             size: Some(term_size),
             prev_size_on_write: None,
+            passthrough_appended_newline: None,
         }
     }
 
@@ -1089,7 +1282,7 @@ mod tests {
         // Build vt: render prev, then apply diff output.
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1121,7 +1314,7 @@ mod tests {
 
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1158,7 +1351,7 @@ mod tests {
 
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1232,7 +1425,7 @@ mod tests {
             write!(setup, "line{i}\r\n").unwrap();
         }
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, vt_rows);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1318,7 +1511,7 @@ mod tests {
 
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1362,7 +1555,7 @@ mod tests {
 
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*diff_buf.lock().unwrap());
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 5);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1507,7 +1700,7 @@ mod tests {
 
         let mut setup = Vec::new();
         c1.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*buf.lock().unwrap());
+        setup.extend_from_slice(&buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 6);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1550,7 +1743,7 @@ mod tests {
 
         let mut setup = Vec::new();
         c1.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*buf.lock().unwrap());
+        setup.extend_from_slice(&buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(10, 6);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1571,8 +1764,6 @@ mod tests {
                 Box::new(&mut stdout_buf),
                 Box::new(&mut stderr_buf),
                 Output::Stdout,
-                false,
-                true,
             )
             .unwrap();
             let canvas = Canvas::new(10, 1);
@@ -1627,7 +1818,7 @@ mod tests {
         // then apply the diff on top.
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*buf.lock().unwrap());
+        setup.extend_from_slice(&buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(width, height + 2);
         vt.feed_str(&String::from_utf8(setup).unwrap());
@@ -1664,7 +1855,7 @@ mod tests {
 
         let mut setup = Vec::new();
         prev.write_ansi_without_final_newline(&mut setup).unwrap();
-        setup.extend_from_slice(&*buf.lock().unwrap());
+        setup.extend_from_slice(&buf.lock().unwrap());
 
         let mut vt = avt::Vt::new(width, height + 4);
         vt.feed_str(&String::from_utf8(setup).unwrap());

@@ -2,7 +2,6 @@ use crate::{
     hooks::{UseState, UseTerminalEvents},
     Hooks, TerminalEvent,
 };
-use crossterm::terminal;
 
 mod private {
     pub trait Sealed {}
@@ -17,7 +16,8 @@ pub trait UseTerminalSize: private::Sealed {
 
 impl UseTerminalSize for Hooks<'_, '_> {
     fn use_terminal_size(&mut self) -> (u16, u16) {
-        let mut size = self.use_state(|| terminal::size().unwrap_or((0, 0)));
+        let initial_size = self.terminal_size().unwrap_or((0, 0));
+        let mut size = self.use_state(|| initial_size);
         self.use_terminal_events(move |event| {
             if let TerminalEvent::Resize(width, height) = event {
                 size.set((width, height));

@@ -195,7 +195,7 @@ impl Hook for UseTerminalEventsImpl {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use crossterm::event::MouseButton;
+    use crate::MouseButton;
     use futures::stream::{self, StreamExt};
     use macro_rules_attribute::apply;
     use smol_macros::test;
