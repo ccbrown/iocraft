@@ -10,6 +10,44 @@ use crate::{canvas::Canvas, element::Output, terminal::TerminalEvent};
 use futures::stream::BoxStream;
 use std::{borrow::Cow, io};
 
+#[cfg(not(feature = "crossterm"))]
+use std::io::Write;
+
+#[cfg(feature = "crossterm")]
+mod crossterm;
+
+#[cfg(feature = "crossterm")]
+pub(crate) use crossterm::{default_terminal_size, default_terminal_write, new_terminal_backend};
+
+#[cfg(not(feature = "crossterm"))]
+pub(crate) fn new_terminal_backend<'a>(
+    _stdout: Box<dyn Write + Send + 'a>,
+    _stderr: Box<dyn Write + Send + 'a>,
+    _output: Output,
+) -> io::Result<Box<dyn TerminalBackend + 'a>> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "no terminal backend is enabled; enable the `crossterm` feature",
+    ))
+}
+
+#[cfg(not(feature = "crossterm"))]
+pub(crate) fn default_terminal_size() -> io::Result<(u16, u16)> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "terminal size is unavailable without a terminal backend",
+    ))
+}
+
+#[cfg(not(feature = "crossterm"))]
+pub(crate) fn default_terminal_write<W: Write>(canvas: &Canvas, writer: W) -> io::Result<()> {
+    let _ = (canvas, writer);
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "terminal output is unavailable without a terminal backend",
+    ))
+}
+
 /// A single chunk of passthrough output to be emitted *above* the rendered UI
 /// via [`use_output`](crate::hooks::UseOutput).
 ///
@@ -18,8 +56,6 @@ use std::{borrow::Cow, io};
 /// grid backend might insert scrollback lines. The backend also chooses the
 /// line terminator (e.g. `\r\n` in raw mode) and must translate newlines
 /// embedded in the content to it.
-// Only the crossterm backend's `print_above` reads the fields today.
-#[cfg_attr(not(feature = "crossterm"), allow(dead_code))]
 #[derive(Clone, Debug)]
 pub struct Passthrough<'a> {
     /// Which standard stream this text should be written to.

@@ -18,7 +18,7 @@ pub(crate) use csi;
 /// This mirrors the color model used by common terminal libraries, but is
 /// owned by iocraft so that rendering backends do not have to depend on any
 /// particular one. When the `crossterm` feature is enabled, `From`/`Into`
-/// conversions to and from [`crossterm::style::Color`] are provided.
+/// conversions to and from `crossterm::style::Color` are provided.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Color {
     /// Resets the color to the terminal's default.
@@ -198,62 +198,6 @@ impl fmt::Display for SgrColor {
     }
 }
 
-#[cfg(feature = "crossterm")]
-impl From<Color> for crossterm::style::Color {
-    fn from(c: Color) -> Self {
-        use crossterm::style::Color as Ct;
-        match c {
-            Color::Reset => Ct::Reset,
-            Color::Black => Ct::Black,
-            Color::DarkGrey => Ct::DarkGrey,
-            Color::Red => Ct::Red,
-            Color::DarkRed => Ct::DarkRed,
-            Color::Green => Ct::Green,
-            Color::DarkGreen => Ct::DarkGreen,
-            Color::Yellow => Ct::Yellow,
-            Color::DarkYellow => Ct::DarkYellow,
-            Color::Blue => Ct::Blue,
-            Color::DarkBlue => Ct::DarkBlue,
-            Color::Magenta => Ct::Magenta,
-            Color::DarkMagenta => Ct::DarkMagenta,
-            Color::Cyan => Ct::Cyan,
-            Color::DarkCyan => Ct::DarkCyan,
-            Color::White => Ct::White,
-            Color::Grey => Ct::Grey,
-            Color::Rgb { r, g, b } => Ct::Rgb { r, g, b },
-            Color::AnsiValue(v) => Ct::AnsiValue(v),
-        }
-    }
-}
-
-#[cfg(feature = "crossterm")]
-impl From<crossterm::style::Color> for Color {
-    fn from(c: crossterm::style::Color) -> Self {
-        use crossterm::style::Color as Ct;
-        match c {
-            Ct::Reset => Color::Reset,
-            Ct::Black => Color::Black,
-            Ct::DarkGrey => Color::DarkGrey,
-            Ct::Red => Color::Red,
-            Ct::DarkRed => Color::DarkRed,
-            Ct::Green => Color::Green,
-            Ct::DarkGreen => Color::DarkGreen,
-            Ct::Yellow => Color::Yellow,
-            Ct::DarkYellow => Color::DarkYellow,
-            Ct::Blue => Color::Blue,
-            Ct::DarkBlue => Color::DarkBlue,
-            Ct::Magenta => Color::Magenta,
-            Ct::DarkMagenta => Color::DarkMagenta,
-            Ct::Cyan => Color::Cyan,
-            Ct::DarkCyan => Color::DarkCyan,
-            Ct::White => Color::White,
-            Ct::Grey => Color::Grey,
-            Ct::Rgb { r, g, b } => Color::Rgb { r, g, b },
-            Ct::AnsiValue(v) => Color::AnsiValue(v),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,51 +259,6 @@ mod tests {
                     "expected SGR params for {color:?} when enabled"
                 );
             }
-        }
-    }
-
-    #[cfg(feature = "crossterm")]
-    #[test]
-    fn crossterm_roundtrip_and_output_parity() {
-        let colors = [
-            Color::Reset,
-            Color::Black,
-            Color::DarkGrey,
-            Color::Red,
-            Color::DarkRed,
-            Color::Green,
-            Color::DarkGreen,
-            Color::Yellow,
-            Color::DarkYellow,
-            Color::Blue,
-            Color::DarkBlue,
-            Color::Magenta,
-            Color::DarkMagenta,
-            Color::Cyan,
-            Color::DarkCyan,
-            Color::White,
-            Color::Grey,
-            Color::Rgb {
-                r: 10,
-                g: 20,
-                b: 30,
-            },
-            Color::AnsiValue(123),
-        ];
-        for c in colors {
-            let ct: crossterm::style::Color = c.into();
-            assert_eq!(Color::from(ct), c, "roundtrip failed for {c:?}");
-            // Output must match crossterm's Colored exactly.
-            assert_eq!(
-                SgrColor::Foreground(c).to_string(),
-                crossterm::style::Colored::ForegroundColor(ct).to_string(),
-                "foreground SGR mismatch for {c:?}"
-            );
-            assert_eq!(
-                SgrColor::Background(c).to_string(),
-                crossterm::style::Colored::BackgroundColor(ct).to_string(),
-                "background SGR mismatch for {c:?}"
-            );
         }
     }
 }

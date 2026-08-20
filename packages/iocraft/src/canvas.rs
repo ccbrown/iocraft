@@ -265,8 +265,9 @@ impl Canvas {
         Some(&row[..last_non_empty.map_or(0, |i| i + 1)])
     }
 
-    // Only consumed by the crossterm backend's frame diffing today.
-    #[cfg_attr(not(feature = "crossterm"), allow(dead_code))]
+    // Available to built-in backends for frame diffing. A build may select no
+    // built-in backend, in which case this crate-private helper is unused.
+    #[allow(dead_code)]
     pub(crate) fn row_eq(&self, other: &Self, y: usize) -> bool {
         self.width == other.width && self.row(y) == other.row(y)
     }
@@ -411,7 +412,7 @@ impl Canvas {
     /// terminal's default state qualifies). The function leaves SGR state
     /// reset on return, so a sequence of calls — separated only by cursor
     /// movement — will each start from a clean state.
-    #[cfg_attr(not(feature = "crossterm"), allow(dead_code))]
+    #[allow(dead_code)]
     pub(crate) fn write_ansi_row_without_newline<W: Write>(
         &self,
         y: usize,
@@ -452,7 +453,7 @@ impl Canvas {
         self.write_impl(w, true, false)
     }
 
-    #[cfg_attr(not(feature = "crossterm"), allow(dead_code))]
+    #[allow(dead_code)]
     pub(crate) fn write_ansi_without_final_newline<W: Write>(&self, w: W) -> io::Result<()> {
         self.write_impl(w, true, true)
     }

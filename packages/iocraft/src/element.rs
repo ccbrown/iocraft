@@ -1,12 +1,10 @@
 use crate::{
     any_key::AnyKey,
-    backend::TerminalBackend,
+    backend::{default_terminal_size, default_terminal_write, TerminalBackend},
     component::{Component, ComponentHelper, ComponentHelperExt},
     mock_terminal_render_loop,
     props::AnyProps,
-    render,
-    terminal::{default_terminal_size, default_terminal_write},
-    terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
+    render, terminal_render_loop, Canvas, MockTerminalConfig, Terminal,
 };
 use futures::Stream;
 use std::{

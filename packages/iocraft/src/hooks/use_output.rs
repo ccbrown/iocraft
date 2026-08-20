@@ -185,12 +185,7 @@ impl UseOutputImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::*;
     use futures::task::noop_waker;
-    #[cfg(feature = "crossterm")]
-    use macro_rules_attribute::apply;
-    #[cfg(feature = "crossterm")]
-    use smol_macros::test;
 
     #[test]
     fn test_use_output_polling() {
@@ -246,29 +241,5 @@ mod tests {
         // println content is left untouched; its newlines are intentional.
         assert_eq!(state.queue[2].content, "blank\n\n");
         assert!(state.queue[2].newline);
-    }
-
-    #[cfg(feature = "crossterm")]
-    #[component]
-    fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let mut system = hooks.use_context_mut::<SystemContext>();
-        let (stdout, stderr) = hooks.use_output();
-        stdout.println("Hello, world!");
-        stderr.println("Hello, error!");
-        stdout.print("Testing ");
-        stdout.print("print ");
-        stdout.println("method!");
-        stderr.print("Error: ");
-        stderr.println("test");
-        stderr.print("Warning: ");
-        stderr.println("print test");
-        system.exit();
-        element!(View)
-    }
-
-    #[cfg(feature = "crossterm")]
-    #[apply(test!)]
-    async fn test_use_output() {
-        element!(MyComponent).render_loop().await.unwrap();
     }
 }
