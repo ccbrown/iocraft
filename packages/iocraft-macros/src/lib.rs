@@ -4,17 +4,18 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 use std::sync::atomic::{AtomicU64, Ordering};
 use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream, Parser},
-    parse_macro_input,
+    parse_macro_input, parse_quote,
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Brace, Comma, Paren},
-    DeriveInput, Error, Expr, FieldValue, FnArg, GenericParam, Generics, Ident, ItemFn, ItemStruct,
-    Lifetime, Lit, Member, Pat, Result, Token, Type, TypePath, WhereClause, WherePredicate,
+    DeriveInput, Error, Expr, FieldValue, Fields, FnArg, GenericParam, Generics, Ident, ItemFn,
+    ItemStruct, Lifetime, Lit, Member, Pat, Result, Token, Type, TypePath, WhereClause,
+    WherePredicate,
 };
 
 enum ParsedElementChild {
@@ -92,7 +93,7 @@ impl ToTokens for ParsedElement {
             })
             .unwrap_or_else(|| quote!((module_path!(), #counter)));
 
-        let prop_assignments = self
+        let prop_setters = self
             .props
             .iter()
             .filter_map(|FieldValue { member, expr, .. }| match member {
@@ -101,15 +102,15 @@ impl ToTokens for ParsedElement {
                     Expr::Lit(lit) => match &lit.lit {
                         Lit::Int(lit) if lit.suffix() == "pct" => {
                             let value = lit.base10_parse::<f32>().unwrap();
-                            quote!(_iocraft_props.#member = ::iocraft::Percent(#value).into())
+                            quote!(.#member(::iocraft::Percent(#value)))
                         }
                         Lit::Float(lit) if lit.suffix() == "pct" => {
                             let value = lit.base10_parse::<f32>().unwrap();
-                            quote!(_iocraft_props.#member = ::iocraft::Percent(#value).into())
+                            quote!(.#member(::iocraft::Percent(#value)))
                         }
-                        _ => quote!(_iocraft_props.#member = (#expr).into()),
+                        _ => quote!(.#member(#expr)),
                     },
-                    _ => quote!(_iocraft_props.#member = (#expr).into()),
+                    _ => quote!(.#member(#expr)),
                 }),
             })
             .collect::<Vec<_>>();
@@ -129,8 +130,9 @@ impl ToTokens for ParsedElement {
         tokens.extend(quote! {
             {
                 type Props<'a> = <#ty as ::iocraft::ElementType>::Props<'a>;
-                let mut _iocraft_props: Props = Default::default();
-                #(#prop_assignments;)*
+                let mut _iocraft_props: Props = Props::__iocraft_builder()
+                    #(#prop_setters)*
+                    .__iocraft_build();
                 let mut _iocraft_element = ::iocraft::Element::<#ty>{
                     key: ::iocraft::ElementKey::new(#key),
                     props: _iocraft_props,
@@ -144,8 +146,8 @@ impl ToTokens for ParsedElement {
 
 /// Used to declare an element and its properties.
 ///
-/// Elements are declared starting with their type. All properties are optional, so the simplest
-/// use of this macro is just a type name:
+/// Elements are declared starting with their type. Properties are optional unless their
+/// [`Props`] derive marks them with `#[iocraft(required)]`, so the simplest use is just a type name:
 ///
 /// ```
 /// # use iocraft::prelude::*;
@@ -228,25 +230,54 @@ pub fn element(input: TokenStream) -> TokenStream {
 
 struct ParsedProps {
     def: ItemStruct,
+    required_fields: Vec<bool>,
 }
 
 impl Parse for ParsedProps {
     fn parse(input: ParseStream) -> Result<Self> {
         let def: ItemStruct = input.parse()?;
-
-        // Make sure there are no props named "key", as that's a reserved name.
-        for field in &def.fields {
-            if let Some(ident) = &field.ident {
-                if ident == "key" {
-                    return Err(Error::new(
-                        ident.span(),
-                        "the `key` property name is reserved",
-                    ));
-                }
-            }
+        if matches!(def.fields, Fields::Unnamed(_)) {
+            return Err(Error::new(
+                def.fields.span(),
+                "`Props` requires named fields or a unit struct",
+            ));
         }
 
-        Ok(Self { def })
+        let mut required_fields = Vec::with_capacity(def.fields.len());
+        for field in &def.fields {
+            if field.ident.as_ref().is_some_and(|ident| ident == "key") {
+                return Err(Error::new(
+                    field.span(),
+                    "the `key` property name is reserved",
+                ));
+            }
+
+            let mut required = false;
+            for attr in &field.attrs {
+                if !attr.path().is_ident("iocraft") {
+                    continue;
+                }
+                attr.parse_nested_meta(|meta| {
+                    if !meta.path.is_ident("required") {
+                        return Err(meta.error("unsupported `iocraft` property attribute"));
+                    }
+                    if required {
+                        return Err(meta.error("duplicate `required` attribute"));
+                    }
+                    if !meta.input.is_empty() {
+                        return Err(meta.error("`required` does not accept a value"));
+                    }
+                    required = true;
+                    Ok(())
+                })?;
+            }
+            required_fields.push(required);
+        }
+
+        Ok(Self {
+            def,
+            required_fields,
+        })
     }
 }
 
@@ -254,7 +285,6 @@ impl ToTokens for ParsedProps {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let def = &self.def;
         let name = &def.ident;
-        let where_clause = &def.generics.where_clause;
 
         let has_generics = !def.generics.params.is_empty();
         let lifetime_generic_count = def
@@ -263,8 +293,6 @@ impl ToTokens for ParsedProps {
             .iter()
             .filter(|param| matches!(param, GenericParam::Lifetime(_)))
             .count();
-
-        let generics = &def.generics;
 
         let generics_names = def.generics.params.iter().map(|param| match param {
             GenericParam::Type(ty) => {
@@ -342,8 +370,247 @@ impl ToTokens for ParsedProps {
             });
         }
 
+        let vis = &def.vis;
+        let builder_name = format_ident!("__Iocraft{}Builder", name);
+        let fields = def.fields.iter().collect::<Vec<_>>();
+        let field_names = fields
+            .iter()
+            .map(|field| {
+                field
+                    .ident
+                    .as_ref()
+                    .expect("named fields checked while parsing")
+            })
+            .collect::<Vec<_>>();
+        let required_fields = fields
+            .iter()
+            .zip(&self.required_fields)
+            .filter_map(|(field, required)| required.then_some(*field))
+            .collect::<Vec<_>>();
+        let required_state_names = required_fields
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format_ident!("__IocraftRequired{index}"))
+            .collect::<Vec<_>>();
+        let original_generic_args = def
+            .generics
+            .params
+            .iter()
+            .map(|param| match param {
+                GenericParam::Type(ty) => {
+                    let name = &ty.ident;
+                    quote!(#name)
+                }
+                GenericParam::Lifetime(lt) => {
+                    let name = &lt.lifetime;
+                    quote!(#name)
+                }
+                GenericParam::Const(c) => {
+                    let name = &c.ident;
+                    quote!(#name)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut builder_generics = def.generics.clone();
+        for state_name in &required_state_names {
+            builder_generics.params.push(parse_quote!(#state_name));
+        }
+        let (builder_impl_generics, builder_ty_generics, builder_where_clause) =
+            builder_generics.split_for_impl();
+
+        let builder_fields = fields
+            .iter()
+            .zip(&self.required_fields)
+            .scan(0, |required_index, (field, required)| {
+                let name = field
+                    .ident
+                    .as_ref()
+                    .expect("named fields checked while parsing");
+                let ty = &field.ty;
+                let field_ty = if *required {
+                    let state_name = &required_state_names[*required_index];
+                    *required_index += 1;
+                    quote!(#state_name)
+                } else {
+                    quote!(#ty)
+                };
+                Some(quote!(#vis #name: #field_ty))
+            })
+            .collect::<Vec<_>>();
+
+        let initial_builder_args = original_generic_args
+            .iter()
+            .cloned()
+            .chain(
+                required_state_names
+                    .iter()
+                    .map(|_| quote!(::iocraft::RequiredPropUnset)),
+            )
+            .collect::<Vec<_>>();
+        let initial_builder_type = if initial_builder_args.is_empty() {
+            quote!(#builder_name)
+        } else {
+            quote!(#builder_name<#(#initial_builder_args),*>)
+        };
+        let initial_field_values =
+            field_names
+                .iter()
+                .zip(&self.required_fields)
+                .map(|(name, required)| {
+                    if *required {
+                        quote!(#name: ::iocraft::RequiredPropUnset)
+                    } else {
+                        quote!(#name: Default::default())
+                    }
+                });
+
+        let mut constructor_generics = def.generics.clone();
+        for (field, required) in fields.iter().zip(&self.required_fields) {
+            if !required {
+                let ty = &field.ty;
+                constructor_generics
+                    .make_where_clause()
+                    .predicates
+                    .push(parse_quote!(#ty: Default));
+            }
+        }
+        let (constructor_impl_generics, constructor_ty_generics, constructor_where_clause) =
+            constructor_generics.split_for_impl();
+
+        let optional_setters =
+            fields
+                .iter()
+                .zip(&self.required_fields)
+                .filter_map(|(field, required)| {
+                    if *required {
+                        return None;
+                    }
+                    let name = field
+                        .ident
+                        .as_ref()
+                        .expect("named fields checked while parsing");
+                    let ty = &field.ty;
+                    Some(quote! {
+                        #vis fn #name(mut self, value: impl Into<#ty>) -> Self {
+                            self.#name = value.into();
+                            self
+                        }
+                    })
+                });
+
+        let required_setters = required_fields
+            .iter()
+            .enumerate()
+            .map(|(current_index, field)| {
+                let field_name = field
+                    .ident
+                    .as_ref()
+                    .expect("named fields checked while parsing");
+                let field_ty = &field.ty;
+                let return_args = original_generic_args
+                    .iter()
+                    .cloned()
+                    .chain(required_fields.iter().enumerate().map(|(index, field)| {
+                        if index == current_index {
+                            let ty = &field.ty;
+                            quote!(::iocraft::RequiredPropSet<#ty>)
+                        } else {
+                            let state_name = &required_state_names[index];
+                            quote!(#state_name)
+                        }
+                    }))
+                    .collect::<Vec<_>>();
+                let return_type = quote!(#builder_name<#(#return_args),*>);
+                let moved_fields = field_names.iter().map(|name| {
+                    if *name == field_name {
+                        quote!(#name: ::iocraft::RequiredPropSet(value.into()))
+                    } else {
+                        quote!(#name: self.#name)
+                    }
+                });
+                quote! {
+                    #vis fn #field_name(
+                        self,
+                        value: impl Into<#field_ty>,
+                    ) -> #return_type {
+                        #builder_name {
+                            #(#moved_fields,)*
+                            _iocraft_marker: std::marker::PhantomData,
+                        }
+                    }
+                }
+            });
+
+        let complete_builder_args = original_generic_args
+            .iter()
+            .cloned()
+            .chain(required_fields.iter().map(|field| {
+                let ty = &field.ty;
+                quote!(::iocraft::RequiredPropSet<#ty>)
+            }))
+            .collect::<Vec<_>>();
+        let complete_builder_type = if complete_builder_args.is_empty() {
+            quote!(#builder_name)
+        } else {
+            quote!(#builder_name<#(#complete_builder_args),*>)
+        };
+        let completed_field_values =
+            field_names
+                .iter()
+                .zip(&self.required_fields)
+                .map(|(name, required)| {
+                    if *required {
+                        quote!(#name: self.#name.0)
+                    } else {
+                        quote!(#name: self.#name)
+                    }
+                });
+        let props_value = match &def.fields {
+            Fields::Unit => quote!(#name),
+            Fields::Named(_) => quote!(#name {
+                #(#completed_field_values,)*
+            }),
+            Fields::Unnamed(_) => unreachable!("tuple structs rejected while parsing"),
+        };
+        let (props_impl_generics, _, props_where_clause) = def.generics.split_for_impl();
+
         tokens.extend(quote! {
-            unsafe impl #generics ::iocraft::Props for #name #bracketed_generic_names #where_clause {}
+            #[doc(hidden)]
+            #vis struct #builder_name #builder_impl_generics #builder_where_clause {
+                #(#builder_fields,)*
+                _iocraft_marker: std::marker::PhantomData<#name #bracketed_generic_names>,
+            }
+
+            impl #constructor_impl_generics #name #constructor_ty_generics
+                #constructor_where_clause
+            {
+                #[doc(hidden)]
+                #vis fn __iocraft_builder() -> #initial_builder_type {
+                    #builder_name {
+                        #(#initial_field_values,)*
+                        _iocraft_marker: std::marker::PhantomData,
+                    }
+                }
+            }
+
+            impl #builder_impl_generics #builder_name #builder_ty_generics #builder_where_clause {
+                #(#optional_setters)*
+                #(#required_setters)*
+            }
+
+            impl #props_impl_generics #complete_builder_type #props_where_clause {
+                #[doc(hidden)]
+                #vis fn __iocraft_build(self) -> #name #bracketed_generic_names {
+                    #props_value
+                }
+            }
+        });
+
+        tokens.extend(quote! {
+            unsafe impl #props_impl_generics ::iocraft::Props for
+                #name #bracketed_generic_names #props_where_clause
+            {}
         });
     }
 }
@@ -353,6 +620,44 @@ impl ToTokens for ParsedProps {
 /// Most importantly, this marks a struct as being
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
+///
+/// Fields are initialized with their [`Default`] value unless they are marked as required:
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// struct RequiredValue;
+///
+/// #[derive(Props)]
+/// struct MyProps {
+///     optional: String,
+///     #[iocraft(required)]
+///     required: RequiredValue,
+/// }
+///
+/// #[component]
+/// fn MyComponent(_props: &MyProps) -> impl Into<AnyElement<'static>> {
+///     element!(View)
+/// }
+///
+/// let _: Element<MyComponent> = element!(MyComponent(required: RequiredValue));
+/// ```
+///
+/// Omitting a required property fails at compile time:
+///
+/// ```compile_fail
+/// # use iocraft::prelude::*;
+/// # struct RequiredValue;
+/// # #[derive(Props)]
+/// # struct MyProps {
+/// #     #[iocraft(required)]
+/// #     required: RequiredValue,
+/// # }
+/// # #[component]
+/// # fn MyComponent(_props: &MyProps) -> impl Into<AnyElement<'static>> {
+/// #     element!(View)
+/// # }
+/// let _ = element!(MyComponent);
+/// ```
 ///
 /// Compilation will also fail if the struct contains a "key" field, as that name is reserved to
 /// facilitate tracking state across renders:
@@ -364,7 +669,7 @@ impl ToTokens for ParsedProps {
 ///     key: i32,
 /// }
 /// ```
-#[proc_macro_derive(Props)]
+#[proc_macro_derive(Props, attributes(iocraft))]
 pub fn derive_props(item: TokenStream) -> TokenStream {
     let props = parse_macro_input!(item as ParsedProps);
     quote!(#props).into()
