@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `Color`, `KeyCode`, `KeyModifiers`, `KeyEventKind`, `MouseEventKind`, and `MouseButton` are now iocraft-owned types (in `crate::color`/`crate::event`) re-exported from the crate root, rather than re-exports of the crossterm types. `From` conversions to/from the crossterm equivalents are provided when the `crossterm` feature is enabled. Code that fed these directly into crossterm APIs now needs an explicit `.into()`.
-- `ElementExt::write_to_raw_fd` now takes `F: AsFd` instead of `F: AsRawFd`.
+- `ElementExt::write_to_raw_fd` has been renamed to `write_to_fd` and now takes `F: AsFd` instead of `F: AsRawFd`.
 
 ### Removed
 

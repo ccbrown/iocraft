@@ -3,7 +3,7 @@
 //! These mirror the key and mouse model exposed by common terminal libraries,
 //! but are owned by iocraft so that rendering/input backends do not have to
 //! depend on any particular one. When the `crossterm` feature is enabled,
-//! `From` conversions from the corresponding `crossterm::event` types are
+//! `From` conversions to and from the corresponding `crossterm::event` types are
 //! provided.
 
 use bitflags::bitflags;
@@ -252,31 +252,32 @@ impl fmt::Display for KeyModifiers {
     /// (e.g. the super key is displayed as "Command" on macOS).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for modifier in self.iter() {
+        for (_, modifier) in self.iter_names() {
+            let name = match modifier {
+                KeyModifiers::SHIFT => "Shift",
+                #[cfg(unix)]
+                KeyModifiers::CONTROL => "Control",
+                #[cfg(windows)]
+                KeyModifiers::CONTROL => "Ctrl",
+                #[cfg(target_os = "macos")]
+                KeyModifiers::ALT => "Option",
+                #[cfg(not(target_os = "macos"))]
+                KeyModifiers::ALT => "Alt",
+                #[cfg(target_os = "macos")]
+                KeyModifiers::SUPER => "Command",
+                #[cfg(target_os = "windows")]
+                KeyModifiers::SUPER => "Windows",
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                KeyModifiers::SUPER => "Super",
+                KeyModifiers::HYPER => "Hyper",
+                KeyModifiers::META => "Meta",
+                _ => continue,
+            };
             if !first {
                 f.write_str("+")?;
             }
             first = false;
-            match modifier {
-                KeyModifiers::SHIFT => f.write_str("Shift")?,
-                #[cfg(unix)]
-                KeyModifiers::CONTROL => f.write_str("Control")?,
-                #[cfg(windows)]
-                KeyModifiers::CONTROL => f.write_str("Ctrl")?,
-                #[cfg(target_os = "macos")]
-                KeyModifiers::ALT => f.write_str("Option")?,
-                #[cfg(not(target_os = "macos"))]
-                KeyModifiers::ALT => f.write_str("Alt")?,
-                #[cfg(target_os = "macos")]
-                KeyModifiers::SUPER => f.write_str("Command")?,
-                #[cfg(target_os = "windows")]
-                KeyModifiers::SUPER => f.write_str("Windows")?,
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                KeyModifiers::SUPER => f.write_str("Super")?,
-                KeyModifiers::HYPER => f.write_str("Hyper")?,
-                KeyModifiers::META => f.write_str("Meta")?,
-                _ => unreachable!(),
-            }
+            f.write_str(name)?;
         }
         Ok(())
     }
@@ -344,5 +345,19 @@ impl fmt::Display for ModifierKeyCode {
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             ModifierKeyCode::RightSuper => write!(f, "Right Super"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_modifiers_display_ignores_unnamed_bits() {
+        let unnamed = KeyModifiers::from_bits_retain(0b1000_0000);
+        assert_eq!(unnamed.to_string(), "");
+
+        let modifiers = KeyModifiers::SHIFT | KeyModifiers::from_bits_retain(0b1000_0000);
+        assert_eq!(modifiers.to_string(), "Shift");
     }
 }

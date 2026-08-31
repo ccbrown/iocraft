@@ -233,7 +233,7 @@ pub trait ElementExt: private::Sealed + Sized {
     /// terminal backend is compiled in, the output is written unstyled, without width
     /// constraints.
     #[cfg(unix)]
-    fn write_to_raw_fd<F: Write + std::os::fd::AsFd>(&mut self, fd: F) -> io::Result<()> {
+    fn write_to_fd<F: Write + std::os::fd::AsFd>(&mut self, fd: F) -> io::Result<()> {
         let is_terminal = fd.as_fd().is_terminal();
         write_sized_or_plain(self, fd, is_terminal)
     }
@@ -559,10 +559,13 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                     if let Err(e) = terminal.set_fullscreen(fullscreen) {
                         return std::task::Poll::Ready(Err(e));
                     }
-                    if effective_mouse_capture {
-                        if let Err(e) = terminal.enable_mouse_capture() {
-                            return std::task::Poll::Ready(Err(e));
-                        }
+                    let mouse_capture_result = if effective_mouse_capture {
+                        terminal.enable_mouse_capture()
+                    } else {
+                        terminal.disable_mouse_capture()
+                    };
+                    if let Err(e) = mouse_capture_result {
+                        return std::task::Poll::Ready(Err(e));
                     }
                     if ignore_ctrl_c {
                         terminal.ignore_ctrl_c();
@@ -700,8 +703,11 @@ mod tests {
         }
 
         fn set_mouse_capture(&mut self, enabled: bool) -> io::Result<()> {
-            assert!(enabled);
-            self.record("set_mouse_capture");
+            self.record(if enabled {
+                "enable_mouse_capture"
+            } else {
+                "disable_mouse_capture"
+            });
             Ok(())
         }
 
@@ -759,7 +765,7 @@ mod tests {
         (&mut view_element).eprint();
 
         #[cfg(unix)]
-        view_element.write_to_raw_fd(std::io::stdout()).unwrap();
+        view_element.write_to_fd(std::io::stdout()).unwrap();
 
         let mut any_element: AnyElement<'static> = view_element.into_any();
         any_element.key();
@@ -800,7 +806,7 @@ mod tests {
         let calls = calls.lock().unwrap();
         for expected in [
             "set_fullscreen",
-            "set_mouse_capture",
+            "enable_mouse_capture",
             "refresh_size",
             "size",
             "begin_frame",
@@ -815,6 +821,27 @@ mod tests {
                 "missing backend call: {expected}"
             );
         }
+    }
+
+    #[test]
+    fn test_render_loop_disables_mouse_capture_on_custom_backend() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: calls.clone(),
+            canvases: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut element = element!(CustomBackendComponent);
+
+        smol::block_on(
+            element
+                .render_loop()
+                .fullscreen()
+                .disable_mouse_capture()
+                .backend(backend),
+        )
+        .unwrap();
+
+        assert!(calls.lock().unwrap().contains(&"disable_mouse_capture"));
     }
 
     #[test]

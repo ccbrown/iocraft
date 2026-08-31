@@ -43,6 +43,26 @@ impl From<ct::MediaKeyCode> for MediaKeyCode {
     }
 }
 
+impl From<MediaKeyCode> for ct::MediaKeyCode {
+    fn from(c: MediaKeyCode) -> Self {
+        match c {
+            MediaKeyCode::Play => Self::Play,
+            MediaKeyCode::Pause => Self::Pause,
+            MediaKeyCode::PlayPause => Self::PlayPause,
+            MediaKeyCode::Reverse => Self::Reverse,
+            MediaKeyCode::Stop => Self::Stop,
+            MediaKeyCode::FastForward => Self::FastForward,
+            MediaKeyCode::Rewind => Self::Rewind,
+            MediaKeyCode::TrackNext => Self::TrackNext,
+            MediaKeyCode::TrackPrevious => Self::TrackPrevious,
+            MediaKeyCode::Record => Self::Record,
+            MediaKeyCode::LowerVolume => Self::LowerVolume,
+            MediaKeyCode::RaiseVolume => Self::RaiseVolume,
+            MediaKeyCode::MuteVolume => Self::MuteVolume,
+        }
+    }
+}
+
 impl From<ct::ModifierKeyCode> for ModifierKeyCode {
     fn from(c: ct::ModifierKeyCode) -> Self {
         match c {
@@ -60,6 +80,27 @@ impl From<ct::ModifierKeyCode> for ModifierKeyCode {
             ct::ModifierKeyCode::RightMeta => Self::RightMeta,
             ct::ModifierKeyCode::IsoLevel3Shift => Self::IsoLevel3Shift,
             ct::ModifierKeyCode::IsoLevel5Shift => Self::IsoLevel5Shift,
+        }
+    }
+}
+
+impl From<ModifierKeyCode> for ct::ModifierKeyCode {
+    fn from(c: ModifierKeyCode) -> Self {
+        match c {
+            ModifierKeyCode::LeftShift => Self::LeftShift,
+            ModifierKeyCode::LeftControl => Self::LeftControl,
+            ModifierKeyCode::LeftAlt => Self::LeftAlt,
+            ModifierKeyCode::LeftSuper => Self::LeftSuper,
+            ModifierKeyCode::LeftHyper => Self::LeftHyper,
+            ModifierKeyCode::LeftMeta => Self::LeftMeta,
+            ModifierKeyCode::RightShift => Self::RightShift,
+            ModifierKeyCode::RightControl => Self::RightControl,
+            ModifierKeyCode::RightAlt => Self::RightAlt,
+            ModifierKeyCode::RightSuper => Self::RightSuper,
+            ModifierKeyCode::RightHyper => Self::RightHyper,
+            ModifierKeyCode::RightMeta => Self::RightMeta,
+            ModifierKeyCode::IsoLevel3Shift => Self::IsoLevel3Shift,
+            ModifierKeyCode::IsoLevel5Shift => Self::IsoLevel5Shift,
         }
     }
 }
@@ -98,10 +139,51 @@ impl From<ct::KeyCode> for KeyCode {
     }
 }
 
+impl From<KeyCode> for ct::KeyCode {
+    fn from(c: KeyCode) -> Self {
+        match c {
+            KeyCode::Backspace => Self::Backspace,
+            KeyCode::Enter => Self::Enter,
+            KeyCode::Left => Self::Left,
+            KeyCode::Right => Self::Right,
+            KeyCode::Up => Self::Up,
+            KeyCode::Down => Self::Down,
+            KeyCode::Home => Self::Home,
+            KeyCode::End => Self::End,
+            KeyCode::PageUp => Self::PageUp,
+            KeyCode::PageDown => Self::PageDown,
+            KeyCode::Tab => Self::Tab,
+            KeyCode::BackTab => Self::BackTab,
+            KeyCode::Delete => Self::Delete,
+            KeyCode::Insert => Self::Insert,
+            KeyCode::F(n) => Self::F(n),
+            KeyCode::Char(c) => Self::Char(c),
+            KeyCode::Null => Self::Null,
+            KeyCode::Esc => Self::Esc,
+            KeyCode::CapsLock => Self::CapsLock,
+            KeyCode::ScrollLock => Self::ScrollLock,
+            KeyCode::NumLock => Self::NumLock,
+            KeyCode::PrintScreen => Self::PrintScreen,
+            KeyCode::Pause => Self::Pause,
+            KeyCode::Menu => Self::Menu,
+            KeyCode::KeypadBegin => Self::KeypadBegin,
+            KeyCode::Media(m) => Self::Media(m.into()),
+            KeyCode::Modifier(m) => Self::Modifier(m.into()),
+        }
+    }
+}
+
 impl From<ct::KeyModifiers> for KeyModifiers {
     fn from(m: ct::KeyModifiers) -> Self {
         // Bit layout is identical, so bits round-trip directly.
-        Self::from_bits_truncate(m.bits())
+        Self::from_bits_retain(m.bits())
+    }
+}
+
+impl From<KeyModifiers> for ct::KeyModifiers {
+    fn from(m: KeyModifiers) -> Self {
+        // Bit layout is identical, so bits round-trip directly.
+        Self::from_bits_retain(m.bits())
     }
 }
 
@@ -115,12 +197,32 @@ impl From<ct::KeyEventKind> for KeyEventKind {
     }
 }
 
+impl From<KeyEventKind> for ct::KeyEventKind {
+    fn from(k: KeyEventKind) -> Self {
+        match k {
+            KeyEventKind::Press => Self::Press,
+            KeyEventKind::Repeat => Self::Repeat,
+            KeyEventKind::Release => Self::Release,
+        }
+    }
+}
+
 impl From<ct::MouseButton> for MouseButton {
     fn from(b: ct::MouseButton) -> Self {
         match b {
             ct::MouseButton::Left => Self::Left,
             ct::MouseButton::Right => Self::Right,
             ct::MouseButton::Middle => Self::Middle,
+        }
+    }
+}
+
+impl From<MouseButton> for ct::MouseButton {
+    fn from(b: MouseButton) -> Self {
+        match b {
+            MouseButton::Left => Self::Left,
+            MouseButton::Right => Self::Right,
+            MouseButton::Middle => Self::Middle,
         }
     }
 }
@@ -136,6 +238,21 @@ impl From<ct::MouseEventKind> for MouseEventKind {
             ct::MouseEventKind::ScrollUp => Self::ScrollUp,
             ct::MouseEventKind::ScrollLeft => Self::ScrollLeft,
             ct::MouseEventKind::ScrollRight => Self::ScrollRight,
+        }
+    }
+}
+
+impl From<MouseEventKind> for ct::MouseEventKind {
+    fn from(k: MouseEventKind) -> Self {
+        match k {
+            MouseEventKind::Down(b) => Self::Down(b.into()),
+            MouseEventKind::Up(b) => Self::Up(b.into()),
+            MouseEventKind::Drag(b) => Self::Drag(b.into()),
+            MouseEventKind::Moved => Self::Moved,
+            MouseEventKind::ScrollDown => Self::ScrollDown,
+            MouseEventKind::ScrollUp => Self::ScrollUp,
+            MouseEventKind::ScrollLeft => Self::ScrollLeft,
+            MouseEventKind::ScrollRight => Self::ScrollRight,
         }
     }
 }
@@ -334,13 +451,21 @@ fn write_passthrough_content(
     if !needs_carriage_returns || !content.contains('\n') {
         return w.write_all(content.as_bytes());
     }
-    for (i, segment) in content.split('\n').enumerate() {
-        if i > 0 {
+    let bytes = content.as_bytes();
+    let mut start = 0;
+    for (i, byte) in bytes.iter().enumerate() {
+        if *byte == b'\n' {
+            let end = if i > start && bytes[i - 1] == b'\r' {
+                i - 1
+            } else {
+                i
+            };
+            w.write_all(&bytes[start..end])?;
             w.write_all(b"\r\n")?;
+            start = i + 1;
         }
-        w.write_all(segment.as_bytes())?;
     }
-    Ok(())
+    w.write_all(&bytes[start..])
 }
 
 impl TerminalBackend for CrosstermBackend<'_> {
@@ -818,6 +943,130 @@ mod tests {
         assert_eq!(KeyModifiers::META.bits(), ct::KeyModifiers::META.bits());
     }
 
+    #[test]
+    fn crossterm_event_conversions_roundtrip() {
+        let media_codes = [
+            ct::MediaKeyCode::Play,
+            ct::MediaKeyCode::Pause,
+            ct::MediaKeyCode::PlayPause,
+            ct::MediaKeyCode::Reverse,
+            ct::MediaKeyCode::Stop,
+            ct::MediaKeyCode::FastForward,
+            ct::MediaKeyCode::Rewind,
+            ct::MediaKeyCode::TrackNext,
+            ct::MediaKeyCode::TrackPrevious,
+            ct::MediaKeyCode::Record,
+            ct::MediaKeyCode::LowerVolume,
+            ct::MediaKeyCode::RaiseVolume,
+            ct::MediaKeyCode::MuteVolume,
+        ];
+        for value in media_codes {
+            let ours: MediaKeyCode = value.into();
+            let roundtrip: ct::MediaKeyCode = ours.into();
+            assert_eq!(roundtrip, value);
+        }
+
+        let modifier_codes = [
+            ct::ModifierKeyCode::LeftShift,
+            ct::ModifierKeyCode::LeftControl,
+            ct::ModifierKeyCode::LeftAlt,
+            ct::ModifierKeyCode::LeftSuper,
+            ct::ModifierKeyCode::LeftHyper,
+            ct::ModifierKeyCode::LeftMeta,
+            ct::ModifierKeyCode::RightShift,
+            ct::ModifierKeyCode::RightControl,
+            ct::ModifierKeyCode::RightAlt,
+            ct::ModifierKeyCode::RightSuper,
+            ct::ModifierKeyCode::RightHyper,
+            ct::ModifierKeyCode::RightMeta,
+            ct::ModifierKeyCode::IsoLevel3Shift,
+            ct::ModifierKeyCode::IsoLevel5Shift,
+        ];
+        for value in modifier_codes {
+            let ours: ModifierKeyCode = value.into();
+            let roundtrip: ct::ModifierKeyCode = ours.into();
+            assert_eq!(roundtrip, value);
+        }
+
+        let key_codes = [
+            ct::KeyCode::Backspace,
+            ct::KeyCode::Enter,
+            ct::KeyCode::Left,
+            ct::KeyCode::Right,
+            ct::KeyCode::Up,
+            ct::KeyCode::Down,
+            ct::KeyCode::Home,
+            ct::KeyCode::End,
+            ct::KeyCode::PageUp,
+            ct::KeyCode::PageDown,
+            ct::KeyCode::Tab,
+            ct::KeyCode::BackTab,
+            ct::KeyCode::Delete,
+            ct::KeyCode::Insert,
+            ct::KeyCode::F(12),
+            ct::KeyCode::Char('q'),
+            ct::KeyCode::Null,
+            ct::KeyCode::Esc,
+            ct::KeyCode::CapsLock,
+            ct::KeyCode::ScrollLock,
+            ct::KeyCode::NumLock,
+            ct::KeyCode::PrintScreen,
+            ct::KeyCode::Pause,
+            ct::KeyCode::Menu,
+            ct::KeyCode::KeypadBegin,
+            ct::KeyCode::Media(ct::MediaKeyCode::PlayPause),
+            ct::KeyCode::Modifier(ct::ModifierKeyCode::LeftSuper),
+        ];
+        for value in key_codes {
+            let ours: KeyCode = value.into();
+            let roundtrip: ct::KeyCode = ours.into();
+            assert_eq!(roundtrip, value);
+        }
+
+        let modifiers = ct::KeyModifiers::SHIFT
+            | ct::KeyModifiers::CONTROL
+            | ct::KeyModifiers::from_bits_retain(0b1000_0000);
+        let ours: KeyModifiers = modifiers.into();
+        let roundtrip: ct::KeyModifiers = ours.into();
+        assert_eq!(roundtrip, modifiers);
+
+        for value in [
+            ct::KeyEventKind::Press,
+            ct::KeyEventKind::Repeat,
+            ct::KeyEventKind::Release,
+        ] {
+            let ours: KeyEventKind = value.into();
+            let roundtrip: ct::KeyEventKind = ours.into();
+            assert_eq!(roundtrip, value);
+        }
+
+        for value in [
+            ct::MouseButton::Left,
+            ct::MouseButton::Right,
+            ct::MouseButton::Middle,
+        ] {
+            let ours: MouseButton = value.into();
+            let roundtrip: ct::MouseButton = ours.into();
+            assert_eq!(roundtrip, value);
+        }
+
+        let mouse_event_kinds = [
+            ct::MouseEventKind::Down(ct::MouseButton::Left),
+            ct::MouseEventKind::Up(ct::MouseButton::Right),
+            ct::MouseEventKind::Drag(ct::MouseButton::Middle),
+            ct::MouseEventKind::Moved,
+            ct::MouseEventKind::ScrollDown,
+            ct::MouseEventKind::ScrollUp,
+            ct::MouseEventKind::ScrollLeft,
+            ct::MouseEventKind::ScrollRight,
+        ];
+        for value in mouse_event_kinds {
+            let ours: MouseEventKind = value.into();
+            let roundtrip: ct::MouseEventKind = ours.into();
+            assert_eq!(roundtrip, value);
+        }
+    }
+
     #[derive(Clone, Default)]
     struct TestWriter {
         buf: Arc<Mutex<Vec<u8>>>,
@@ -904,7 +1153,7 @@ mod tests {
 
         let messages = [Passthrough {
             stream: Output::Stdout,
-            content: "line1\nline2".into(),
+            content: "line1\r\nline2\nline3\rline4".into(),
             newline: true,
         }];
         term.print_above(&messages).unwrap();
@@ -912,7 +1161,7 @@ mod tests {
         // Embedded newlines must become \r\n in raw mode, or multi-line
         // content stair-steps.
         let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
-        assert_eq!(written, "line1\r\nline2\r\n");
+        assert_eq!(written, "line1\r\nline2\r\nline3\rline4\r\n");
         assert_eq!(term.passthrough_appended_newline, None);
     }
 
