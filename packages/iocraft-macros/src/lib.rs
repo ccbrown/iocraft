@@ -392,6 +392,21 @@ impl ToTokens for ParsedProps {
             .enumerate()
             .map(|(index, _)| format_ident!("__IocraftRequired{index}"))
             .collect::<Vec<_>>();
+        let missing_state_names = required_fields
+            .iter()
+            .map(|field| {
+                let field_name = field
+                    .ident
+                    .as_ref()
+                    .expect("named fields checked while parsing")
+                    .to_string();
+                format_ident!(
+                    "__Iocraft{}MissingRequiredProperty_{}",
+                    name,
+                    field_name.trim_start_matches("r#")
+                )
+            })
+            .collect::<Vec<_>>();
         let original_generic_args = def
             .generics
             .params
@@ -435,35 +450,32 @@ impl ToTokens for ParsedProps {
                 } else {
                     quote!(#ty)
                 };
-                Some(quote!(#vis #name: #field_ty))
+                Some(quote!(#name: #field_ty))
             })
             .collect::<Vec<_>>();
 
         let initial_builder_args = original_generic_args
             .iter()
             .cloned()
-            .chain(
-                required_state_names
-                    .iter()
-                    .map(|_| quote!(::iocraft::RequiredPropUnset)),
-            )
+            .chain(missing_state_names.iter().map(|name| quote!(#name)))
             .collect::<Vec<_>>();
         let initial_builder_type = if initial_builder_args.is_empty() {
             quote!(#builder_name)
         } else {
             quote!(#builder_name<#(#initial_builder_args),*>)
         };
-        let initial_field_values =
-            field_names
-                .iter()
-                .zip(&self.required_fields)
-                .map(|(name, required)| {
-                    if *required {
-                        quote!(#name: ::iocraft::RequiredPropUnset)
-                    } else {
-                        quote!(#name: Default::default())
-                    }
-                });
+        let initial_field_values = field_names.iter().zip(&self.required_fields).scan(
+            0,
+            |required_index, (name, required)| {
+                if *required {
+                    let missing_state_name = &missing_state_names[*required_index];
+                    *required_index += 1;
+                    Some(quote!(#name: #missing_state_name))
+                } else {
+                    Some(quote!(#name: Default::default()))
+                }
+            },
+        );
 
         let mut constructor_generics = def.generics.clone();
         for (field, required) in fields.iter().zip(&self.required_fields) {
@@ -541,7 +553,6 @@ impl ToTokens for ParsedProps {
                     }
                 }
             });
-
         let complete_builder_args = original_generic_args
             .iter()
             .cloned()
@@ -555,6 +566,7 @@ impl ToTokens for ParsedProps {
         } else {
             quote!(#builder_name<#(#complete_builder_args),*>)
         };
+
         let completed_field_values =
             field_names
                 .iter()
@@ -566,6 +578,13 @@ impl ToTokens for ParsedProps {
                         quote!(#name: self.#name)
                     }
                 });
+        let missing_state_markers = missing_state_names.iter().map(|name| {
+            quote! {
+                #[allow(non_camel_case_types)]
+                #[doc(hidden)]
+                #vis struct #name;
+            }
+        });
         let props_value = match &def.fields {
             Fields::Unit => quote!(#name),
             Fields::Named(_) => quote!(#name {
@@ -576,6 +595,7 @@ impl ToTokens for ParsedProps {
         let (props_impl_generics, _, props_where_clause) = def.generics.split_for_impl();
 
         tokens.extend(quote! {
+            #(#missing_state_markers)*
             #[doc(hidden)]
             #vis struct #builder_name #builder_impl_generics #builder_where_clause {
                 #(#builder_fields,)*

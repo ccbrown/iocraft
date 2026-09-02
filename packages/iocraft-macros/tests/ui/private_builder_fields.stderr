@@ -1,0 +1,10 @@
+error[E0616]: field `value` of struct `__IocraftPublicPropsBuilder` is private
+  --> tests/ui/private_builder_fields.rs:15:21
+   |
+15 |     let _ = builder.value;
+   |                     ^^^^^ private field
+   |
+help: a method `value` also exists, call it with parentheses
+   |
+15 |     let _ = builder.value(_);
+   |                          +++

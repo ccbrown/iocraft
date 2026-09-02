@@ -78,10 +78,6 @@ use core::marker::PhantomData;
 /// type is not actually covariant, the derive macro will give you an error at compile-time.
 pub unsafe trait Props: Send + Sync {}
 
-/// Marks a required property that has not been provided yet.
-#[doc(hidden)]
-pub struct RequiredPropUnset;
-
 /// Stores a required property after it has been provided.
 #[doc(hidden)]
 pub struct RequiredPropSet<T>(pub T);

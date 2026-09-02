@@ -1,0 +1,10 @@
+error[E0599]: no method named `__iocraft_build` found for struct `__IocraftExamplePropsBuilder<__IocraftExamplePropsMissingRequiredProperty_important_value>` in the current scope
+  --> tests/ui/missing_required_prop.rs:10:47
+   |
+ 3 | #[derive(Props)]
+   |          ----- method `__iocraft_build` not found for this struct
+...
+10 |     let _ = ExampleProps::__iocraft_builder().__iocraft_build();
+   |                                               ^^^^^^^^^^^^^^^ method not found in `__IocraftExamplePropsBuilder<__IocraftExamplePropsMissingRequiredProperty_important_value>`
+   |
+   = note: the method was found for `__IocraftExamplePropsBuilder<iocraft::RequiredPropSet<String>>`
