@@ -1,6 +1,9 @@
 mod button;
 pub use button::*;
 
+mod checkbox;
+pub use checkbox::*;
+
 mod context_provider;
 pub use context_provider::*;
 
