@@ -13,12 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix warnings and merge conflict
 
+## [0.9.0](https://github.com/ccbrown/iocraft/compare/iocraft-v0.8.5...iocraft-v0.9.0) - 2026-09-04
+
 ### Added
 
-- add a public `TerminalBackend` trait and `RenderLoopFuture::backend` for custom terminal implementations, decoupling the renderer from crossterm. The built-in crossterm backend is gated behind the new default-on `crossterm` feature.
+- *(iocraft)* add checkbox component ([#229](https://github.com/ccbrown/iocraft/pull/229))
 
 ### Changed
 
+- *(terminal)* [**breaking**] add TerminalBackend trait, decouple from crossterm ([#210](https://github.com/ccbrown/iocraft/pull/210))
 - `Color`, `KeyCode`, `KeyModifiers`, `KeyEventKind`, `MouseEventKind`, and `MouseButton` are now iocraft-owned types (in `crate::color`/`crate::event`) re-exported from the crate root, rather than re-exports of the crossterm types. `From` conversions to/from the crossterm equivalents are provided when the `crossterm` feature is enabled. Code that fed these directly into crossterm APIs now needs an explicit `.into()`.
 - `ElementExt::write_to_raw_fd` has been renamed to `write_to_fd` and now takes `F: AsFd` instead of `F: AsRawFd`.
 
