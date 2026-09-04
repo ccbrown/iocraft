@@ -1,8 +1,5 @@
+use crate::color::{csi, sgr, SgrColor};
 use crate::style::{Color, Weight};
-use crossterm::{
-    csi,
-    style::{Attribute, Colored},
-};
 use std::{
     env,
     fmt::{self, Display},
@@ -268,6 +265,9 @@ impl Canvas {
         Some(&row[..last_non_empty.map_or(0, |i| i + 1)])
     }
 
+    // Available to built-in backends for frame diffing. A build may select no
+    // built-in backend, in which case this crate-private helper is unused.
+    #[allow(dead_code)]
     pub(crate) fn row_eq(&self, other: &Self, y: usize) -> bool {
         self.width == other.width && self.row(y) == other.row(y)
     }
@@ -319,28 +319,28 @@ impl Canvas {
                         write!(
                             w,
                             csi!("{}m"),
-                            Colored::ForegroundColor(c.style.color.unwrap_or(Color::Reset))
+                            SgrColor::Foreground(c.style.color.unwrap_or(Color::Reset))
                         )?;
                     }
 
                     if c.style.weight != text_style.weight {
                         match c.style.weight {
-                            Weight::Bold => write!(w, csi!("{}m"), Attribute::Bold.sgr())?,
+                            Weight::Bold => write!(w, csi!("{}m"), sgr::BOLD)?,
                             Weight::Normal => {}
-                            Weight::Light => write!(w, csi!("{}m"), Attribute::Dim.sgr())?,
+                            Weight::Light => write!(w, csi!("{}m"), sgr::DIM)?,
                         }
                     }
 
                     if c.style.underline && !text_style.underline {
-                        write!(w, csi!("{}m"), Attribute::Underlined.sgr())?;
+                        write!(w, csi!("{}m"), sgr::UNDERLINED)?;
                     }
 
                     if c.style.italic && !text_style.italic {
-                        write!(w, csi!("{}m"), Attribute::Italic.sgr())?;
+                        write!(w, csi!("{}m"), sgr::ITALIC)?;
                     }
 
                     if c.style.invert && !text_style.invert {
-                        write!(w, csi!("{}m"), Attribute::Reverse.sgr())?;
+                        write!(w, csi!("{}m"), sgr::REVERSE)?;
                     }
 
                     text_style = c.style;
@@ -359,7 +359,7 @@ impl Canvas {
                     hyperlink = None;
                 }
                 if background_color.is_some() {
-                    write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
+                    write!(w, csi!("{}m"), SgrColor::Background(Color::Reset))?;
                     background_color = None;
                 }
 
@@ -371,7 +371,7 @@ impl Canvas {
                 write!(
                     w,
                     csi!("{}m"),
-                    Colored::BackgroundColor(cell.background_color.unwrap_or(Color::Reset))
+                    SgrColor::Background(cell.background_color.unwrap_or(Color::Reset))
                 )?;
                 background_color = cell.background_color;
             }
@@ -396,7 +396,7 @@ impl Canvas {
                 write!(w, "\x1b]8;;\x1b\\")?; // close any open OSC 8 link
             }
             if background_color.is_some() {
-                write!(w, csi!("{}m"), Colored::BackgroundColor(Color::Reset))?;
+                write!(w, csi!("{}m"), SgrColor::Background(Color::Reset))?;
             }
             if !did_clear_line {
                 write!(w, csi!("K"))?;
@@ -412,6 +412,7 @@ impl Canvas {
     /// terminal's default state qualifies). The function leaves SGR state
     /// reset on return, so a sequence of calls — separated only by cursor
     /// movement — will each start from a clean state.
+    #[allow(dead_code)]
     pub(crate) fn write_ansi_row_without_newline<W: Write>(
         &self,
         y: usize,
@@ -452,6 +453,7 @@ impl Canvas {
         self.write_impl(w, true, false)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn write_ansi_without_final_newline<W: Write>(&self, w: W) -> io::Result<()> {
         self.write_impl(w, true, true)
     }
@@ -654,27 +656,17 @@ mod tests {
         // row 0
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "  ").unwrap();
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, "   ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
         // row 1
         write!(expected, "  ").unwrap();
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, "   ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("K")).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
@@ -733,65 +725,35 @@ mod tests {
 
         // line 1
         write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("K")).unwrap();
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, " ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
         // line 2
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("K")).unwrap();
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, " ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
         // line 3
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, "     ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("K")).unwrap();
-        write!(expected, csi!("{}m"), Colored::BackgroundColor(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Red)).unwrap();
         write!(expected, " ").unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::BackgroundColor(Color::Reset)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Background(Color::Reset)).unwrap();
         write!(expected, csi!("0m")).unwrap();
         write!(expected, "\r\n").unwrap();
 
@@ -894,47 +856,37 @@ mod tests {
         write!(expected, csi!("0m")).unwrap();
         write!(expected, ".").unwrap();
 
-        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
-        write!(expected, csi!("{}m"), Attribute::Underlined.sgr()).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
+        write!(expected, csi!("{}m"), sgr::UNDERLINED).unwrap();
         write!(expected, ".").unwrap();
 
         write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
-        write!(expected, csi!("{}m"), Attribute::Italic.sgr()).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
+        write!(expected, csi!("{}m"), sgr::ITALIC).unwrap();
         write!(expected, ".").unwrap();
 
         write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), Attribute::Bold.sgr()).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
+        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
         write!(expected, ".").unwrap();
 
-        write!(expected, csi!("{}m"), Attribute::Dim.sgr()).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), Colored::ForegroundColor(Color::Red)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::ForegroundColor(Color::Green)
-        )
-        .unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), Attribute::Reverse.sgr()).unwrap();
+        write!(expected, csi!("{}m"), sgr::DIM).unwrap();
         write!(expected, ".").unwrap();
 
         write!(expected, csi!("0m")).unwrap();
-        write!(
-            expected,
-            csi!("{}m"),
-            Colored::ForegroundColor(Color::Green)
-        )
-        .unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Green)).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("{}m"), sgr::REVERSE).unwrap();
+        write!(expected, ".").unwrap();
+
+        write!(expected, csi!("0m")).unwrap();
+        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Green)).unwrap();
         write!(expected, ".").unwrap();
 
         write!(expected, csi!("K")).unwrap();
@@ -1047,7 +999,6 @@ mod tests {
         let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 3);
         sv.set_text(0, 0, "hello", CanvasTextStyle::default());
         sv.set_text(2, 1, "ab", CanvasTextStyle::default());
-        drop(sv);
         assert_eq!(canvas.get_text(0, 0, 10, 1), "hello");
         assert_eq!(canvas.get_text(0, 1, 10, 1), "  ab");
         assert_eq!(canvas.get_text(0, 2, 10, 1), "");
@@ -1059,7 +1010,6 @@ mod tests {
         let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 3);
         sv.set_text(0, 0, "line one", CanvasTextStyle::default());
         sv.set_text(0, 1, "line two", CanvasTextStyle::default());
-        drop(sv);
         assert_eq!(
             canvas.get_text(0, 0, 10, 3),
             "line one

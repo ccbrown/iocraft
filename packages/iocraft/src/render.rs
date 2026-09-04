@@ -64,15 +64,6 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
         self.context.terminal.as_mut().and_then(|t| t.events().ok())
     }
 
-    /// Returns whether the terminal is in raw mode.
-    pub fn is_terminal_raw_mode_enabled(&self) -> bool {
-        self.context
-            .terminal
-            .as_ref()
-            .map(|t| t.is_raw_mode_enabled())
-            .unwrap_or(false)
-    }
-
     /// Removes the currently rendered output from the terminal, e.g. to allow for the printing of
     /// output above the component.
     pub fn clear_terminal_output(&mut self) {
@@ -87,6 +78,13 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
     /// Returns a mutable reference to the terminal, if we're in a terminal render loop.
     pub(crate) fn terminal_mut(&mut self) -> Option<&mut Terminal<'w>> {
         self.context.terminal.as_deref_mut()
+    }
+
+    pub(crate) fn terminal_size(&self) -> Option<(u16, u16)> {
+        self.context
+            .terminal
+            .as_ref()
+            .and_then(|terminal| terminal.size())
     }
 
     #[doc(hidden)]

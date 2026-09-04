@@ -89,15 +89,21 @@ pub struct Hooks<'a, 'b: 'a> {
     hooks: &'a mut Vec<Box<dyn AnyHook>>,
     first_update: bool,
     hook_index: usize,
+    terminal_size: Option<(u16, u16)>,
     pub(crate) context_stack: Option<&'a ContextStack<'b>>,
 }
 
 impl<'a> Hooks<'a, '_> {
-    pub(crate) fn new(hooks: &'a mut Vec<Box<dyn AnyHook>>, first_update: bool) -> Self {
+    pub(crate) fn new(
+        hooks: &'a mut Vec<Box<dyn AnyHook>>,
+        first_update: bool,
+        terminal_size: Option<(u16, u16)>,
+    ) -> Self {
         Self {
             hooks,
             first_update,
             hook_index: 0,
+            terminal_size,
             context_stack: None,
         }
     }
@@ -111,8 +117,13 @@ impl<'a> Hooks<'a, '_> {
             hooks: self.hooks,
             first_update: self.first_update,
             hook_index: self.hook_index,
+            terminal_size: self.terminal_size,
             context_stack: Some(context_stack),
         }
+    }
+
+    pub(crate) fn terminal_size(&self) -> Option<(u16, u16)> {
+        self.terminal_size
     }
 
     /// If this is the component's first render, this function adds a new hook to the component and

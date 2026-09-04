@@ -174,10 +174,11 @@ impl InstantiatedComponent {
             component_context_stack,
         );
         self.hooks.pre_component_update(&mut updater);
+        let terminal_size = updater.terminal_size();
         self.helper.update_component(
             &mut self.component,
             props,
-            Hooks::new(&mut self.hooks, self.first_update),
+            Hooks::new(&mut self.hooks, self.first_update, terminal_size),
             &mut updater,
         );
         self.hooks.post_component_update(&mut updater);

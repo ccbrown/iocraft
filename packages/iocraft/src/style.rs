@@ -7,7 +7,7 @@ use taffy::{
 };
 
 // Re-export basic enum types.
-pub use crossterm::style::Color;
+pub use crate::color::Color;
 pub use taffy::style::{
     AlignContent, AlignItems, Display, FlexDirection, FlexWrap, JustifyContent, Overflow, Position,
 };

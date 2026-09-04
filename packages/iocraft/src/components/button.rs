@@ -71,7 +71,7 @@ pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<An
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use crossterm::event::MouseButton;
+    use crate::MouseButton;
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
