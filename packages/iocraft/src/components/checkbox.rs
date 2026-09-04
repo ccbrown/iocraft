@@ -77,7 +77,6 @@ pub fn Checkbox<'a>(_hooks: Hooks, props: &mut CheckboxProps<'a>) -> impl Into<A
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
-    use crossterm::event::MouseButton;
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
