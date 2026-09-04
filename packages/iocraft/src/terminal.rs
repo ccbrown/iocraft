@@ -84,6 +84,9 @@ pub enum TerminalEvent {
     FullscreenMouse(FullscreenMouseEvent),
     /// A resize event, fired when the terminal is resized.
     Resize(u16, u16),
+    /// A bracketed paste, fired when the terminal delivers pasted text in one
+    /// chunk (requires bracketed paste mode to be enabled).
+    Paste(String),
 }
 
 struct TerminalEventsInner {

@@ -342,6 +342,7 @@ pub(crate) struct CrosstermBackend<'a> {
     raw_mode_enabled: bool,
     supports_keyboard_enhancement: bool,
     enabled_keyboard_enhancement: bool,
+    enabled_bracketed_paste: bool,
     prev_canvas_top_row: u16,
     prev_canvas_height: u16,
     prev_size_on_write: Option<(u16, u16)>,
@@ -719,6 +720,7 @@ impl TerminalBackend for CrosstermBackend<'_> {
                     Ok(Event::Resize(width, height)) => {
                         Some(Ok(TerminalEvent::Resize(width, height)))
                     }
+                    Ok(Event::Paste(data)) => Some(Ok(TerminalEvent::Paste(data))),
                     // Ignore crossterm events that iocraft does not expose.
                     Ok(_) => None,
                     Err(error) => Some(Err(error)),
@@ -758,6 +760,7 @@ impl<'a> CrosstermBackend<'a> {
             raw_mode_enabled: false,
             supports_keyboard_enhancement,
             enabled_keyboard_enhancement: false,
+            enabled_bracketed_paste: false,
             prev_canvas_top_row: 0,
             prev_canvas_height: 0,
             size: None,
@@ -777,12 +780,20 @@ impl<'a> CrosstermBackend<'a> {
                     ))?;
                     self.enabled_keyboard_enhancement = true;
                 }
+                if !self.enabled_bracketed_paste {
+                    self.dest.execute(event::EnableBracketedPaste)?;
+                    self.enabled_bracketed_paste = true;
+                }
                 if self.mouse_capture {
                     self.dest.execute(event::EnableMouseCapture)?;
                 }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
+                if self.enabled_bracketed_paste {
+                    self.dest.execute(event::DisableBracketedPaste)?;
+                    self.enabled_bracketed_paste = false;
+                }
                 if self.mouse_capture {
                     self.dest.execute(event::DisableMouseCapture)?;
                 }
@@ -1361,6 +1372,7 @@ mod tests {
             raw_mode_enabled: false,
             supports_keyboard_enhancement: false,
             enabled_keyboard_enhancement: false,
+            enabled_bracketed_paste: false,
             prev_canvas_top_row,
             prev_canvas_height,
             size: None,
@@ -1388,6 +1400,7 @@ mod tests {
             raw_mode_enabled: false,
             supports_keyboard_enhancement: false,
             enabled_keyboard_enhancement: false,
+            enabled_bracketed_paste: false,
             prev_canvas_top_row: 0,
             prev_canvas_height,
             size: Some(term_size),
