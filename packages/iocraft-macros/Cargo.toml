@@ -18,3 +18,4 @@ syn = { version = "2.0.77", features = ["full"] }
 iocraft = { path = "../iocraft" }
 smol = "2.0.1"
 unicode-width = "0.1.13"
+trybuild = "1.0.116"
