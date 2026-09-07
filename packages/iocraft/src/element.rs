@@ -330,6 +330,7 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
     Init {
         fullscreen: bool,
         mouse_capture: Option<bool>,
+        bracketed_paste: Option<bool>,
         ignore_ctrl_c: bool,
         output: Output,
         stdout_writer: Option<Box<dyn Write + Send + 'a>>,
@@ -355,6 +356,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
             state: RenderLoopFutureState::Init {
                 fullscreen: false,
                 mouse_capture: None,
+                bracketed_paste: None,
                 ignore_ctrl_c: false,
                 output: Output::default(),
                 stdout_writer: None,
@@ -400,6 +402,32 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
                 *mouse_capture = Some(false);
             }
             _ => panic!("disable_mouse_capture() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Enables bracketed paste in raw mode. Disabled by default.
+    pub fn enable_bracketed_paste(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init {
+                bracketed_paste, ..
+            } => {
+                *bracketed_paste = Some(true);
+            }
+            _ => panic!("enable_bracketed_paste() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Disables bracketed paste.
+    pub fn disable_bracketed_paste(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init {
+                bracketed_paste, ..
+            } => {
+                *bracketed_paste = Some(false);
+            }
+            _ => panic!("disable_bracketed_paste() must be called before polling the future"),
         }
         self
     }
@@ -514,6 +542,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                     let (
                         fullscreen,
                         mouse_capture,
+                        bracketed_paste,
                         ignore_ctrl_c,
                         output,
                         stdout_writer,
@@ -524,6 +553,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         RenderLoopFutureState::Init {
                             fullscreen,
                             mouse_capture,
+                            bracketed_paste,
                             ignore_ctrl_c,
                             output,
                             stdout_writer,
@@ -533,6 +563,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         } => (
                             fullscreen,
                             mouse_capture,
+                            bracketed_paste,
                             ignore_ctrl_c,
                             output,
                             stdout_writer,
@@ -543,6 +574,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         _ => unreachable!(),
                     };
                     let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
+                    let effective_bracketed_paste = bracketed_paste.unwrap_or(false);
                     let mut terminal = match backend {
                         Some(backend) => Terminal::with_backend(backend),
                         None => {
@@ -565,6 +597,14 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         terminal.disable_mouse_capture()
                     };
                     if let Err(e) = mouse_capture_result {
+                        return std::task::Poll::Ready(Err(e));
+                    }
+                    let bracketed_paste_result = if effective_bracketed_paste {
+                        terminal.enable_bracketed_paste()
+                    } else {
+                        terminal.disable_bracketed_paste()
+                    };
+                    if let Err(e) = bracketed_paste_result {
                         return std::task::Poll::Ready(Err(e));
                     }
                     if ignore_ctrl_c {
@@ -711,6 +751,15 @@ mod tests {
             Ok(())
         }
 
+        fn set_bracketed_paste(&mut self, enabled: bool) -> io::Result<()> {
+            self.record(if enabled {
+                "enable_bracketed_paste"
+            } else {
+                "disable_bracketed_paste"
+            });
+            Ok(())
+        }
+
         fn begin_frame(&mut self) -> io::Result<()> {
             self.record("begin_frame");
             Ok(())
@@ -842,6 +891,41 @@ mod tests {
         .unwrap();
 
         assert!(calls.lock().unwrap().contains(&"disable_mouse_capture"));
+    }
+
+    #[test]
+    fn test_render_loop_disables_bracketed_paste_by_default() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: calls.clone(),
+            canvases: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut element = element!(CustomBackendComponent);
+
+        smol::block_on(element.render_loop().fullscreen().backend(backend)).unwrap();
+
+        assert!(calls.lock().unwrap().contains(&"disable_bracketed_paste"));
+    }
+
+    #[test]
+    fn test_render_loop_enables_bracketed_paste_on_custom_backend() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: calls.clone(),
+            canvases: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut element = element!(CustomBackendComponent);
+
+        smol::block_on(
+            element
+                .render_loop()
+                .fullscreen()
+                .enable_bracketed_paste()
+                .backend(backend),
+        )
+        .unwrap();
+
+        assert!(calls.lock().unwrap().contains(&"enable_bracketed_paste"));
     }
 
     #[test]

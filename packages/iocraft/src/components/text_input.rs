@@ -589,13 +589,11 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         vertical_movement_col_preference.set(None);
                     }
                 }
-                TerminalEvent::Paste(data) => {
-                    if !data.is_empty() {
-                        value.insert_str(temp_cursor_offset, &data);
-                        temp_cursor_offset += data.len();
-                        on_change(value.clone());
-                        vertical_movement_col_preference.set(None);
-                    }
+                TerminalEvent::BracketedPaste(data) if !data.is_empty() => {
+                    value.insert_str(temp_cursor_offset, &data);
+                    temp_cursor_offset += data.len();
+                    on_change(value.clone());
+                    vertical_movement_col_preference.set(None);
                 }
                 _ => {}
             }
@@ -749,7 +747,7 @@ mod tests {
     async fn test_text_input_paste() {
         let actual = element!(MyComponent)
             .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
-                vec![TerminalEvent::Paste("hello!".to_string())],
+                vec![TerminalEvent::BracketedPaste("hello!".to_string())],
             )))
             .map(|c| c.to_string())
             .collect::<Vec<_>>()

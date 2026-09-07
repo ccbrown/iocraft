@@ -142,6 +142,14 @@ pub trait TerminalBackend: Send {
         Ok(())
     }
 
+    /// Enables or disables bracketed paste event reporting. Idempotent.
+    ///
+    /// The default implementation is a no-op.
+    fn set_bracketed_paste(&mut self, enabled: bool) -> io::Result<()> {
+        let _ = enabled;
+        Ok(())
+    }
+
     /// Brackets the start of a frame so partial updates aren't shown (e.g. a
     /// DEC 2026 synchronized update on ANSI terminals).
     ///

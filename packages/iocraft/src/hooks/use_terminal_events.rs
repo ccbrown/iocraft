@@ -168,7 +168,9 @@ impl Hook for UseTerminalEventsImpl {
                             }
                         }
                     }
-                    TerminalEvent::Key(_) | TerminalEvent::Resize(..) | TerminalEvent::Paste(_) => {
+                    TerminalEvent::Key(_)
+                    | TerminalEvent::Resize(..)
+                    | TerminalEvent::BracketedPaste(_) => {
                         if let Some(f) = &mut self.f {
                             f(event);
                         }

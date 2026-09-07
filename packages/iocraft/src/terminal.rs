@@ -84,9 +84,9 @@ pub enum TerminalEvent {
     FullscreenMouse(FullscreenMouseEvent),
     /// A resize event, fired when the terminal is resized.
     Resize(u16, u16),
-    /// A bracketed paste, fired when the terminal delivers pasted text in one
-    /// chunk (requires bracketed paste mode to be enabled).
-    Paste(String),
+    /// A bracketed paste, fired when the terminal delivers pasted text in one chunk in raw mode.
+    /// Needs to be enabled with `enable_bracketed_paste`.
+    BracketedPaste(String),
 }
 
 struct TerminalEventsInner {
@@ -230,6 +230,14 @@ impl<'a> Terminal<'a> {
 
     pub fn disable_mouse_capture(&mut self) -> io::Result<()> {
         self.inner.set_mouse_capture(false)
+    }
+
+    pub fn enable_bracketed_paste(&mut self) -> io::Result<()> {
+        self.inner.set_bracketed_paste(true)
+    }
+
+    pub fn disable_bracketed_paste(&mut self) -> io::Result<()> {
+        self.inner.set_bracketed_paste(false)
     }
 
     pub fn set_fullscreen(&mut self, enabled: bool) -> io::Result<()> {
