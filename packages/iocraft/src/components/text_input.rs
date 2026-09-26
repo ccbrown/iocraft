@@ -968,4 +968,22 @@ mod tests {
             3
         );
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_is_altgr_char() {
+        let ctrl_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        assert!(is_altgr_char(KeyCode::Char('@'), ctrl_alt));
+        assert!(is_altgr_char(KeyCode::Char('€'), ctrl_alt));
+        assert!(!is_altgr_char(KeyCode::Char('a'), ctrl_alt));
+        assert!(!is_altgr_char(KeyCode::Char('1'), ctrl_alt));
+        assert!(!is_altgr_char(KeyCode::Char('@'), KeyModifiers::CONTROL));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_is_altgr_char() {
+        let ctrl_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        assert!(!is_altgr_char(KeyCode::Char('@'), ctrl_alt));
+    }
 }
