@@ -492,7 +492,8 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     modifiers,
                     ..
                 }) if kind != KeyEventKind::Release
-                    && modifiers.contains(KeyModifiers::CONTROL) =>
+                    && modifiers.contains(KeyModifiers::CONTROL)
+                    && !is_altgr_char(code, modifiers) =>
                 {
                     match code {
                         KeyCode::Char('a') => {
@@ -512,7 +513,8 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     modifiers,
                     ..
                 }) if kind != KeyEventKind::Release
-                    && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                    && (!modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                        || is_altgr_char(code, modifiers)) =>
                 {
                     let mut clear_vertical_movement_col_preference = true;
 
@@ -630,6 +632,14 @@ enum NewCursorOffsetHint {
     None,
     Backspace,
     Deletion,
+}
+
+// Windows reports AltGr (used for characters like '@', '{' and '€' on many non-US keyboard
+// layouts) as Ctrl+Alt, so these key presses should be typed rather than treated as shortcuts.
+fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
+    cfg!(windows)
+        && modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && matches!(code, KeyCode::Char(c) if !c.is_control())
 }
 
 fn new_cursor_offset(
