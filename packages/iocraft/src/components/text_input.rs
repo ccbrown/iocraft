@@ -636,11 +636,12 @@ enum NewCursorOffsetHint {
 
 /// Returns whether a keypress is using AltGr, always false for platforms other than Windows.
 /// Windows reports AltGr (used for characters like '@', '{' and '€' on many keyboard layouts)
-/// as Ctrl+Alt, so these key presses should be typed rather than treated as shortcuts.
+/// as Ctrl+Alt, so these key presses should sometimes be typed rather than treated as shortcuts.
+/// Letters and digits are excluded, since they are used for shortcuts.
 fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
     cfg!(windows)
         && modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
-        && matches!(code, KeyCode::Char(c) if !c.is_control())
+        && matches!(code, KeyCode::Char(c) if !c.is_control() && !c.is_ascii_alphanumeric())
 }
 
 fn new_cursor_offset(
