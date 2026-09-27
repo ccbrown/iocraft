@@ -492,7 +492,8 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     modifiers,
                     ..
                 }) if kind != KeyEventKind::Release
-                    && modifiers.contains(KeyModifiers::CONTROL) =>
+                    && modifiers.contains(KeyModifiers::CONTROL)
+                    && !is_altgr_char(code, modifiers) =>
                 {
                     match code {
                         KeyCode::Char('a') => {
@@ -512,7 +513,8 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     modifiers,
                     ..
                 }) if kind != KeyEventKind::Release
-                    && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                    && (!modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                        || is_altgr_char(code, modifiers)) =>
                 {
                     let mut clear_vertical_movement_col_preference = true;
 
@@ -630,6 +632,16 @@ enum NewCursorOffsetHint {
     None,
     Backspace,
     Deletion,
+}
+
+/// Returns whether a keypress is using AltGr, always false for platforms other than Windows.
+/// Windows reports AltGr (used for characters like '@', '{' and '€' on many keyboard layouts)
+/// as Ctrl+Alt, so these key presses should be typed rather than treated as shortcuts.
+/// Letters and digits are excluded, since they are used for shortcuts.
+fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
+    cfg!(windows)
+        && modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && matches!(code, KeyCode::Char(c) if !c.is_control() && !c.is_ascii_alphanumeric())
 }
 
 fn new_cursor_offset(
@@ -955,5 +967,23 @@ mod tests {
             ),
             3
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_is_altgr_char() {
+        let ctrl_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        assert!(is_altgr_char(KeyCode::Char('@'), ctrl_alt));
+        assert!(is_altgr_char(KeyCode::Char('€'), ctrl_alt));
+        assert!(!is_altgr_char(KeyCode::Char('a'), ctrl_alt));
+        assert!(!is_altgr_char(KeyCode::Char('1'), ctrl_alt));
+        assert!(!is_altgr_char(KeyCode::Char('@'), KeyModifiers::CONTROL));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_is_altgr_char() {
+        let ctrl_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        assert!(!is_altgr_char(KeyCode::Char('@'), ctrl_alt));
     }
 }
