@@ -54,6 +54,28 @@ impl<T: Send + Sync + 'static> Component for MyGenericComponent<T> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+struct RequiredValue(u32);
+
+#[derive(Props)]
+struct RequiredComponentProps {
+    optional: String,
+    #[iocraft(required)]
+    required: RequiredValue,
+    #[iocraft(required)]
+    second: RequiredValue,
+}
+
+struct RequiredComponent;
+
+impl Component for RequiredComponent {
+    type Props<'a> = RequiredComponentProps;
+
+    fn new(_props: &Self::Props<'_>) -> Self {
+        Self
+    }
+}
+
 #[test]
 fn minimal() {
     let _: Element<MyComponent> = element!(MyComponent);
@@ -76,6 +98,16 @@ fn props() {
         MyComponent(foo: "bar")
     };
     assert_eq!(e.props.foo, "bar");
+}
+
+#[test]
+fn required_prop() {
+    let e = element! {
+        RequiredComponent(required: RequiredValue(42), second: RequiredValue(7))
+    };
+    assert_eq!(e.props.optional, "");
+    assert_eq!(e.props.required, RequiredValue(42));
+    assert_eq!(e.props.second, RequiredValue(7));
 }
 
 #[test]
