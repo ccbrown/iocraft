@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.1...iocraft-v0.9.2) - 2026-09-30
+
+### Added
+
+- support required component properties ([#228](https://github.com/ccbrown/iocraft/pull/228))
+
+### Fixed
+
+- *(text_input)* don't drop AltGr characters on Windows ([#233](https://github.com/ccbrown/iocraft/pull/233))
+
+### Other
+
+- Bracketed paste ([#231](https://github.com/ccbrown/iocraft/pull/231))
+- clean up / add missing notes to changelog
+
 ### Added
 
 - *(terminal)* support opt-in bracketed paste events in raw mode.
