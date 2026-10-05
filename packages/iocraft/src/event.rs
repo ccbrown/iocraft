@@ -4,13 +4,15 @@
 //! but are owned by iocraft so that rendering/input backends do not have to
 //! depend on any particular one. When the `crossterm` feature is enabled,
 //! `From` conversions to and from the corresponding `crossterm::event` types are
-//! provided.
+//! provided. When the `serde` feature is enabled, these types implement
+//! `Serialize` and `Deserialize` using the same representation as crossterm.
 
 use bitflags::bitflags;
 use std::fmt;
 
 /// Represents a key on the keyboard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum KeyCode {
     /// Backspace key (Delete on macOS, Backspace on other platforms).
     Backspace,
@@ -70,6 +72,7 @@ pub enum KeyCode {
 
 /// Represents a media key (as part of [`KeyCode::Media`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MediaKeyCode {
     /// Play media key.
     Play,
@@ -101,6 +104,7 @@ pub enum MediaKeyCode {
 
 /// Represents a modifier key (as part of [`KeyCode::Modifier`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ModifierKeyCode {
     /// Left Shift key.
     LeftShift,
@@ -135,6 +139,7 @@ pub enum ModifierKeyCode {
 bitflags! {
     /// Represents key modifiers (shift, control, alt, etc.).
     #[derive(Debug, PartialOrd, PartialEq, Eq, Clone, Copy, Hash)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(transparent))]
     pub struct KeyModifiers: u8 {
         /// The shift key.
         const SHIFT = 0b0000_0001;
@@ -155,6 +160,7 @@ bitflags! {
 
 /// Represents the kind of a key event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum KeyEventKind {
     /// The key was pressed.
     Press,
@@ -166,6 +172,7 @@ pub enum KeyEventKind {
 
 /// Represents a mouse button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MouseButton {
     /// Left mouse button.
     Left,
@@ -177,6 +184,7 @@ pub enum MouseButton {
 
 /// Represents the kind of a mouse event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MouseEventKind {
     /// A mouse button was pressed.
     Down(MouseButton),
@@ -359,5 +367,45 @@ mod tests {
 
         let modifiers = KeyModifiers::SHIFT | KeyModifiers::from_bits_retain(0b1000_0000);
         assert_eq!(modifiers.to_string(), "Shift");
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_matches_crossterm_format() {
+        let modifiers = KeyModifiers::SHIFT | KeyModifiers::CONTROL;
+        let json = serde_json::to_string(&modifiers).unwrap();
+        assert_eq!(json, "\"SHIFT | CONTROL\"");
+        assert_eq!(
+            serde_json::from_str::<KeyModifiers>(&json).unwrap(),
+            modifiers
+        );
+
+        let cases = [
+            (KeyCode::Char('a'), r#"{"Char":"a"}"#),
+            (KeyCode::F(5), r#"{"F":5}"#),
+            (KeyCode::Enter, r#""Enter""#),
+            (
+                KeyCode::Media(MediaKeyCode::PlayPause),
+                r#"{"Media":"PlayPause"}"#,
+            ),
+            (
+                KeyCode::Modifier(ModifierKeyCode::LeftShift),
+                r#"{"Modifier":"LeftShift"}"#,
+            ),
+        ];
+        for (code, json) in cases {
+            assert_eq!(serde_json::to_string(&code).unwrap(), json);
+            assert_eq!(serde_json::from_str::<KeyCode>(json).unwrap(), code);
+        }
+
+        let kind = MouseEventKind::Down(MouseButton::Left);
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, r#"{"Down":"Left"}"#);
+        assert_eq!(serde_json::from_str::<MouseEventKind>(&json).unwrap(), kind);
+
+        assert_eq!(
+            serde_json::to_string(&KeyEventKind::Release).unwrap(),
+            r#""Release""#
+        );
     }
 }

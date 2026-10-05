@@ -11,6 +11,8 @@ default = ["crossterm"]
 # Enables the built-in crossterm-backed terminal (iocraft's default backend).
 crossterm = ["dep:crossterm"]
 unstable-output-streams = []
+# Enables Serde serialization and deserialization of types such as `Color` and `KeyCode`.
+serde = ["dep:serde", "bitflags/serde"]
 
 [dependencies]
 crossterm = { version = "0.29.0", features = ["event-stream"], optional = true }
@@ -21,10 +23,15 @@ bitflags = "2.6.0"
 unicode-width = "0.1.13"
 generational-box = "0.5.6"
 regex = "1.12.3"
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 
 [dev-dependencies]
 avt = "0.17"
+serde_json = "1.0"
 indoc = "2"
 smol = "2.0.1"
 smol-macros = "0.1.1"
 macro_rules_attribute = "0.2.0"
+# XXX: Enables optional features when testing so CI covers them. This has no
+# version, so Cargo strips it when publishing.
+iocraft = { path = ".", features = ["serde"] }
