@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - *(terminal)* support opt-in bracketed paste events in raw mode.
+- add optional `serde` feature implementing `Serialize`/`Deserialize` for `Color`, `KeyCode`, `MediaKeyCode`, `ModifierKeyCode`, `KeyModifiers`, `KeyEventKind`, `MouseButton`, and `MouseEventKind`, using the same representation as crossterm's `serde` feature.
 
 ## [0.9.1](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.0...iocraft-v0.9.1) - 2026-09-04
 

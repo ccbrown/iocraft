@@ -18,7 +18,10 @@ pub(crate) use csi;
 /// This mirrors the color model used by common terminal libraries, but is
 /// owned by iocraft so that rendering backends do not have to depend on any
 /// particular one. When the `crossterm` feature is enabled, `From`/`Into`
-/// conversions to and from `crossterm::style::Color` are provided.
+/// conversions to and from `crossterm::style::Color` are provided. When the
+/// `serde` feature is enabled, `Color` implements `Serialize` and `Deserialize`
+/// using the same string representation as crossterm, e.g. `"dark_red"` or
+/// `"rgb_(255,0,0)"`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Color {
     /// Resets the color to the terminal's default.
@@ -113,6 +116,108 @@ impl From<(u8, u8, u8)> for Color {
     fn from((r, g, b): (u8, u8, u8)) -> Self {
         Color::Rgb { r, g, b }
     }
+}
+
+#[cfg(feature = "serde")]
+impl Color {
+    fn name(&self) -> Option<&'static str> {
+        Some(match self {
+            Color::Reset => "reset",
+            Color::Black => "black",
+            Color::DarkGrey => "dark_grey",
+            Color::Red => "red",
+            Color::DarkRed => "dark_red",
+            Color::Green => "green",
+            Color::DarkGreen => "dark_green",
+            Color::Yellow => "yellow",
+            Color::DarkYellow => "dark_yellow",
+            Color::Blue => "blue",
+            Color::DarkBlue => "dark_blue",
+            Color::Magenta => "magenta",
+            Color::DarkMagenta => "dark_magenta",
+            Color::Cyan => "cyan",
+            Color::DarkCyan => "dark_cyan",
+            Color::White => "white",
+            Color::Grey => "grey",
+            Color::Rgb { .. } | Color::AnsiValue(_) => return None,
+        })
+    }
+}
+
+/// Serializes colors as strings such as `"red"`, `"ansi_(42)"`, or `"rgb_(1,2,3)"`.
+///
+/// XXX: This format matches crossterm's so that data serialized before iocraft
+/// switched to its own `Color` type continues to round-trip. Don't change it.
+#[cfg(feature = "serde")]
+impl serde::Serialize for Color {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match (self.name(), *self) {
+            (Some(name), _) => serializer.serialize_str(name),
+            (None, Color::AnsiValue(v)) => serializer.collect_str(&format_args!("ansi_({v})")),
+            (None, Color::Rgb { r, g, b }) => {
+                serializer.collect_str(&format_args!("rgb_({r},{g},{b})"))
+            }
+            (None, _) => unreachable!("only Rgb and AnsiValue are unnamed"),
+        }
+    }
+}
+
+/// Deserializes colors from the strings produced by [`Color`]'s `Serialize`
+/// implementation, as well as `"#rrggbb"` hex strings and case-insensitive
+/// color names, matching crossterm.
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Color {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ColorVisitor;
+
+        impl serde::de::Visitor<'_> for ColorVisitor {
+            type Value = Color;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a color name, `ansi_(value)`, `rgb_(r,g,b)`, or `#rrggbb`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Color, E> {
+                Color::try_from(value)
+                    .ok()
+                    .or_else(|| parse_color_function(value))
+                    .ok_or_else(|| E::invalid_value(serde::de::Unexpected::Str(value), &self))
+            }
+        }
+
+        deserializer.deserialize_str(ColorVisitor)
+    }
+}
+
+#[cfg(feature = "serde")]
+fn parse_color_function(value: &str) -> Option<Color> {
+    if let Some(v) = value
+        .strip_prefix("ansi_(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        return v.parse().ok().map(Color::AnsiValue);
+    }
+    if let Some(v) = value
+        .strip_prefix("rgb_(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        let mut parts = v.split(',').map(str::parse::<u8>);
+        return match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(Ok(r)), Some(Ok(g)), Some(Ok(b)), None) => Some(Color::Rgb { r, g, b }),
+            _ => None,
+        };
+    }
+    if let Some(hex) = value.strip_prefix('#') {
+        if hex.len() == 6 && hex.is_ascii() {
+            let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+            return Some(Color::Rgb {
+                r: channel(0)?,
+                g: channel(2)?,
+                b: channel(4)?,
+            });
+        }
+    }
+    None
 }
 
 /// SGR parameters for the attributes iocraft emits, matching the codes standard
@@ -211,6 +316,52 @@ mod tests {
         // Unknown names fall back to white, matching crossterm.
         assert_eq!("nope".parse::<Color>(), Ok(Color::White));
         assert_eq!(Color::from((1, 2, 3)), Color::Rgb { r: 1, g: 2, b: 3 });
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_matches_crossterm_format() {
+        let cases = [
+            (Color::Reset, "\"reset\""),
+            (Color::DarkGrey, "\"dark_grey\""),
+            (Color::Grey, "\"grey\""),
+            (Color::AnsiValue(255), "\"ansi_(255)\""),
+            (Color::Rgb { r: 1, g: 2, b: 3 }, "\"rgb_(1,2,3)\""),
+        ];
+        for (color, json) in cases {
+            assert_eq!(serde_json::to_string(&color).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Color>(json).unwrap(), color);
+        }
+
+        assert_eq!(
+            serde_json::from_str::<Color>("\"Dark_Red\"").unwrap(),
+            Color::DarkRed
+        );
+        assert_eq!(
+            serde_json::from_str::<Color>("\"#0aFF10\"").unwrap(),
+            Color::Rgb {
+                r: 0x0a,
+                g: 0xff,
+                b: 0x10
+            }
+        );
+        for invalid in [
+            "\"unknown\"",
+            "\"ansi_(256)\"",
+            "\"ansi_(-1)\"",
+            "\"rgb_(1,2)\"",
+            "\"rgb_(1,2,3,4)\"",
+            "\"rgb_(256,0,0)\"",
+            "\"#fffffff\"",
+            "\"#ffgfff\"",
+            "\"#ff🦀\"",
+            "1",
+        ] {
+            assert!(
+                serde_json::from_str::<Color>(invalid).is_err(),
+                "expected {invalid} to be rejected"
+            );
+        }
     }
 
     #[test]
