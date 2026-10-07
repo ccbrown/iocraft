@@ -8,7 +8,7 @@ use crate::{
 #[non_exhaustive]
 #[derive(Default, Props)]
 pub struct ButtonProps<'a> {
-    /// The children of the component. Exactly one child is expected.
+    /// The child of the component. At most one child is allowed.
     pub children: Vec<AnyElement<'a>>,
 
     /// The handler to invoke when the button is triggered.
@@ -24,6 +24,11 @@ pub struct ButtonProps<'a> {
 }
 
 /// `Button` is a component that invokes a handler when clicked or when the Enter or Space key is pressed while it has focus.
+///
+/// # Panics
+///
+/// Panics if more than one child is provided. Wrap multiple elements in a [`View`]
+/// to configure their layout.
 ///
 /// # Example
 ///
@@ -41,6 +46,11 @@ pub struct ButtonProps<'a> {
 /// ```
 #[component]
 pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<AnyElement<'a>> {
+    assert!(
+        props.children.len() <= 1,
+        "Button accepts at most one child; wrap multiple children in a View"
+    );
+
     hooks.use_local_terminal_events({
         let mut handler = props.handler.take();
         let has_focus = props.has_focus;
@@ -75,6 +85,38 @@ mod tests {
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
+
+    #[test]
+    #[should_panic]
+    fn test_button_rejects_multiple_children() {
+        element! {
+            Button {
+                Text(content: "<")
+                #(Some(element!(Text(content: "Click me"))))
+            }
+        }
+        .to_string();
+    }
+
+    #[test]
+    fn test_button_wrapped_children() {
+        let actual = element! {
+            Button {
+                View(flex_direction: FlexDirection::Row) {
+                    Text(content: "<")
+                    #(Some(element!(Text(content: "Click me"))))
+                    Text(content: ">")
+                }
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "<Click me>\n");
+    }
+
+    #[test]
+    fn test_button_empty() {
+        assert_eq!(element!(Button).to_string(), "");
+    }
 
     #[component]
     fn MyComponent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
