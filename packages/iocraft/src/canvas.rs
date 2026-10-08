@@ -211,30 +211,42 @@ impl Canvas {
         }
     }
 
-    fn set_text_row_chars<I>(&mut self, mut x: usize, y: usize, chars: I, style: CanvasTextStyle)
-    where
-        I: IntoIterator<Item = char>,
-    {
-        // Divide the string up into characters, which may consist of multiple Unicode code points.
+    fn set_text_row(
+        &mut self,
+        mut x: isize,
+        y: usize,
+        text: &str,
+        style: CanvasTextStyle,
+        clip: std::ops::Range<isize>,
+    ) {
         let row = &mut self.cells[y];
-        let mut buf = String::new();
-        for c in chars.into_iter() {
-            if x >= row.len() {
-                break;
+        let mut paint_character = |value: &str| {
+            if x >= clip.end {
+                return false;
             }
-            let width = c.width().unwrap_or(0);
-            if width > 0 && !buf.is_empty() {
-                row[x].character = Some(Character {
-                    value: buf.clone(),
+            let width = value.width().max(1) as isize;
+            if x >= clip.start && x + width <= clip.end {
+                row[x as usize].character = Some(Character {
+                    value: value.to_owned(),
                     style,
                 });
-                x += buf.width().max(1);
-                buf.clear();
             }
-            buf.push(c);
+            x += width;
+            true
+        };
+
+        // Keep zero-width suffixes with their base, including at the clip edge.
+        let mut start = 0;
+        for (index, c) in text.char_indices() {
+            if index > start && c.width().unwrap_or(0) > 0 {
+                if !paint_character(&text[start..index]) {
+                    return;
+                }
+                start = index;
+            }
         }
-        if !buf.is_empty() && x < row.len() {
-            row[x].character = Some(Character { value: buf, style });
+        if start < text.len() {
+            paint_character(&text[start..]);
         }
     }
 
@@ -589,45 +601,24 @@ impl CanvasSubviewMut<'_> {
     }
 
     /// Writes text to the region.
+    ///
+    /// Character groups are only written when their full column width fits the clip region.
+    /// Clipping preserves the original text coordinates and keeps zero-width suffixes with
+    /// their base character.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
-        let mut x = self.x + x;
+        let x = self.x + x;
         let min_x = self.clip_x.max(0);
-        let mut to_skip = 0;
-        if x < min_x {
-            to_skip = min_x - x;
-            x = min_x;
+        let max_x = (self.clip_x + self.clip_width as isize).min(self.canvas.width() as isize);
+        if max_x <= min_x {
+            return;
         }
-        let max_x = self.clip_x + self.clip_width as isize - 1;
-        let horizontal_space = max_x - x + 1;
         let min_y = self.clip_y.max(0);
         let max_y = (self.clip_y + self.clip_height as isize).min(self.canvas.height() as _) - 1;
         let mut y = self.y + y;
         for line in text.lines() {
             if y >= min_y && y <= max_y {
-                let mut skipped_width = 0;
-                let mut taken_width = 0;
-                self.canvas.set_text_row_chars(
-                    x as usize,
-                    y as usize,
-                    line.chars()
-                        .skip_while(|c| {
-                            if skipped_width < to_skip {
-                                skipped_width += c.width().unwrap_or(0) as isize;
-                                true
-                            } else {
-                                false
-                            }
-                        })
-                        .take_while(|c| {
-                            if taken_width < horizontal_space {
-                                taken_width += c.width().unwrap_or(0) as isize;
-                                true
-                            } else {
-                                false
-                            }
-                        }),
-                    style,
-                );
+                self.canvas
+                    .set_text_row(x, y as usize, line, style, min_x..max_x);
             }
             y += 1;
         }
@@ -911,6 +902,42 @@ mod tests {
 
         let actual = canvas.to_string();
         assert_eq!(actual, "\n\n  ne 2\n  ne 3\n\n");
+    }
+
+    #[test]
+    fn test_canvas_wide_text_clipping_preserves_right_sibling() {
+        let mut canvas = Canvas::new(3, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 1, 1)
+            .set_text(0, 0, "界", CanvasTextStyle::default());
+        canvas
+            .subview_mut(1, 0, 1, 0, 1, 1)
+            .set_text(0, 0, "R", CanvasTextStyle::default());
+
+        assert_eq!(canvas.to_string(), " R\n");
+    }
+
+    #[test]
+    fn test_canvas_wide_text_clipping_preserves_left_coordinates() {
+        let mut canvas = Canvas::new(3, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 3, 1)
+            .set_text(-1, 0, "界R", CanvasTextStyle::default());
+
+        assert_eq!(canvas.to_string(), " R\n");
+    }
+
+    #[test]
+    fn test_canvas_text_clipping_keeps_combining_suffix() {
+        let mut canvas = Canvas::new(1, 1);
+        canvas.subview_mut(0, 0, 0, 0, 1, 1).set_text(
+            0,
+            0,
+            "e\u{301}X",
+            CanvasTextStyle::default(),
+        );
+
+        assert_eq!(canvas.to_string(), "e\u{301}\n");
     }
 
     #[test]
