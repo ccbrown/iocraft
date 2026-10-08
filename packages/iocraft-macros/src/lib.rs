@@ -4,7 +4,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::sync::atomic::{AtomicU64, Ordering};
 use syn::{
     braced, parenthesized,
@@ -834,6 +834,22 @@ impl ToTokens for ParsedComponent {
             _ => None,
         });
         let impl_args = &self.impl_args;
+        let hooks_span = args
+            .iter()
+            .find_map(|arg| {
+                let FnArg::Typed(arg) = arg else {
+                    return None;
+                };
+                let Pat::Ident(pat) = &*arg.pat else {
+                    return None;
+                };
+                (pat.ident == "hooks" || pat.ident == "_hooks").then(|| arg.ty.span())
+            })
+            .unwrap_or_else(Span::call_site);
+        let context_stack = quote_spanned!(hooks_span => updater.component_context_stack());
+        let set_layout = quote_spanned!(hooks_span => updater.set_transparent_layout(true););
+        let update_children =
+            quote_spanned!(hooks_span => updater.update_children([&mut e], None););
 
         let props_type_name = self
             .props_type
@@ -862,11 +878,11 @@ impl ToTokens for ParsedComponent {
 
                 fn update(&mut self, props: &mut Self::Props<'_>, mut hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
                     let mut e = {
-                        let mut hooks = hooks.with_context_stack(updater.component_context_stack());
+                        let mut hooks = hooks.with_context_stack(#context_stack);
                         Self::implementation(#(#impl_args),*).into()
                     };
-                    updater.set_transparent_layout(true);
-                    updater.update_children([&mut e], None);
+                    #set_layout
+                    #update_children
                 }
             }
         });
@@ -977,6 +993,20 @@ impl ToTokens for ParsedComponent {
 /// ```
 ///
 /// However, note that generic type parameters must be `'static`.
+///
+/// # Lifetime diagnostics
+///
+/// Generated context-borrow errors point to the type of the `hooks` parameter. Prefer inferred
+/// lifetimes on `Hooks`: sharing an explicit lifetime between `Hooks` and the
+/// returned element can keep the context borrow alive while the component updates its children.
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// #[component]
+/// fn Example<'a>(_hooks: Hooks) -> impl Into<AnyElement<'a>> {
+///     element!(Text(content: "Hooks lifetimes are inferred"))
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let component = parse_macro_input!(item as ParsedComponent);
