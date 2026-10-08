@@ -102,6 +102,8 @@ pub struct TextInputProps {
     pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
+    /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
+    /// Multiline paste preserves the original text.
     pub multiline: bool,
 
     /// If true (requires `multiline`), the input auto-grows its height to
@@ -592,6 +594,11 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     }
                 }
                 TerminalEvent::BracketedPaste(data) if !data.is_empty() => {
+                    let data = if multiline {
+                        data
+                    } else {
+                        normalize_single_line_paste(data)
+                    };
                     value.insert_str(temp_cursor_offset, &data);
                     temp_cursor_offset += data.len();
                     on_change(value.clone());
@@ -632,6 +639,36 @@ enum NewCursorOffsetHint {
     None,
     Backspace,
     Deletion,
+}
+
+fn normalize_single_line_paste(data: String) -> String {
+    let Some(first_break) = data
+        .as_bytes()
+        .iter()
+        .position(|byte| matches!(*byte, b'\r' | b'\n'))
+    else {
+        return data;
+    };
+
+    let mut bytes = data.into_bytes();
+    let mut read = first_break;
+    let mut write = first_break;
+    while read < bytes.len() {
+        let byte = bytes[read];
+        bytes[write] = if matches!(byte, b'\r' | b'\n') {
+            b' '
+        } else {
+            byte
+        };
+        read += 1;
+        if byte == b'\r' && bytes.get(read) == Some(&b'\n') {
+            read += 1;
+        }
+        write += 1;
+    }
+    bytes.truncate(write);
+    // ASCII replacements/removals cannot invalidate the original UTF-8.
+    String::from_utf8(bytes).expect("line break normalization preserves UTF-8")
 }
 
 /// Returns whether a keypress is using AltGr, always false for platforms other than Windows.
@@ -769,6 +806,22 @@ mod tests {
     }
 
     #[apply(test!)]
+    async fn test_text_input_paste_single_line_utf8_cursor() {
+        let actual = element!(MyComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![
+                    TerminalEvent::BracketedPaste("é\r\n界".to_string()),
+                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
+                ],
+            )))
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+        assert_eq!(actual, vec!["  \n", " é 界! \n"]);
+    }
+
+    #[apply(test!)]
     async fn test_text_input_initial_value() {
         let actual = element! {
             MyComponent(initial_value: "foo")
@@ -858,6 +911,19 @@ mod tests {
             .await;
         let expected = vec!["  \n\n\n", " foo\n ! \n\n"];
         assert_eq!(actual, expected);
+    }
+
+    #[apply(test!)]
+    async fn test_text_input_paste_multiline() {
+        let actual = element!(MyMultilineComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![TerminalEvent::BracketedPaste("red\nblue!".to_string())],
+            )))
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+        assert_eq!(actual, vec!["  \n\n\n", " red\n blue! \n\n"]);
     }
 
     #[test]
