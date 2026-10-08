@@ -38,13 +38,9 @@ pub(crate) fn handles_vs16_incorrectly() -> bool {
 }
 
 impl Character {
-    fn required_padding(&self) -> usize {
-        if self.value.contains('\u{fe0f}') {
-            if handles_vs16_incorrectly() {
-                self.value.width() - 1
-            } else {
-                0
-            }
+    fn required_padding(&self, width: usize) -> usize {
+        if width > 1 && self.value.contains('\u{fe0f}') && handles_vs16_incorrectly() {
+            width - 1
         } else {
             0
         }
@@ -106,6 +102,9 @@ impl CanvasCell {
 ///
 /// - When implementing low-level components, you'll need to utilize the `Canvas` drawing methods.
 /// - When implementing unit tests for components, you may want to render to a `Canvas` for inspection.
+///
+/// Character groups containing only zero-width marks reserve one column. Both styled and
+/// unstyled writers emit a blank base before those marks so the output occupies that column.
 #[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
@@ -289,6 +288,7 @@ impl Canvas {
         let mut did_clear_line = false;
         while col < row.len() {
             let cell = &row[col];
+            let character_width = cell.character.as_ref().map_or(1, |c| c.value.width());
 
             if ansi {
                 let mut needs_reset = false;
@@ -347,11 +347,7 @@ impl Canvas {
                 }
             }
 
-            if let Some(c) = &cell.character {
-                col += c.value.width().max(1);
-            } else {
-                col += 1;
-            }
+            col += character_width.max(1);
 
             if ansi && col >= self.width {
                 if hyperlink.is_some() {
@@ -386,7 +382,13 @@ impl Canvas {
             }
 
             if let Some(c) = &cell.character {
-                write!(w, "{}{}", c.value, " ".repeat(c.required_padding()))?;
+                if character_width == 0 {
+                    w.write_all(b" ")?;
+                }
+                w.write_all(c.value.as_bytes())?;
+                for _ in 0..c.required_padding(character_width) {
+                    w.write_all(b" ")?;
+                }
             } else {
                 w.write_all(b" ")?;
             }
@@ -954,6 +956,24 @@ mod tests {
         write!(expected, csi!("0m")).unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_zero_width_character_reserves_its_column() {
+        let mut canvas = Canvas::new(4, 1);
+        canvas.subview_mut(0, 0, 0, 0, 4, 1).set_text(
+            0,
+            0,
+            "\u{fe0f}X",
+            CanvasTextStyle::default(),
+        );
+        assert_eq!(canvas.to_string(), " \u{fe0f}X\n");
+
+        let mut output = Vec::new();
+        canvas
+            .write_ansi_without_final_newline(&mut output)
+            .unwrap();
+        assert!(std::str::from_utf8(&output).unwrap().contains(" \u{fe0f}X"));
     }
 
     #[test]
