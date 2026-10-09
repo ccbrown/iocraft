@@ -38,8 +38,8 @@ pub(crate) fn handles_vs16_incorrectly() -> bool {
 }
 
 impl Character {
-    fn required_padding(&self, width: usize) -> usize {
-        if width > 1 && self.value.contains('\u{fe0f}') && handles_vs16_incorrectly() {
+    fn required_padding(&self, width: usize, compatibility: impl FnOnce() -> bool) -> usize {
+        if width > 1 && self.value.contains('\u{fe0f}') && compatibility() {
             width - 1
         } else {
             0
@@ -398,7 +398,7 @@ impl Canvas {
                     w.write_all(b" ")?;
                 }
                 w.write_all(c.value.as_bytes())?;
-                for _ in 0..c.required_padding(character_width) {
+                for _ in 0..c.required_padding(character_width, handles_vs16_incorrectly) {
                     w.write_all(b" ")?;
                 }
             } else {
@@ -631,6 +631,27 @@ impl CanvasSubviewMut<'_> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+
+    #[test]
+    fn test_required_padding_zero_width_compatibility() {
+        // Force the compatibility branch without mutating cached process environment.
+        for (value, compatibility, expected) in [
+            ("\u{fe0f}", true, 0),
+            ("❤\u{fe0f}", true, 1),
+            ("❤\u{fe0f}", false, 0),
+            ("界", true, 0),
+        ] {
+            let character = Character {
+                value: value.into(),
+                style: CanvasTextStyle::default(),
+            };
+            assert_eq!(
+                character.required_padding(character.value.width(), || compatibility),
+                expected,
+                "{value:?}, compatibility={compatibility}",
+            );
+        }
+    }
 
     #[test]
     fn test_canvas_background_color() {

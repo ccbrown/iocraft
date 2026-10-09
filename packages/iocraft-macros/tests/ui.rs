@@ -1,8 +1,12 @@
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::Path,
+    process::{Command, Output},
+};
 
-fn check_fixture(project: &Path, name: &str, should_compile: bool) {
+fn check_fixture(project: &Path, name: &str, should_compile: bool) -> Output {
     let output = Command::new(env!("CARGO"))
-        .args(["check", "--offline", "--bin", name])
+        .args(["check", "--offline", "--message-format=json", "--bin", name])
         .arg("--manifest-path")
         .arg(project.join("Cargo.toml"))
         // Do not contend with the outer cargo invocation's target-directory lock.
@@ -17,6 +21,7 @@ fn check_fixture(project: &Path, name: &str, should_compile: bool) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
+    output
 }
 
 #[test]
@@ -29,6 +34,7 @@ fn props_diagnostics() {
         "missing_required_prop",
         "private_builder_fields",
         "complete_required_props",
+        "explicit_hooks_lifetime",
     ] {
         fs::copy(
             manifest_dir.join(format!("tests/ui/{name}.rs")),
@@ -55,4 +61,34 @@ fn props_diagnostics() {
     check_fixture(project.path(), "complete_required_props", true);
     check_fixture(project.path(), "missing_required_prop", false);
     check_fixture(project.path(), "private_builder_fields", false);
+
+    let output = check_fixture(project.path(), "explicit_hooks_lifetime", false);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let diagnostic = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|message| {
+            message["reason"] == "compiler-message" && message["message"]["code"]["code"] == "E0502"
+        })
+        .expect("explicit Hooks lifetimes must produce a borrow diagnostic");
+    let mut primary = diagnostic["message"]["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|span| span["is_primary"] == true)
+        .peekable();
+    assert!(
+        primary.peek().is_some(),
+        "borrow diagnostic has no primary span"
+    );
+    for span in primary {
+        assert_eq!(
+            Path::new(span["file_name"].as_str().unwrap()).file_name(),
+            Some(std::ffi::OsStr::new("explicit_hooks_lifetime.rs")),
+        );
+        assert_eq!(span["line_start"], 4);
+        assert_eq!(span["line_end"], 4);
+        assert_eq!(span["column_start"], 23);
+        assert_eq!(span["column_end"], 28);
+    }
 }

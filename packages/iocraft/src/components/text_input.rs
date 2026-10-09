@@ -807,18 +807,25 @@ mod tests {
 
     #[apply(test!)]
     async fn test_text_input_paste_single_line_utf8_cursor() {
-        let actual = element!(MyComponent)
-            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
-                vec![
-                    TerminalEvent::BracketedPaste("é\r\n界".to_string()),
-                    TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
-                ],
-            )))
-            .map(|c| c.to_string())
-            .collect::<Vec<_>>()
-            .await;
+        for (pasted, expected) in [
+            ("é\n界", " é 界! \n"),
+            ("é\r界", " é 界! \n"),
+            ("é\r\n界", " é 界! \n"),
+            ("é\r\n界\r🙂\n", " é 界 🙂 ! \n"),
+        ] {
+            let actual = element!(MyComponent)
+                .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                    vec![
+                        TerminalEvent::BracketedPaste(pasted.to_string()),
+                        TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
+                    ],
+                )))
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .await;
 
-        assert_eq!(actual, vec!["  \n", " é 界! \n"]);
+            assert_eq!(actual, vec!["  \n", expected], "{pasted:?}");
+        }
     }
 
     #[apply(test!)]
