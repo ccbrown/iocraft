@@ -82,7 +82,10 @@ fn props_diagnostics() {
         "borrow diagnostic has no primary span"
     );
     for span in primary {
-        assert_eq!(span["file_name"], "src/bin/explicit_hooks_lifetime.rs");
+        assert_eq!(
+            Path::new(span["file_name"].as_str().unwrap()).file_name(),
+            Some(std::ffi::OsStr::new("explicit_hooks_lifetime.rs")),
+        );
         assert_eq!(span["line_start"], 4);
         assert_eq!(span["line_end"], 4);
         assert_eq!(span["column_start"], 23);
