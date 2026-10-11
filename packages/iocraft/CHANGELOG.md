@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.1...iocraft-v0.9.2) - 2026-10-09
+
+### Added
+
+- add serde support for types ported from crossterm ([#235](https://github.com/ccbrown/iocraft/pull/235))
+- support required component properties ([#228](https://github.com/ccbrown/iocraft/pull/228))
+
+### Fixed
+
+- *(canvas)* clip complete character groups at original coordinates ([#241](https://github.com/ccbrown/iocraft/pull/241))
+- *(canvas)* emit a blank base for zero-width character groups ([#242](https://github.com/ccbrown/iocraft/pull/242))
+- *(text-input)* normalize single-line bracketed paste ([#243](https://github.com/ccbrown/iocraft/pull/243))
+- *(button)* reject extra children instead of dropping them ([#236](https://github.com/ccbrown/iocraft/pull/236))
+- *(text_input)* don't drop AltGr characters on Windows ([#233](https://github.com/ccbrown/iocraft/pull/233))
+
+### Other
+
+- cover merged Hooks, VS16 and paste regressions ([#244](https://github.com/ccbrown/iocraft/pull/244))
+- Bracketed paste ([#231](https://github.com/ccbrown/iocraft/pull/231))
+- clean up / add missing notes to changelog
+
 ### Added
 
 - *(terminal)* support opt-in bracketed paste events in raw mode.
