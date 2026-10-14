@@ -174,9 +174,23 @@ impl Canvas {
         )
     }
 
+    // Wide characters are only stored in their first cell, so when a cell is overwritten or
+    // cleared, any earlier character extending into it must be removed as well.
+    fn clear_overlapping_character(row: &mut [CanvasCell], x: usize) {
+        if let Some(prev) = row[..x].iter().rposition(|cell| cell.character.is_some()) {
+            let prev_width = row[prev].character.as_ref().unwrap().value.width();
+            if prev + prev_width > x {
+                row[prev].character = None;
+            }
+        }
+    }
+
     fn clear_text(&mut self, x: usize, y: usize, w: usize, h: usize) {
         for y in y..y + h {
             if let Some(row) = self.cells.get_mut(y) {
+                if w > 0 && x < row.len() {
+                    Self::clear_overlapping_character(row, x);
+                }
                 for x in x..x + w {
                     if x < row.len() {
                         row[x].character = None;
@@ -225,7 +239,13 @@ impl Canvas {
             }
             let width = value.width().max(1) as isize;
             if x >= clip.start && x + width <= clip.end {
-                row[x as usize].character = Some(Character {
+                let start = x as usize;
+                let end = start + width as usize;
+                Self::clear_overlapping_character(row, start);
+                for cell in &mut row[start + 1..end] {
+                    cell.character = None;
+                }
+                row[start].character = Some(Character {
                     value: value.to_owned(),
                     style,
                 });
@@ -616,13 +636,11 @@ impl CanvasSubviewMut<'_> {
         }
         let min_y = self.clip_y.max(0);
         let max_y = (self.clip_y + self.clip_height as isize).min(self.canvas.height() as _) - 1;
-        let mut y = self.y + y;
-        for line in text.lines() {
+        for (y, line) in (self.y + y..).zip(text.lines()) {
             if y >= min_y && y <= max_y {
                 self.canvas
                     .set_text_row(x, y as usize, line, style, min_x..max_x);
             }
-            y += 1;
         }
     }
 }
@@ -964,6 +982,25 @@ mod tests {
     }
 
     #[test]
+    fn test_canvas_write_over_partial_character() {
+        let mut canvas = Canvas::new(10, 1);
+
+        canvas.subview_mut(0, 0, 0, 0, 10, 1).set_text(
+            0,
+            0,
+            "一二三四五",
+            CanvasTextStyle::default(),
+        );
+
+        // This "x" should overwrite the "三" character, but leave the others intact.
+        canvas
+            .subview_mut(5, 0, 5, 0, 5, 1)
+            .set_text(0, 0, "x", CanvasTextStyle::default());
+
+        assert_eq!(canvas.to_string(), "一二 x四五\n");
+    }
+
+    #[test]
     fn test_canvas_text_clearing() {
         let mut canvas = Canvas::new(10, 1);
         canvas
@@ -973,6 +1010,23 @@ mod tests {
 
         canvas.subview_mut(0, 0, 0, 0, 10, 1).clear_text(0, 0, 3, 1);
         assert_eq!(canvas.to_string(), "   lo!\n");
+    }
+
+    #[test]
+    fn test_canvas_clear_partial_character() {
+        let mut canvas = Canvas::new(10, 1);
+
+        canvas.subview_mut(0, 0, 0, 0, 10, 1).set_text(
+            0,
+            0,
+            "一二三四五",
+            CanvasTextStyle::default(),
+        );
+
+        // Clearing the second half of "三" should remove it, but leave the others intact.
+        canvas.subview_mut(0, 0, 0, 0, 10, 1).clear_text(5, 0, 1, 1);
+
+        assert_eq!(canvas.to_string(), "一二  四五\n");
     }
 
     #[test]
