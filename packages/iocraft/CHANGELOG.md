@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - partial overwrites of wide characters in canvas ([#246](https://github.com/ccbrown/iocraft/pull/246))
 
+### Other
+
+- *(iocraft)* release v0.9.3 ([#245](https://github.com/ccbrown/iocraft/pull/245))
+
+## [0.9.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.2...iocraft-v0.9.3) - 2026-10-14
+
+### Fixed
+
+- partial overwrites of wide characters in canvas ([#246](https://github.com/ccbrown/iocraft/pull/246))
+
 ## [0.9.2](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.1...iocraft-v0.9.2) - 2026-10-09
 
 ### Added
