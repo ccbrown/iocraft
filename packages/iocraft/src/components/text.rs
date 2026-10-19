@@ -72,6 +72,8 @@ pub struct TextProps {
 
 /// `Text` is a component that renders a text string.
 ///
+/// Style-only updates reuse the text measurement function.
+///
 /// # Example
 ///
 /// ```
@@ -89,6 +91,7 @@ pub struct Text {
     wrap: TextWrap,
     align: TextAlign,
     hyperlink: Option<String>,
+    measurement_initialized: bool,
 }
 
 impl Text {
@@ -266,11 +269,20 @@ impl Component for Text {
             italic: props.italic,
             invert: props.invert,
         };
-        self.content = strip_ansi(&props.content).into_owned();
-        self.wrap = props.wrap;
+        let content = strip_ansi(&props.content);
+        let content_changed = self.content != content;
+        let measurement_changed =
+            !self.measurement_initialized || content_changed || self.wrap != props.wrap;
+        if content_changed {
+            self.content = content.into_owned();
+        }
+        if measurement_changed {
+            self.wrap = props.wrap;
+            updater.set_measure_func(Self::measure_func(self.content.clone(), props.wrap));
+            self.measurement_initialized = true;
+        }
         self.align = props.align;
         self.hyperlink = props.hyperlink.clone();
-        updater.set_measure_func(Self::measure_func(self.content.clone(), props.wrap));
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
@@ -505,5 +517,59 @@ mod tests {
             .to_string(),
             "789abcdef\n"
         );
+    }
+
+    #[test]
+    fn test_empty_text_keeps_its_row_before_a_sibling() {
+        let canvas = element! {
+            View(flex_direction: FlexDirection::Column) {
+                Text
+                Text(content: "footer")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.get_text(0, 1, 6, 1), "footer");
+    }
+
+    #[component]
+    fn ChangingMeasurement(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut stage = hooks.use_state(|| 0u32);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(_)) {
+                stage.set(stage.get() + 1);
+            }
+        });
+        element! {
+            View(width: if stage.get() >= 2 { 4 } else { 6 }, flex_direction: FlexDirection::Column) {
+                Text(content: if stage.get() >= 3 { "new" } else { "ab cd ef" },
+                     wrap: if stage.get() == 0 { TextWrap::NoWrap } else { TextWrap::Wrap })
+                Text(content: "footer", wrap: TextWrap::NoWrap)
+            }
+        }
+    }
+
+    #[test]
+    fn test_cached_measurement_tracks_wrapping_constraints_and_content() {
+        use futures::StreamExt;
+        smol::block_on(async {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let mut app = element!(ChangingMeasurement);
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            let first = frames.next().await.unwrap();
+            assert_eq!(first.get_text(0, 1, 6, 1), "footer");
+            for (stage, word_row, footer_row) in [(1, 1, 2), (2, 2, 3), (3, 0, 1)] {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Char('n'),
+                    )))
+                    .unwrap();
+                let canvas = frames.next().await.unwrap();
+                let word = if stage == 3 { "new" } else { "ef" };
+                assert_eq!(canvas.get_text(0, word_row, word.len(), 1), word);
+                assert_eq!(canvas.get_text(0, footer_row, 4, 1), "foot");
+            }
+        });
     }
 }
