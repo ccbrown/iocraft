@@ -141,6 +141,8 @@ impl Canvas {
     /// Each row within the region produces one line in the result, separated
     /// by newlines. Trailing whitespace on each line is trimmed. Out-of-bounds
     /// coordinates are clamped silently.
+    /// A wide character is included once; its continuation columns do not
+    /// introduce spaces into the extracted text.
     pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
         let mut lines = Vec::with_capacity(h);
         for row_idx in y..y + h {
@@ -160,10 +162,17 @@ impl Canvas {
                 }
             };
             let mut s = String::with_capacity(trim_end);
-            for cell in &slice[..trim_end] {
-                match cell.character.as_ref() {
-                    Some(ch) => s.push_str(&ch.value),
-                    None => s.push(' '),
+            let mut col = 0;
+            while col < trim_end {
+                match slice[col].character.as_ref() {
+                    Some(ch) => {
+                        s.push_str(&ch.value);
+                        col += ch.value.width().max(1);
+                    }
+                    None => {
+                        s.push(' ');
+                        col += 1;
+                    }
                 }
             }
             lines.push(s);
@@ -1124,6 +1133,22 @@ mod tests {
         assert_eq!(canvas.get_text(0, 0, 10, 1), "hello");
         assert_eq!(canvas.get_text(0, 1, 10, 1), "  ab");
         assert_eq!(canvas.get_text(0, 2, 10, 1), "");
+    }
+
+    #[test]
+    fn test_get_text_wide_character_columns() {
+        let mut canvas = Canvas::new(10, 2);
+        let mut sv = canvas.subview_mut(0, 0, 0, 0, 10, 2);
+        sv.set_text(0, 0, "界a🙂b", CanvasTextStyle::default());
+        sv.set_text(0, 1, "a\u{301}", CanvasTextStyle::default());
+        sv.set_text(2, 1, "界b", CanvasTextStyle::default());
+
+        assert_eq!(canvas.get_text(0, 0, 10, 1), "界a🙂b");
+        assert_eq!(canvas.get_text(1, 0, 5, 1), " a🙂b");
+        assert_eq!(canvas.get_text(0, 1, 10, 1), "a\u{301} 界b");
+
+        let sv = canvas.subview_mut(2, 0, 0, 0, 10, 2);
+        assert_eq!(sv.get_text(0, 0, 4, 1), "a🙂b");
     }
 
     #[test]
