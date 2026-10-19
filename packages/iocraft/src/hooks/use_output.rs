@@ -14,6 +14,7 @@ mod private {
 /// output will be appended to stdout or stderr, above the rendered component output.
 ///
 /// Both `print` and `println` methods are available for writing output with or without newlines.
+/// Formatting, wake callbacks, and backend writes run without holding the output queue lock.
 ///
 /// # Example
 ///
@@ -62,7 +63,7 @@ struct UseOutputState {
 }
 
 impl UseOutputState {
-    fn push(&mut self, stream: Output, mut content: String, mut newline: bool) {
+    fn push(&mut self, stream: Output, mut content: String, mut newline: bool) -> Option<Waker> {
         if !newline && content.ends_with('\n') {
             // Move the trailing newline into the flag so the backend chooses
             // the line terminator (see `Passthrough`).
@@ -77,28 +78,18 @@ impl UseOutputState {
             content: content.into(),
             newline,
         });
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
-        }
+        self.waker.take()
     }
+}
 
-    fn exec(&mut self, updater: &mut ComponentUpdater) {
-        if self.queue.is_empty() {
-            return;
-        }
-
-        // Check if we have a terminal - if not, messages stay queued
-        if updater.terminal_mut().is_none() {
-            return;
-        }
-
-        updater.clear_terminal_output();
-
-        // The backend owns placement, newline choice (`\r\n` vs `\n`), and any
-        // cursor re-anchoring.
-        let terminal = updater.terminal_mut().unwrap();
-        let _ = terminal.print_above(&self.queue);
-        self.queue.clear();
+fn queue_output<S: ToString>(state: &Mutex<UseOutputState>, stream: Output, msg: S, newline: bool) {
+    let content = msg.to_string();
+    let waker = {
+        let mut state = state.lock().unwrap();
+        state.push(stream, content, newline)
+    };
+    if let Some(waker) = waker {
+        waker.wake();
     }
 }
 
@@ -112,15 +103,13 @@ impl StdoutHandle {
     /// Queues a message to be written asynchronously to stdout, above the rendered component
     /// output.
     pub fn println<S: ToString>(&self, msg: S) {
-        let mut state = self.state.lock().unwrap();
-        state.push(Output::Stdout, msg.to_string(), true);
+        queue_output(&self.state, Output::Stdout, msg, true);
     }
 
     /// Queues a message to be written asynchronously to stdout without a newline, above the
     /// rendered component output.
     pub fn print<S: ToString>(&self, msg: S) {
-        let mut state = self.state.lock().unwrap();
-        state.push(Output::Stdout, msg.to_string(), false);
+        queue_output(&self.state, Output::Stdout, msg, false);
     }
 }
 
@@ -134,21 +123,20 @@ impl StderrHandle {
     /// Queues a message to be written asynchronously to stderr, above the rendered component
     /// output.
     pub fn println<S: ToString>(&self, msg: S) {
-        let mut state = self.state.lock().unwrap();
-        state.push(Output::Stderr, msg.to_string(), true);
+        queue_output(&self.state, Output::Stderr, msg, true);
     }
 
     /// Queues a message to be written asynchronously to stderr without a newline, above the
     /// rendered component output.
     pub fn print<S: ToString>(&self, msg: S) {
-        let mut state = self.state.lock().unwrap();
-        state.push(Output::Stderr, msg.to_string(), false);
+        queue_output(&self.state, Output::Stderr, msg, false);
     }
 }
 
 #[derive(Default)]
 struct UseOutputImpl {
     state: Arc<Mutex<UseOutputState>>,
+    pending: Vec<Passthrough<'static>>,
 }
 
 impl Hook for UseOutputImpl {
@@ -163,8 +151,16 @@ impl Hook for UseOutputImpl {
     }
 
     fn post_component_update(&mut self, updater: &mut ComponentUpdater) {
-        let mut state = self.state.lock().unwrap();
-        state.exec(updater);
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.queue.is_empty() || updater.terminal_mut().is_none() {
+                return;
+            }
+            std::mem::swap(&mut self.pending, &mut state.queue);
+        }
+        updater.clear_terminal_output();
+        let _ = updater.terminal_mut().unwrap().print_above(&self.pending);
+        self.pending.clear();
     }
 }
 
@@ -229,9 +225,9 @@ mod tests {
     #[test]
     fn test_print_trailing_newline_normalization() {
         let mut state = UseOutputState::default();
-        state.push(Output::Stdout, "done\n".to_string(), false);
-        state.push(Output::Stdout, "crlf\r\n".to_string(), false);
-        state.push(Output::Stdout, "blank\n\n".to_string(), true);
+        let _ = state.push(Output::Stdout, "done\n".to_string(), false);
+        let _ = state.push(Output::Stdout, "crlf\r\n".to_string(), false);
+        let _ = state.push(Output::Stdout, "blank\n\n".to_string(), true);
 
         // A trailing newline in no-newline content moves into the flag.
         assert_eq!(state.queue[0].content, "done");
@@ -241,5 +237,57 @@ mod tests {
         // println content is left untouched; its newlines are intentional.
         assert_eq!(state.queue[2].content, "blank\n\n");
         assert!(state.queue[2].newline);
+    }
+
+    #[test]
+    fn test_formatting_and_waking_can_enqueue_output() {
+        struct NestedMessage(StderrHandle);
+        impl std::fmt::Display for NestedMessage {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.println("inner");
+                f.write_str("outer")
+            }
+        }
+        struct WriteOnWake(StdoutHandle);
+        impl std::task::Wake for WriteOnWake {
+            fn wake(self: Arc<Self>) {
+                self.0.println("wake");
+            }
+        }
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let mut output = UseOutputImpl::default();
+            let stdout = output.use_stdout();
+            let stderr = output.use_stderr();
+            output.state.lock().unwrap().waker =
+                Some(Waker::from(Arc::new(WriteOnWake(stdout.clone()))));
+            stdout.println(NestedMessage(stderr));
+            let messages: Vec<_> = output
+                .state
+                .lock()
+                .unwrap()
+                .queue
+                .iter()
+                .map(|message| {
+                    (
+                        matches!(message.stream, Output::Stderr),
+                        message.content.to_string(),
+                    )
+                })
+                .collect();
+            sender.send(messages).unwrap();
+        });
+        assert_eq!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("reentrant output must not deadlock"),
+            vec![
+                (true, "inner".to_string()),
+                (false, "wake".to_string()),
+                (false, "outer".to_string()),
+            ]
+        );
+        worker.join().unwrap();
     }
 }
