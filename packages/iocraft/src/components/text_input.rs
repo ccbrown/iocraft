@@ -765,13 +765,15 @@ mod tests {
     struct CrlfInputProps {
         cursor: usize,
         #[iocraft(required)]
+        initial_value: &'static str,
+        #[iocraft(required)]
         observed: Arc<Mutex<String>>,
     }
 
     #[component]
     fn CrlfInput(mut hooks: Hooks, props: &CrlfInputProps) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let mut value = hooks.use_state(|| "a\r\nb".to_string());
+        let mut value = hooks.use_state(|| props.initial_value.to_string());
         let mut handle = hooks.use_ref_default::<TextInputHandle>();
         let cursor = props.cursor;
         hooks.use_effect(move || handle.write().set_cursor_offset(cursor), ());
@@ -797,16 +799,23 @@ mod tests {
 
     #[apply(test!)]
     async fn test_crlf_editing_and_requested_cursor_offsets() {
-        for (cursor, key, expected_value, expected_frame) in [
-            (3_usize, Some(KeyCode::Backspace), "a!b", "a!b"),
-            (1, Some(KeyCode::Delete), "a!b", "a!b"),
-            (2, None, "a!\r\nb", "a!\nb"),
+        for (initial_value, cursor, key, expected_value, expected_frame) in [
+            ("a\r\nb", 3_usize, Some(KeyCode::Backspace), "a!b", "a!b"),
+            ("a\r\nb", 1, Some(KeyCode::Delete), "a!b", "a!b"),
+            ("a\r\nb", 2, None, "a!\r\nb", "a!\nb"),
+            ("a界b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
+            ("a界b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
         ] {
             let observed = Arc::new(Mutex::new(String::new()));
-            let events = key.into_iter().chain(std::iter::once(KeyCode::Char('!'))).map(
-                |code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)),
-            );
-            let mut app = element!(CrlfInput(cursor: cursor, observed: observed.clone()));
+            let events = key
+                .into_iter()
+                .chain(std::iter::once(KeyCode::Char('!')))
+                .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
+            let mut app = element!(CrlfInput(
+                cursor: cursor,
+                initial_value: initial_value,
+                observed: observed.clone(),
+            ));
             let frames = app
                 .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
                     events,
