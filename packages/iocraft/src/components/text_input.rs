@@ -9,7 +9,8 @@ use crate::{
     Props, Size, TerminalEvent, Weight,
 };
 use std::sync::Arc;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
+use unicode_width::UnicodeWidthStr;
 
 /// A handle which can be used for imperative control of a [`TextInput`] component.
 ///
@@ -58,8 +59,7 @@ impl TextInputHandle {
     ///
     /// The offset is in bytes, not characters.
     /// Offsets past the end are clamped to the value's length. An offset
-    /// inside a UTF-8 character is rounded down to that character's start.
-    /// An offset between CR and LF is rounded down to the start of that line break.
+    /// inside a Unicode grapheme cluster is rounded down to that cluster's start.
     pub fn set_cursor_offset(&mut self, offset: usize) {
         if let Some(inner) = &mut self.inner {
             inner.requested_cursor_offset.set(Some(offset));
@@ -107,7 +107,8 @@ pub struct TextInputProps {
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
     /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
     /// Multiline paste preserves the original text.
-    /// CRLF line breaks are navigated and deleted as a single unit.
+    /// Cursor movement and deletion preserve Unicode grapheme clusters, including CRLF.
+    /// At a soft wrap, the boundary offset belongs to the start of the following row.
     pub multiline: bool,
 
     /// If true (requires `multiline`), the input auto-grows its height to
@@ -183,7 +184,12 @@ impl TextBuffer {
         for (i, row) in self.rows.iter().enumerate() {
             if offset >= row.offset {
                 let offset_in_row = offset - row.offset;
-                if offset_in_row <= row.len {
+                if offset_in_row <= row.len
+                    && self
+                        .rows
+                        .get(i + 1)
+                        .is_none_or(|next| next.offset != offset)
+                {
                     let col = self.text[row.offset..offset].width() as u16;
                     return (i as _, col);
                 }
@@ -204,29 +210,11 @@ impl TextBuffer {
     }
 
     fn left_of_offset(&self, offset: usize) -> usize {
-        if offset == 0 {
-            0
-        } else if self.text[..offset].ends_with("\r\n") {
-            offset - 2
-        } else {
-            self.text[..offset]
-                .char_indices()
-                .last()
-                .map_or(0, |(i, _)| i)
-        }
+        previous_grapheme_offset(&self.text, offset)
     }
 
     fn right_of_offset(&self, offset: usize) -> usize {
-        if offset >= self.text.len() {
-            self.text.len()
-        } else if self.text[offset..].starts_with("\r\n") {
-            offset + 2
-        } else {
-            self.text[offset..]
-                .char_indices()
-                .nth(1)
-                .map_or(self.text.len(), |(i, _)| offset + i)
-        }
+        next_grapheme_offset(&self.text, offset.min(self.text.len()))
     }
 
     fn offset_for_closest_column_in_row(&self, row: u16, col: u16) -> usize {
@@ -236,11 +224,13 @@ impl TextBuffer {
             row.offset + row.len
         } else {
             let mut width = 0;
-            for (idx, c) in self.text[row.offset..].char_indices() {
+            for (idx, grapheme) in
+                self.text[row.offset..row.offset + row.len].grapheme_indices(true)
+            {
                 if width >= col {
                     return row.offset + idx;
                 }
-                width += c.width().unwrap_or(0);
+                width += grapheme.width();
             }
             row.offset + row.len
         }
@@ -533,34 +523,26 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         KeyCode::Char(c) => {
                             value.insert(temp_cursor_offset, c);
                             temp_cursor_offset += c.len_utf8();
+                            temp_cursor_offset = clamp_cursor_offset(&value, temp_cursor_offset);
                             on_change(value.clone());
                         }
                         KeyCode::Backspace => {
                             if temp_cursor_offset > 0 {
                                 let end = temp_cursor_offset;
-                                let removed_len = if value[..end].ends_with("\r\n") {
-                                    2
-                                } else {
-                                    value[..end].chars().last().unwrap().len_utf8()
-                                };
-                                temp_cursor_offset -= removed_len;
+                                temp_cursor_offset = previous_grapheme_offset(&value, end);
                                 value.replace_range(temp_cursor_offset..end, "");
+                                temp_cursor_offset =
+                                    clamp_cursor_offset(&value, temp_cursor_offset);
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Backspace);
                         }
                         KeyCode::Delete => {
                             if temp_cursor_offset < value.len() {
-                                let remaining = &value[temp_cursor_offset..];
-                                let removed_len = if remaining.starts_with("\r\n") {
-                                    2
-                                } else {
-                                    remaining.chars().next().unwrap().len_utf8()
-                                };
-                                value.replace_range(
-                                    temp_cursor_offset..temp_cursor_offset + removed_len,
-                                    "",
-                                );
+                                let end = next_grapheme_offset(&value, temp_cursor_offset);
+                                value.replace_range(temp_cursor_offset..end, "");
+                                temp_cursor_offset =
+                                    clamp_cursor_offset(&value, temp_cursor_offset);
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Deletion);
@@ -621,6 +603,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     };
                     value.insert_str(temp_cursor_offset, &data);
                     temp_cursor_offset += data.len();
+                    temp_cursor_offset = clamp_cursor_offset(&value, temp_cursor_offset);
                     on_change(value.clone());
                     vertical_movement_col_preference.set(None);
                 }
@@ -701,18 +684,31 @@ fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
         && matches!(code, KeyCode::Char(c) if !c.is_control() && !c.is_ascii_alphanumeric())
 }
 
+fn previous_grapheme_offset(value: &str, offset: usize) -> usize {
+    GraphemeCursor::new(offset, value.len(), true)
+        .prev_boundary(value, 0)
+        .unwrap()
+        .unwrap_or(0)
+}
+
+fn next_grapheme_offset(value: &str, offset: usize) -> usize {
+    GraphemeCursor::new(offset, value.len(), true)
+        .next_boundary(value, 0)
+        .unwrap()
+        .unwrap_or(value.len())
+}
+
 fn clamp_cursor_offset(value: &str, offset: usize) -> usize {
     let mut offset = offset.min(value.len());
     while !value.is_char_boundary(offset) {
         offset -= 1;
     }
-    if offset > 0
-        && value.as_bytes()[offset - 1] == b'\r'
-        && value.as_bytes().get(offset) == Some(&b'\n')
-    {
-        offset -= 1;
+    let mut cursor = GraphemeCursor::new(offset, value.len(), true);
+    if cursor.is_boundary(value, 0).unwrap() {
+        offset
+    } else {
+        cursor.prev_boundary(value, 0).unwrap().unwrap_or(0)
     }
-    offset
 }
 
 fn new_cursor_offset(
@@ -805,6 +801,10 @@ mod tests {
             ("a\r\nb", 2, None, "a!\r\nb", "a!\nb"),
             ("a界b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
             ("a界b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
+            ("ae\u{301}b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
+            ("ae\u{301}b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
+            ("a👩‍👩‍👧‍👦b", 26, Some(KeyCode::Backspace), "a!b", "a!b"),
+            ("a🇺🇸b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
         ] {
             let observed = Arc::new(Mutex::new(String::new()));
             let events = key
@@ -1093,6 +1093,27 @@ mod tests {
         assert_eq!(buffer.above_offset(5, None), 1);
         assert_eq!(buffer.below_offset(5, None), 5);
         assert_eq!(buffer.above_offset(5, Some(6)), 3);
+    }
+
+    #[test]
+    fn test_grapheme_cursor_boundaries() {
+        let buffer = TextBuffer::new("e\u{301}x\n👩‍👩‍👧‍👦x", 40);
+        assert_eq!(buffer.right_of_offset(0), 3);
+        assert_eq!(buffer.left_of_offset(3), 0);
+        assert_eq!(clamp_cursor_offset(&buffer.text, 1), 0);
+        assert_eq!(clamp_cursor_offset(&buffer.text, 2), 0);
+        assert_eq!(buffer.below_offset(3, None), 30);
+        assert_eq!(buffer.above_offset(30, Some(1)), 3);
+    }
+
+    #[test]
+    fn test_soft_wrap_cursor_uses_next_row() {
+        let buffer = TextBuffer::new("abcdefgh", 3);
+        assert_eq!(buffer.row_column_for_offset(3), (1, 0));
+        assert_eq!(buffer.row_start_offset(3), 3);
+        assert_eq!(buffer.row_end_offset(3), 6);
+        assert_eq!(buffer.above_offset(3, None), 0);
+        assert_eq!(buffer.below_offset(0, None), 3);
     }
 
     #[test]
