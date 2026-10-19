@@ -295,6 +295,7 @@ impl ComponentDrawer<'_> {
     }
 
     /// Prepares to begin drawing a node's children by shrinking the clipping rectangle if necessary.
+    /// Clip arithmetic preserves the full unsigned layout size, even beyond i16::MAX.
     pub(crate) fn with_clip_rect_for_children<F>(&mut self, f: F)
     where
         F: FnOnce(&mut Self),
@@ -308,25 +309,26 @@ impl ComponentDrawer<'_> {
 
         let old_clip_rect = self.clip_rect;
         let layout = self.layout();
+        let boundary = |coordinate: i64| coordinate.clamp(0, i64::from(u16::MAX)) as u16;
         if overflow.x != Overflow::Visible {
+            let x = i64::from(self.node_position.x);
             self.clip_rect.left = self
                 .clip_rect
                 .left
-                .max((self.node_position.x + layout.border.left as i16).max(0) as u16);
-            self.clip_rect.right = self.clip_rect.right.min(
-                (self.node_position.x + self.node_size.width as i16 - layout.border.right as i16)
-                    .max(0) as u16,
-            );
+                .max(boundary(x + i64::from(layout.border.left as i32)));
+            self.clip_rect.right = self.clip_rect.right.min(boundary(
+                x + i64::from(self.node_size.width) - i64::from(layout.border.right as i32),
+            ));
         }
         if overflow.y != Overflow::Visible {
+            let y = i64::from(self.node_position.y);
             self.clip_rect.top = self
                 .clip_rect
                 .top
-                .max((self.node_position.y + layout.border.top as i16).max(0) as u16);
-            self.clip_rect.bottom = self.clip_rect.bottom.min(
-                (self.node_position.y + self.node_size.height as i16 - layout.border.bottom as i16)
-                    .max(0) as u16,
-            );
+                .max(boundary(y + i64::from(layout.border.top as i32)));
+            self.clip_rect.bottom = self.clip_rect.bottom.min(boundary(
+                y + i64::from(self.node_size.height) - i64::from(layout.border.bottom as i32),
+            ));
         }
         f(self);
         self.clip_rect = old_clip_rect;
@@ -771,5 +773,27 @@ mod tests {
         }
         .render(Some(10));
         assert_eq!(canvas.get_text(0, 1, 10, 1), "│short   │");
+    }
+
+    #[test]
+    fn test_large_horizontal_overflow_clip_keeps_visible_text() {
+        let canvas = element! {
+            View(width: 40000, height: 1, overflow: Overflow::Hidden) {
+                Text(content: "visible")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.get_text(0, 0, 7, 1), "visible");
+    }
+
+    #[test]
+    fn test_large_vertical_overflow_clip_keeps_visible_text() {
+        let canvas = element! {
+            View(width: 1, height: 40000, overflow: Overflow::Hidden) {
+                Text(content: "v")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.get_text(0, 0, 1, 1), "v");
     }
 }
