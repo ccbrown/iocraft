@@ -6,7 +6,8 @@ use std::{
     io::{self, Write},
     sync::{Arc, Once},
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Character {
@@ -263,18 +264,10 @@ impl Canvas {
             true
         };
 
-        // Keep zero-width suffixes with their base, including at the clip edge.
-        let mut start = 0;
-        for (index, c) in text.char_indices() {
-            if index > start && c.width().unwrap_or(0) > 0 {
-                if !paint_character(&text[start..index]) {
-                    return;
-                }
-                start = index;
+        for grapheme in text.graphemes(true) {
+            if !paint_character(grapheme) {
+                break;
             }
-        }
-        if start < text.len() {
-            paint_character(&text[start..]);
         }
     }
 
@@ -633,9 +626,9 @@ impl CanvasSubviewMut<'_> {
 
     /// Writes text to the region.
     ///
-    /// Character groups are only written when their full column width fits the clip region.
-    /// Clipping preserves the original text coordinates and keeps zero-width suffixes with
-    /// their base character.
+    /// Extended grapheme clusters are only written when their full column width fits the clip
+    /// region. Clipping preserves the original coordinates and never splits combining,
+    /// joined-emoji, or regional-indicator sequences.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         let x = self.x + x;
         let min_x = self.clip_x.max(0);
@@ -658,6 +651,26 @@ impl CanvasSubviewMut<'_> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+
+    #[test]
+    fn test_canvas_keeps_extended_graphemes_with_their_following_text() {
+        for text in ["👩‍💻x", "👩🏽x"] {
+            let mut canvas = Canvas::new(3, 1);
+            canvas
+                .subview_mut(0, 0, 0, 0, 3, 1)
+                .set_text(0, 0, text, CanvasTextStyle::default());
+            assert_eq!(canvas.to_string(), format!("{text}\n"));
+        }
+    }
+
+    #[test]
+    fn test_canvas_clips_an_entire_regional_indicator_pair() {
+        let mut canvas = Canvas::new(1, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 1, 1)
+            .set_text(0, 0, "🇷🇺", CanvasTextStyle::default());
+        assert_eq!(canvas.to_string(), "\n");
+    }
 
     #[test]
     fn test_required_padding_zero_width_compatibility() {
