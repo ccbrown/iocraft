@@ -1131,6 +1131,36 @@ mod tests {
         assert_eq!(canvas.get_text(1, 1, 1, 1), "!");
     }
 
+    #[apply(test!)]
+    async fn test_batched_shortcuts_ignore_releases_and_unhandled_modifiers() {
+        let event = |kind, code, modifiers| {
+            let mut key = KeyEvent::new(kind, code);
+            key.modifiers = modifiers;
+            TerminalEvent::Key(key)
+        };
+        let press = KeyEventKind::Press;
+        let none = KeyModifiers::NONE;
+        let control = KeyModifiers::CONTROL;
+        let events = [
+            event(press, KeyCode::Char('a'), control),
+            event(press, KeyCode::Char('x'), none),
+            event(KeyEventKind::Release, KeyCode::Char('a'), control),
+            event(press, KeyCode::Char('y'), none),
+            event(press, KeyCode::Char('z'), control),
+            event(press, KeyCode::Char('e'), control),
+            event(press, KeyCode::Char('q'), KeyModifiers::ALT),
+            event(press, KeyCode::Esc, none),
+            event(press, KeyCode::Char('!'), none),
+        ];
+        let frames: Vec<_> = element!(MyComponent(initial_value: "abc"))
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                events,
+            )))
+            .collect()
+            .await;
+        assert_eq!(frames.last().unwrap().to_string().trim(), "xyabc!");
+    }
+
     #[cfg(windows)]
     #[test]
     fn test_is_altgr_char() {
