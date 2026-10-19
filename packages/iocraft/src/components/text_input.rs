@@ -57,6 +57,8 @@ impl TextInputHandle {
     /// Sets the cursor position to the specified offset.
     ///
     /// The offset is in bytes, not characters.
+    /// Offsets past the end are clamped to the value's length. An offset
+    /// inside a UTF-8 character is rounded down to that character's start.
     pub fn set_cursor_offset(&mut self, offset: usize) {
         if let Some(inner) = &mut self.inner {
             inner.requested_cursor_offset.set(Some(offset));
@@ -437,9 +439,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     }
 
     // Update the cursor position if the user requested it.
-    if let Some(requested) = requested_cursor_offset.get() {
+    if let Some(mut requested) = requested_cursor_offset.get() {
+        requested = requested.min(props.value.len());
+        while !props.value.is_char_boundary(requested) {
+            requested -= 1;
+        }
         if cursor_offset != requested {
-            cursor_offset.set(requested.min(props.value.len()));
+            cursor_offset.set(requested);
         }
         requested_cursor_offset.set(None);
     }
@@ -728,12 +734,23 @@ mod tests {
     #[derive(Default, Props)]
     struct MyComponentProps {
         initial_value: String,
+        requested_cursor_offset: Option<usize>,
     }
 
     #[component]
     fn MyComponent(mut hooks: Hooks, props: &MyComponentProps) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
         let mut value = hooks.use_state(|| props.initial_value.clone());
+        let mut handle = hooks.use_ref_default::<TextInputHandle>();
+        let requested_cursor_offset = props.requested_cursor_offset;
+        hooks.use_effect(
+            move || {
+                if let Some(offset) = requested_cursor_offset {
+                    handle.write().set_cursor_offset(offset);
+                }
+            },
+            (),
+        );
 
         if value.read().contains("!") {
             system.exit();
@@ -745,6 +762,7 @@ mod tests {
                     has_focus: true,
                     value: value.to_string(),
                     on_change: move |new_value| value.set(new_value),
+                    handle,
                 )
             }
         }
@@ -825,6 +843,26 @@ mod tests {
                 .await;
 
             assert_eq!(actual, vec!["  \n", expected], "{pasted:?}");
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_text_input_requested_cursor_boundaries() {
+        for (offset, expected) in [(1, "!é界"), (2, "é!界"), (usize::MAX, "é界!")] {
+            let frames = element! {
+                MyComponent(initial_value: "é界", requested_cursor_offset: Some(offset))
+            }
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                ))],
+            )))
+            .map(|canvas| canvas.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+            assert_eq!(frames.last().unwrap().trim(), expected, "{offset}");
         }
     }
 
