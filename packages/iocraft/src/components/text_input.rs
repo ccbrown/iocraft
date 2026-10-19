@@ -732,22 +732,18 @@ mod tests {
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Props)]
+    struct AutoGrowToggleProps {
+        #[iocraft(required)]
+        state: Arc<Mutex<Option<State<bool>>>>,
+    }
 
     #[component]
-    fn AutoGrowToggle(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let mut auto_grow = hooks.use_state(|| true);
-        hooks.use_terminal_events(move |event| {
-            if matches!(
-                event,
-                TerminalEvent::Key(KeyEvent {
-                    code: KeyCode::Char('t'),
-                    kind: KeyEventKind::Press,
-                    ..
-                })
-            ) {
-                auto_grow.set(!auto_grow.get());
-            }
-        });
+    fn AutoGrowToggle(mut hooks: Hooks, props: &AutoGrowToggleProps) -> impl Into<AnyElement<'static>> {
+        let auto_grow = hooks.use_state(|| true);
+        *props.state.lock().unwrap() = Some(auto_grow);
         element! {
             View(width: 12, height: 5, flex_direction: FlexDirection::Column) {
                 Text(content: format!("auto={}", auto_grow.get()))
@@ -759,17 +755,13 @@ mod tests {
 
     #[apply(test!)]
     async fn test_auto_grow_can_be_reenabled_without_changing_the_value() {
-        let (sender, events) = futures::channel::mpsc::unbounded();
-        let mut app = element!(AutoGrowToggle);
-        let mut output = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        let state = Arc::new(Mutex::new(None));
+        let mut app = element!(AutoGrowToggle(state: state.clone()));
+        let mut output = app.mock_terminal_render_loop(Default::default());
         for (step, expected_footer_row) in [3, 4, 3].into_iter().enumerate() {
             if step > 0 {
-                sender
-                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(
-                        KeyEventKind::Press,
-                        KeyCode::Char('t'),
-                    )))
-                    .unwrap();
+                let mut auto_grow = state.lock().unwrap().unwrap();
+                auto_grow.set(step == 2);
             }
             let frame = output.next().await.unwrap().to_string();
             assert_eq!(
