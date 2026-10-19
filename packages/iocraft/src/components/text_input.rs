@@ -59,6 +59,7 @@ impl TextInputHandle {
     /// The offset is in bytes, not characters.
     /// Offsets past the end are clamped to the value's length. An offset
     /// inside a UTF-8 character is rounded down to that character's start.
+    /// An offset between CR and LF is rounded down to the start of that line break.
     pub fn set_cursor_offset(&mut self, offset: usize) {
         if let Some(inner) = &mut self.inner {
             inner.requested_cursor_offset.set(Some(offset));
@@ -106,6 +107,7 @@ pub struct TextInputProps {
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
     /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
     /// Multiline paste preserves the original text.
+    /// CRLF line breaks are navigated and deleted as a single unit.
     pub multiline: bool,
 
     /// If true (requires `multiline`), the input auto-grows its height to
@@ -204,6 +206,8 @@ impl TextBuffer {
     fn left_of_offset(&self, offset: usize) -> usize {
         if offset == 0 {
             0
+        } else if self.text[..offset].ends_with("\r\n") {
+            offset - 2
         } else {
             self.text[..offset]
                 .char_indices()
@@ -215,6 +219,8 @@ impl TextBuffer {
     fn right_of_offset(&self, offset: usize) -> usize {
         if offset >= self.text.len() {
             self.text.len()
+        } else if self.text[offset..].starts_with("\r\n") {
+            offset + 2
         } else {
             self.text[offset..]
                 .char_indices()
@@ -439,11 +445,8 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     }
 
     // Update the cursor position if the user requested it.
-    if let Some(mut requested) = requested_cursor_offset.get() {
-        requested = requested.min(props.value.len());
-        while !props.value.is_char_boundary(requested) {
-            requested -= 1;
-        }
+    if let Some(requested) = requested_cursor_offset.get() {
+        let requested = clamp_cursor_offset(&props.value, requested);
         if cursor_offset != requested {
             cursor_offset.set(requested);
         }
@@ -534,19 +537,30 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         }
                         KeyCode::Backspace => {
                             if temp_cursor_offset > 0 {
-                                temp_cursor_offset -= value[..temp_cursor_offset]
-                                    .chars()
-                                    .last()
-                                    .unwrap()
-                                    .len_utf8();
-                                value.remove(temp_cursor_offset);
+                                let end = temp_cursor_offset;
+                                let removed_len = if value[..end].ends_with("\r\n") {
+                                    2
+                                } else {
+                                    value[..end].chars().last().unwrap().len_utf8()
+                                };
+                                temp_cursor_offset -= removed_len;
+                                value.replace_range(temp_cursor_offset..end, "");
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Backspace);
                         }
                         KeyCode::Delete => {
                             if temp_cursor_offset < value.len() {
-                                value.remove(temp_cursor_offset);
+                                let remaining = &value[temp_cursor_offset..];
+                                let removed_len = if remaining.starts_with("\r\n") {
+                                    2
+                                } else {
+                                    remaining.chars().next().unwrap().len_utf8()
+                                };
+                                value.replace_range(
+                                    temp_cursor_offset..temp_cursor_offset + removed_len,
+                                    "",
+                                );
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Deletion);
@@ -687,6 +701,20 @@ fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
         && matches!(code, KeyCode::Char(c) if !c.is_control() && !c.is_ascii_alphanumeric())
 }
 
+fn clamp_cursor_offset(value: &str, offset: usize) -> usize {
+    let mut offset = offset.min(value.len());
+    while !value.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    if offset > 0
+        && value.as_bytes()[offset - 1] == b'\r'
+        && value.as_bytes().get(offset) == Some(&b'\n')
+    {
+        offset -= 1;
+    }
+    offset
+}
+
 fn new_cursor_offset(
     prev_value: &str,
     cursor_offset: usize,
@@ -700,7 +728,7 @@ fn new_cursor_offset(
     let has_same_tail = value.len() >= tail_len
         && value.as_bytes()[value.len() - tail_len..] == prev_value.as_bytes()[cursor_offset..];
 
-    if value.len() >= prev_value.len() && has_same_head && has_same_tail {
+    let offset = if value.len() >= prev_value.len() && has_same_head && has_same_tail {
         // insertion (or no change)
         cursor_offset + (value.len() - prev_value.len())
     } else if value.len() < prev_value.len() && has_same_tail && has_same_head {
@@ -720,7 +748,8 @@ fn new_cursor_offset(
     } else {
         // unknown, put the cursor at the end
         value.len()
-    }
+    };
+    clamp_cursor_offset(value, offset)
 }
 
 #[cfg(test)]
@@ -730,6 +759,79 @@ mod tests {
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Props)]
+    struct CrlfInputProps {
+        cursor: usize,
+        #[iocraft(required)]
+        observed: Arc<Mutex<String>>,
+    }
+
+    #[component]
+    fn CrlfInput(mut hooks: Hooks, props: &CrlfInputProps) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let mut value = hooks.use_state(|| "a\r\nb".to_string());
+        let mut handle = hooks.use_ref_default::<TextInputHandle>();
+        let cursor = props.cursor;
+        hooks.use_effect(move || handle.write().set_cursor_offset(cursor), ());
+        if value.read().contains('!') {
+            system.exit();
+        }
+        let observed = props.observed.clone();
+        element! {
+            View(width: 11, height: 3) {
+                TextInput(
+                    has_focus: true,
+                    multiline: true,
+                    handle,
+                    value: value.to_string(),
+                    on_change: move |new_value: String| {
+                        *observed.lock().unwrap() = new_value.clone();
+                        value.set(new_value);
+                    },
+                )
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_crlf_editing_and_requested_cursor_offsets() {
+        for (cursor, key, expected_value, expected_frame) in [
+            (3_usize, Some(KeyCode::Backspace), "a!b", "a!b"),
+            (1, Some(KeyCode::Delete), "a!b", "a!b"),
+            (2, None, "a!\r\nb", "a!\nb"),
+        ] {
+            let observed = Arc::new(Mutex::new(String::new()));
+            let events = key.into_iter().chain(std::iter::once(KeyCode::Char('!'))).map(
+                |code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)),
+            );
+            let mut app = element!(CrlfInput(cursor: cursor, observed: observed.clone()));
+            let frames = app
+                .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                    events,
+                )))
+                .collect::<Vec<_>>()
+                .await;
+            assert_eq!(*observed.lock().unwrap(), expected_value);
+            assert_eq!(
+                frames.last().unwrap().get_text(0, 0, 11, 3).trim_end(),
+                expected_frame
+            );
+        }
+    }
+
+    #[test]
+    fn test_crlf_rows_keep_raw_offsets_without_control_characters() {
+        let buffer = TextBuffer::new("a\r\nb\r", usize::MAX);
+        assert!(buffer.lines().eq(["a", "b", ""]));
+        assert_eq!(buffer.row_column_for_offset(1), (0, 1));
+        assert_eq!(buffer.row_column_for_offset(3), (1, 0));
+        assert_eq!(buffer.row_column_for_offset(5), (2, 0));
+        assert_eq!(buffer.row_end_offset(0), 1);
+        assert_eq!(buffer.left_of_offset(3), 1);
+        assert_eq!(buffer.right_of_offset(1), 3);
+    }
 
     #[derive(Default, Props)]
     struct MyComponentProps {
@@ -1024,6 +1126,10 @@ mod tests {
 
     #[test]
     fn test_new_cursor_offset() {
+        assert_eq!(
+            new_cursor_offset("a\nb", 1, "a\r\nb", NewCursorOffsetHint::None),
+            1
+        );
         let mixed_text = "你好世界，Hello World";
         let cursor_offset = mixed_text.find('W').unwrap();
         assert_eq!(

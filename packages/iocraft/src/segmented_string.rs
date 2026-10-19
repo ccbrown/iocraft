@@ -94,7 +94,7 @@ impl<'a> SegmentedString<'a> {
         offset: usize,
         end: usize,
     ) -> SegmentedStringLineSegment<'_> {
-        let text = self.segments[index][offset..end].trim_end_matches('\n');
+        let text = self.segments[index][offset..end].trim_end_matches(['\r', '\n']);
         let width = text.width();
         SegmentedStringLineSegment {
             text,
@@ -241,7 +241,7 @@ impl<'a> SegmentedString<'a> {
         // Add another line if the last segment ends with a newline
         {
             let last_segment = &self.segments[self.segments.len() - 1];
-            let has_trailing_newline = last_segment.ends_with('\n');
+            let has_trailing_newline = last_segment.ends_with(['\r', '\n']);
             if has_trailing_newline {
                 current_line.push_segment(self.new_segmented_string_line_segment(
                     self.segments.len() - 1,
