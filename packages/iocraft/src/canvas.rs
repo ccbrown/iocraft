@@ -820,17 +820,10 @@ mod tests {
         for token in tokens.captures_iter(&output) {
             if let Some(parameters) = token.get(1) {
                 for parameter in parameters.as_str().split(';') {
-                    let code = if parameter.is_empty() {
-                        0
-                    } else {
-                        parameter.parse::<u16>().unwrap()
-                    };
-                    match code {
-                        0 | 22 => (bold, faint) = (false, false),
-                        1 => bold = true,
-                        2 => faint = true,
-                        _ => {}
-                    }
+                    let code = parameter.parse::<u16>().ok();
+                    let reset = parameter.is_empty() || matches!(code, Some(0 | 22));
+                    bold = !reset && (bold || code == Some(1));
+                    faint = !reset && (faint || code == Some(2));
                 }
             } else {
                 cells.push((token[2].as_bytes()[0], bold, faint));
