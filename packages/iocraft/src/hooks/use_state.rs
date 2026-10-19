@@ -200,9 +200,14 @@ impl<T: Copy + Sync + Send + 'static> State<T> {
 
 impl<T: Sync + Send + 'static> State<T> {
     /// Sets the value of the state.
+    ///
+    /// The replaced value is dropped after releasing the write lock, so its destructor
+    /// can read the new state.
     pub fn set(&mut self, value: T) {
         if let Some(mut v) = self.try_write() {
-            *v = value;
+            let old = std::mem::replace(&mut *v, value);
+            drop(v);
+            drop(old);
         }
     }
 
