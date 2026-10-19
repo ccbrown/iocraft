@@ -743,6 +743,7 @@ mod tests {
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
+    use std::sync::{Arc, Mutex};
 
     #[derive(Default, Props)]
     struct MyComponentProps {
@@ -787,6 +788,86 @@ mod tests {
                     multiline: true,
                 )
             }
+        }
+    }
+
+    #[derive(Props)]
+    struct ViewportInputProps {
+        initial_value: String,
+        multiline: bool,
+        width: u16,
+        height: u16,
+        #[iocraft(required)]
+        handle: Arc<Mutex<Option<Ref<TextInputHandle>>>>,
+    }
+
+    #[component]
+    fn ViewportInput(
+        mut hooks: Hooks,
+        props: &ViewportInputProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let handle = hooks.use_ref_default::<TextInputHandle>();
+        *props.handle.lock().unwrap() = Some(handle);
+        element! {
+            View(width: props.width, height: props.height) {
+                TextInput(
+                    value: props.initial_value.clone(),
+                    multiline: props.multiline,
+                    has_focus: true,
+                    handle,
+                )
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_text_input_scrolls_back_to_requested_cursor() {
+        for (value, multiline, height, before, after) in [
+            ("0123456789tail", false, 1u16, "tail", "01234"),
+            ("0\n1\n2\n3", true, 2, "2\n3", "0\n1"),
+        ] {
+            let slot = Arc::new(Mutex::new(None));
+            let mut app = element!(ViewportInput(
+                initial_value: value,
+                multiline: multiline,
+                width: 5u16,
+                height: height,
+                handle: slot.clone(),
+            ));
+            let mut output = app.mock_terminal_render_loop(Default::default());
+            assert_eq!(output.next().await.unwrap().to_string().trim_end(), before);
+
+            let mut handle = slot.lock().unwrap().as_ref().copied().unwrap();
+            handle.write().set_cursor_offset(0);
+            assert_eq!(output.next().await.unwrap().to_string().trim_end(), after);
+        }
+    }
+
+    #[test]
+    fn test_text_input_auto_grow_leaves_room_for_following_content() {
+        let output = element! {
+            View(width: 6, height: 4, flex_direction: crate::FlexDirection::Column) {
+                TextInput(value: "a\nb", multiline: true, auto_grow: true)
+                Text(content: "tail")
+            }
+        }
+        .to_string();
+        assert_eq!(output.lines().position(|line| line == "tail"), Some(2));
+    }
+
+    #[test]
+    fn test_text_input_zero_sized_viewport_does_not_paint_outside() {
+        for (width, height, expected) in [(0u16, 1u16, "\nshown\n"), (5, 0, "shown\n\n")] {
+            let output = element! {
+                View(width: 5, height: 2, flex_direction: crate::FlexDirection::Column) {
+                    View(width: width, height: height, overflow: Overflow::Hidden) {
+                        TextInput(value: "secret", multiline: true, has_focus: true)
+                    }
+                    Text(content: "shown")
+                }
+            }
+            .to_string();
+            assert_eq!(output, expected);
         }
     }
 
