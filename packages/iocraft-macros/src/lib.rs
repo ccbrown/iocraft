@@ -281,6 +281,39 @@ impl Parse for ParsedProps {
     }
 }
 
+struct FindSelf(bool);
+
+impl<'ast> syn::visit::Visit<'ast> for FindSelf {
+    fn visit_path(&mut self, path: &'ast syn::Path) {
+        if self.0 {
+            return;
+        }
+        self.0 = path
+            .segments
+            .first()
+            .is_some_and(|segment| segment.ident == "Self");
+        if !self.0 {
+            syn::visit::visit_path(self, path);
+        }
+    }
+}
+
+struct PropsSelfPath(syn::Path);
+
+impl syn::visit_mut::VisitMut for PropsSelfPath {
+    fn visit_path_mut(&mut self, path: &mut syn::Path) {
+        syn::visit_mut::visit_path_mut(self, path);
+        if path
+            .segments
+            .first()
+            .is_some_and(|segment| segment.ident == "Self")
+        {
+            let suffix = std::mem::replace(path, self.0.clone());
+            path.segments.extend(suffix.segments.into_iter().skip(1));
+        }
+    }
+}
+
 impl ToTokens for ParsedProps {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let def = &self.def;
@@ -311,6 +344,23 @@ impl ToTokens for ParsedProps {
         let bracketed_generic_names = match has_generics {
             true => quote!(<#(#generics_names),*>),
             false => quote!(),
+        };
+
+        // Self in a copied field type still names the props, not the generated builder.
+        let mut finder = FindSelf(false);
+        syn::visit::visit_item_struct(&mut finder, def);
+        let builder_def = if finder.0 {
+            let mut builder_def = def.clone();
+            let mut path: syn::Path = parse_quote!(#name #bracketed_generic_names);
+            for segment in &mut path.segments {
+                if let syn::PathArguments::AngleBracketed(args) = &mut segment.arguments {
+                    args.colon2_token = Some(Default::default());
+                }
+            }
+            syn::visit_mut::visit_item_struct_mut(&mut PropsSelfPath(path), &mut builder_def);
+            std::borrow::Cow::Owned(builder_def)
+        } else {
+            std::borrow::Cow::Borrowed(def)
         };
 
         // If the struct is generic over lifetimes, emit code that will break things at compile
@@ -372,7 +422,7 @@ impl ToTokens for ParsedProps {
 
         let vis = &def.vis;
         let builder_name = format_ident!("__Iocraft{}Builder", name);
-        let fields = def.fields.iter().collect::<Vec<_>>();
+        let fields = builder_def.fields.iter().collect::<Vec<_>>();
         let field_names = fields
             .iter()
             .map(|field| {
@@ -427,7 +477,7 @@ impl ToTokens for ParsedProps {
             })
             .collect::<Vec<_>>();
 
-        let mut builder_generics = def.generics.clone();
+        let mut builder_generics = builder_def.generics.clone();
         for state_name in &required_state_names {
             builder_generics.params.push(parse_quote!(#state_name));
         }
@@ -593,6 +643,8 @@ impl ToTokens for ParsedProps {
             Fields::Unnamed(_) => unreachable!("tuple structs rejected while parsing"),
         };
         let (props_impl_generics, _, props_where_clause) = def.generics.split_for_impl();
+        let (complete_impl_generics, _, complete_where_clause) =
+            builder_def.generics.split_for_impl();
 
         tokens.extend(quote! {
             #(#missing_state_markers)*
@@ -619,7 +671,7 @@ impl ToTokens for ParsedProps {
                 #(#required_setters)*
             }
 
-            impl #props_impl_generics #complete_builder_type #props_where_clause {
+            impl #complete_impl_generics #complete_builder_type #complete_where_clause {
                 #[doc(hidden)]
                 #vis fn __iocraft_build(self) -> #name #bracketed_generic_names {
                     #props_value
@@ -640,6 +692,7 @@ impl ToTokens for ParsedProps {
 /// Most importantly, this marks a struct as being
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
+/// `Self` in field types refers to the props struct, including in its builder.
 ///
 /// Fields are initialized with their [`Default`] value unless they are marked as required:
 ///

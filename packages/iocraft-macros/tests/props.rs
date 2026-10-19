@@ -33,3 +33,42 @@ struct StructWithTypeGeneric<T: Send + Sync> {
 struct StructWithLifetimeAndTypeGeneric<'lt, T: Sync> {
     foo: &'lt T,
 }
+
+#[derive(Props)]
+struct RecursiveProps {
+    next: Option<Box<Self>>,
+}
+
+#[derive(Props)]
+struct GenericRecursiveProps<'a, T: Sync> {
+    #[iocraft(required)]
+    value: &'a T,
+    next: Option<Box<Self>>,
+}
+
+trait AssociatedValue {
+    type Value: Default;
+}
+
+#[derive(Props)]
+struct AssociatedSelfProps {
+    value: <Self as AssociatedValue>::Value,
+}
+
+impl AssociatedValue for AssociatedSelfProps {
+    type Value = u32;
+}
+
+#[derive(Props)]
+struct ConstSelfProps {
+    value: [u8; Self::WIDTH],
+}
+
+impl ConstSelfProps {
+    const WIDTH: usize = 4;
+}
+
+#[derive(Props)]
+struct SelfBoundProps<T: Into<Self> + Send + Sync> {
+    value: Option<T>,
+}
