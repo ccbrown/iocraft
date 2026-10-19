@@ -1,6 +1,6 @@
 use crate::{
     component,
-    components::{TextDecoration, TextDrawer, TextWrap, View},
+    components::{TextDecoration, TextWrap, View},
     element,
     hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
@@ -175,20 +175,17 @@ impl TextBuffer {
         Self { rows, text }
     }
 
-    fn row_column_for_offset(&self, offset: usize) -> (u16, u16) {
+    fn row_column_for_offset(&self, offset: usize) -> (usize, usize) {
         for (i, row) in self.rows.iter().enumerate() {
             if offset >= row.offset {
                 let offset_in_row = offset - row.offset;
                 if offset_in_row <= row.len {
-                    let col = self.text[row.offset..offset].width() as u16;
-                    return (i as _, col);
+                    let col = self.text[row.offset..offset].width();
+                    return (i, col);
                 }
             }
         }
-        (
-            self.rows.len() as _,
-            self.rows.last().map_or(0, |r| r.width as _),
-        )
+        (self.rows.len(), self.rows.last().map_or(0, |r| r.width))
     }
 
     fn lines(&self) -> impl Iterator<Item = &str> {
@@ -221,9 +218,8 @@ impl TextBuffer {
         }
     }
 
-    fn offset_for_closest_column_in_row(&self, row: u16, col: u16) -> usize {
-        let row = &self.rows[row as usize];
-        let col = col as usize;
+    fn offset_for_closest_column_in_row(&self, row: usize, col: usize) -> usize {
+        let row = &self.rows[row];
         if col >= row.width {
             row.offset + row.len
         } else {
@@ -238,7 +234,7 @@ impl TextBuffer {
         }
     }
 
-    fn above_offset(&self, offset: usize, col_preference: Option<u16>) -> usize {
+    fn above_offset(&self, offset: usize, col_preference: Option<usize>) -> usize {
         let (row, col) = self.row_column_for_offset(offset);
         if row == 0 {
             return offset;
@@ -246,9 +242,9 @@ impl TextBuffer {
         self.offset_for_closest_column_in_row(row - 1, col_preference.unwrap_or(col))
     }
 
-    fn below_offset(&self, offset: usize, col_preference: Option<u16>) -> usize {
+    fn below_offset(&self, offset: usize, col_preference: Option<usize>) -> usize {
         let (row, col) = self.row_column_for_offset(offset);
-        if row as usize + 1 >= self.rows.len() {
+        if row + 1 >= self.rows.len() {
             return offset;
         }
         self.offset_for_closest_column_in_row(row + 1, col_preference.unwrap_or(col))
@@ -256,12 +252,12 @@ impl TextBuffer {
 
     fn row_start_offset(&self, offset: usize) -> usize {
         let (row, _) = self.row_column_for_offset(offset);
-        self.rows[row as usize].offset
+        self.rows[row].offset
     }
 
     fn row_end_offset(&self, offset: usize) -> usize {
         let (row, _) = self.row_column_for_offset(offset);
-        let r = &self.rows[row as usize];
+        let r = &self.rows[row];
         r.offset + r.len
     }
 }
@@ -275,6 +271,8 @@ struct TextBufferViewProps {
     italic: bool,
     invert: bool,
     buffer: Arc<TextBuffer>,
+    cursor_position: (usize, usize),
+    cursor_color: Option<Color>,
 }
 
 #[derive(Default)]
@@ -282,6 +280,11 @@ struct TextBufferView {
     text_style: CanvasTextStyle,
     buffer: Arc<TextBuffer>,
     prev_row_count: usize,
+    auto_grow: bool,
+    cursor_position: (usize, usize),
+    cursor_color: Option<Color>,
+    scroll_offset_row: usize,
+    scroll_offset_col: usize,
 }
 
 impl Component for TextBufferView {
@@ -305,6 +308,9 @@ impl Component for TextBufferView {
             invert: props.invert,
         };
         self.buffer = props.buffer.clone();
+        self.auto_grow = props.auto_grow;
+        self.cursor_position = props.cursor_position;
+        self.cursor_color = props.cursor_color;
         if props.auto_grow {
             // Auto-grow: use explicit height (row count) and full
             // parent width. Avoids set_measure_func entirely — no
@@ -327,6 +333,8 @@ impl Component for TextBufferView {
                     position: Position::Absolute,
                     top: 0.into(),
                     left: 0.into(),
+                    width: Size::Percent(100.0),
+                    height: Size::Percent(100.0),
                     ..Default::default()
                 }
                 .into(),
@@ -335,8 +343,49 @@ impl Component for TextBufferView {
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {
-        let mut drawer = TextDrawer::new(drawer, 0, false);
-        drawer.append_lines(self.buffer.lines(), self.text_style, None);
+        let size = drawer.size();
+        let (width, height) = (usize::from(size.width), usize::from(size.height));
+        if width == 0 || height == 0 {
+            return;
+        }
+        // Apply large buffer offsets while painting, not through 16-bit layout positions.
+        let (cursor_row, cursor_col) = self.cursor_position;
+        if cursor_row >= self.scroll_offset_row + height {
+            self.scroll_offset_row = cursor_row - height + 1;
+        } else if cursor_row < self.scroll_offset_row {
+            self.scroll_offset_row = cursor_row;
+        }
+        if self.auto_grow {
+            self.scroll_offset_col = 0;
+        } else if cursor_col >= self.scroll_offset_col + width {
+            self.scroll_offset_col = cursor_col - width + 1;
+        } else if cursor_col < self.scroll_offset_col {
+            self.scroll_offset_col = cursor_col;
+        }
+        let max_scroll_col = (self.buffer.text.width() + 1).saturating_sub(width);
+        self.scroll_offset_col = self.scroll_offset_col.min(max_scroll_col);
+
+        let mut canvas = drawer.canvas();
+        if let Some(color) = self.cursor_color {
+            let x = cursor_col.saturating_sub(self.scroll_offset_col) as isize;
+            let y = cursor_row.saturating_sub(self.scroll_offset_row) as isize;
+            canvas.clear_text(x, y, 1, 1);
+            canvas.set_background_color(x, y, 1, 1, color);
+        }
+        for (y, line) in self
+            .buffer
+            .lines()
+            .skip(self.scroll_offset_row)
+            .take(height)
+            .enumerate()
+        {
+            canvas.set_text(
+                -(self.scroll_offset_col as isize),
+                y as isize,
+                line,
+                self.text_style,
+            );
+        }
     }
 }
 
@@ -344,6 +393,9 @@ impl Component for TextBufferView {
 ///
 /// It will fill the available width and display the current value. Typically, you will want to
 /// render it in a [`View`](crate::components::View) component of the desired text field size.
+///
+/// Single-line values stay on one line and scroll horizontally to keep the cursor visible,
+/// even when their content is wider than the terminal's coordinate range.
 ///
 /// # Example
 ///
@@ -390,10 +442,9 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     let mut cursor_offset = hooks.use_state(|| 0usize);
     let mut requested_cursor_offset = hooks.use_state(|| None);
     let mut new_cursor_offset_hint = hooks.use_state(|| NewCursorOffsetHint::None);
-    let mut scroll_offset_row = hooks.use_state(|| 0u16);
-    let mut scroll_offset_col = hooks.use_state(|| 0u16);
     let mut vertical_movement_col_preference = hooks.use_state(|| None);
-    let (width, height) = hooks.use_size();
+    let (width, _) = hooks.use_size();
+    let width = usize::from(width);
 
     if let Some(handle_ref) = props.handle.as_mut() {
         handle_ref.set(TextInputHandle {
@@ -408,13 +459,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         // Reserve the last column for the cursor.
         width.max(1) - 1
     } else {
-        usize::MAX as _
+        usize::MAX
     };
 
     let buffer = hooks.use_memo(
         {
             let text = props.value.clone();
-            move || Arc::new(TextBuffer::new(text, max_text_width as _))
+            move || Arc::new(TextBuffer::new(text, max_text_width))
         },
         (&props.value, max_text_width),
     );
@@ -450,31 +501,6 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     // characters will extend that far.
     if wrap == TextWrap::Wrap && cursor_col >= width && width > 0 {
         cursor_col = width - 1;
-    }
-
-    // Update the offset if the cursor is out of bounds.
-    if width > 0 && height > 0 {
-        if cursor_row >= scroll_offset_row.get() + height {
-            scroll_offset_row.set(cursor_row - height + 1);
-        } else if cursor_row < scroll_offset_row.get() {
-            scroll_offset_row.set(cursor_row as _);
-        }
-        if auto_grow {
-            if scroll_offset_col.get() != 0 {
-                scroll_offset_col.set(0);
-            }
-        } else if cursor_col >= scroll_offset_col.get() + width {
-            scroll_offset_col.set(cursor_col - width + 1);
-        } else if cursor_col < scroll_offset_col.get() {
-            scroll_offset_col.set(cursor_col as _);
-        }
-
-        // Scroll back when the content shrinks so it isn't cut off.
-        let content_width = props.value.width() as u16;
-        let max_scroll_offset_col = (content_width + 1).saturating_sub(width);
-        if scroll_offset_col.get() > max_scroll_offset_col {
-            scroll_offset_col.set(max_scroll_offset_col);
-        }
     }
 
     hooks.use_terminal_events({
@@ -611,24 +637,17 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 
     element! {
         View(overflow: Overflow::Hidden, width: 100pct, height: if auto_grow { Size::Auto } else if multiline { Size::Percent(100.0) } else { Size::Length(1) }, position: Position::Relative) {
-            View(position: if auto_grow { Position::Relative } else { Position::Absolute }, top: if auto_grow { 0 } else { -(scroll_offset_row.get() as i32) }, left: if auto_grow { 0 } else { -(scroll_offset_col.get() as i32) }) {
-                #(if has_focus {
-                    Some(element! {
-                        View(position: Position::Absolute, top: cursor_row, left: cursor_col, width: 1, height: 1, background_color: props.cursor_color.unwrap_or(Color::Grey))
-                    })
-                } else {
-                    None
-                })
-                TextBufferView(
-                    auto_grow,
-                    buffer,
-                    color: props.color,
-                    weight: props.weight,
-                    underline: props.decoration == TextDecoration::Underline,
-                    italic: props.italic,
-                    invert: props.invert,
-                )
-            }
+            TextBufferView(
+                auto_grow,
+                buffer,
+                cursor_position: (cursor_row, cursor_col),
+                cursor_color: has_focus.then_some(props.cursor_color.unwrap_or(Color::Grey)),
+                color: props.color,
+                weight: props.weight,
+                underline: props.decoration == TextDecoration::Underline,
+                italic: props.italic,
+                invert: props.invert,
+            )
         }
     }
 }
@@ -877,6 +896,23 @@ mod tests {
     }
 
     #[apply(test!)]
+    async fn test_text_input_long_single_line_scroll() {
+        let initial_value = format!("{}TAIL", "x".repeat(65_531));
+        let frames = element!(MyComponent(initial_value: initial_value))
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                ))],
+            )))
+            .map(|canvas| canvas.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+        assert_eq!(frames.last().unwrap().trim(), "xxxxTAIL!");
+    }
+
+    #[apply(test!)]
     async fn test_text_input_kanji() {
         let actual = element!(MyComponent)
             .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
@@ -982,6 +1018,19 @@ mod tests {
             TextBuffer::new("asd\n", 10).row_column_for_offset(4),
             (1, 0)
         );
+    }
+
+    #[test]
+    fn test_text_buffer_large_row_coordinates() {
+        let text = format!("{}z", "x\n".repeat(65_536));
+        let end = text.len();
+        let buffer = TextBuffer::new(text, usize::MAX);
+
+        assert_eq!(buffer.row_column_for_offset(end), (65_536, 1));
+        assert_eq!(buffer.row_start_offset(end), end - 1);
+        assert_eq!(buffer.row_end_offset(end), end);
+        assert_eq!(buffer.above_offset(end, None), end - 2);
+        assert_eq!(buffer.below_offset(end - 2, None), end);
     }
 
     #[test]
