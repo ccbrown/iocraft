@@ -18,6 +18,18 @@ use syn::{
     WherePredicate,
 };
 
+fn iocraft_path() -> Result<proc_macro2::TokenStream> {
+    match proc_macro_crate::crate_name("iocraft")
+        .map_err(|error| Error::new(Span::call_site(), error))?
+    {
+        proc_macro_crate::FoundCrate::Itself => Ok(quote!(::iocraft)),
+        proc_macro_crate::FoundCrate::Name(name) => {
+            let name = Ident::new_raw(&name, Span::call_site());
+            Ok(quote!(::#name))
+        }
+    }
+}
+
 enum ParsedElementChild {
     Element(ParsedElement),
     Expr(Expr),
@@ -72,6 +84,13 @@ impl Parse for ParsedElement {
 
 impl ToTokens for ParsedElement {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let iocraft = match iocraft_path() {
+            Ok(path) => path,
+            Err(error) => {
+                tokens.extend(error.into_compile_error());
+                return;
+            }
+        };
         let ty = &self.ty;
 
         // Use module_path!() combined with a deterministic counter to ensure
@@ -102,11 +121,11 @@ impl ToTokens for ParsedElement {
                     Expr::Lit(lit) => match &lit.lit {
                         Lit::Int(lit) if lit.suffix() == "pct" => {
                             let value = lit.base10_parse::<f32>().unwrap();
-                            quote!(.#member(::iocraft::Percent(#value)))
+                            quote!(.#member(#iocraft::Percent(#value)))
                         }
                         Lit::Float(lit) if lit.suffix() == "pct" => {
                             let value = lit.base10_parse::<f32>().unwrap();
-                            quote!(.#member(::iocraft::Percent(#value)))
+                            quote!(.#member(#iocraft::Percent(#value)))
                         }
                         _ => quote!(.#member(#expr)),
                     },
@@ -121,7 +140,7 @@ impl ToTokens for ParsedElement {
                 ParsedElementChild::Expr(expr) => quote!(#expr),
             });
             Some(quote! {
-                #(::iocraft::extend_with_elements(&mut _iocraft_element.props.children, #children);)*
+                #(#iocraft::extend_with_elements(&mut _iocraft_element.props.children, #children);)*
             })
         } else {
             None
@@ -129,12 +148,12 @@ impl ToTokens for ParsedElement {
 
         tokens.extend(quote! {
             {
-                type Props<'a> = <#ty as ::iocraft::ElementType>::Props<'a>;
+                type Props<'a> = <#ty as #iocraft::ElementType>::Props<'a>;
                 let mut _iocraft_props: Props = Props::__iocraft_builder()
                     #(#prop_setters)*
                     .__iocraft_build();
-                let mut _iocraft_element = ::iocraft::Element::<#ty>{
-                    key: ::iocraft::ElementKey::new(#key),
+                let mut _iocraft_element = #iocraft::Element::<#ty>{
+                    key: #iocraft::ElementKey::new(#key),
                     props: _iocraft_props,
                 };
                 #set_children
@@ -283,6 +302,13 @@ impl Parse for ParsedProps {
 
 impl ToTokens for ParsedProps {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let iocraft = match iocraft_path() {
+            Ok(path) => path,
+            Err(error) => {
+                tokens.extend(error.into_compile_error());
+                return;
+            }
+        };
         let def = &self.def;
         let name = &def.ident;
 
@@ -526,7 +552,7 @@ impl ToTokens for ParsedProps {
                     .chain(required_fields.iter().enumerate().map(|(index, field)| {
                         if index == current_index {
                             let ty = &field.ty;
-                            quote!(::iocraft::RequiredPropSet<#ty>)
+                            quote!(#iocraft::RequiredPropSet<#ty>)
                         } else {
                             let state_name = &required_state_names[index];
                             quote!(#state_name)
@@ -536,7 +562,7 @@ impl ToTokens for ParsedProps {
                 let return_type = quote!(#builder_name<#(#return_args),*>);
                 let moved_fields = field_names.iter().map(|name| {
                     if *name == field_name {
-                        quote!(#name: ::iocraft::RequiredPropSet(value.into()))
+                        quote!(#name: #iocraft::RequiredPropSet(value.into()))
                     } else {
                         quote!(#name: self.#name)
                     }
@@ -558,7 +584,7 @@ impl ToTokens for ParsedProps {
             .cloned()
             .chain(required_fields.iter().map(|field| {
                 let ty = &field.ty;
-                quote!(::iocraft::RequiredPropSet<#ty>)
+                quote!(#iocraft::RequiredPropSet<#ty>)
             }))
             .collect::<Vec<_>>();
         let complete_builder_type = if complete_builder_args.is_empty() {
@@ -628,7 +654,7 @@ impl ToTokens for ParsedProps {
         });
 
         tokens.extend(quote! {
-            unsafe impl #props_impl_generics ::iocraft::Props for
+            unsafe impl #props_impl_generics #iocraft::Props for
                 #name #bracketed_generic_names #props_where_clause
             {}
         });
@@ -770,6 +796,13 @@ impl Parse for ParsedComponent {
 
 impl ToTokens for ParsedComponent {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let iocraft = match iocraft_path() {
+            Ok(path) => path,
+            Err(error) => {
+                tokens.extend(error.into_compile_error());
+                return;
+            }
+        };
         let attrs = &self.f.attrs;
         let vis = &self.f.vis;
         let name = &self.f.sig.ident;
@@ -855,7 +888,7 @@ impl ToTokens for ParsedComponent {
             .props_type
             .as_ref()
             .map(|ty| quote!(#ty))
-            .unwrap_or_else(|| quote!(::iocraft::NoProps));
+            .unwrap_or_else(|| quote!(#iocraft::NoProps));
 
         tokens.extend(quote! {
             #(#attrs)*
@@ -867,7 +900,7 @@ impl ToTokens for ParsedComponent {
                 fn implementation #lifetime_impl_generics (#args) #output #lifetime_where_clause #block
             }
 
-            impl #impl_generics ::iocraft::Component for #name #ty_generics #where_clause {
+            impl #impl_generics #iocraft::Component for #name #ty_generics #where_clause {
                 type Props<'a> = #props_type_name;
 
                 fn new(_props: &Self::Props<'_>) -> Self {
@@ -876,7 +909,7 @@ impl ToTokens for ParsedComponent {
                     }
                 }
 
-                fn update(&mut self, props: &mut Self::Props<'_>, mut hooks: ::iocraft::Hooks, updater: &mut ::iocraft::ComponentUpdater) {
+                fn update(&mut self, props: &mut Self::Props<'_>, mut hooks: #iocraft::Hooks, updater: &mut #iocraft::ComponentUpdater) {
                     let mut e = {
                         let mut hooks = hooks.with_context_stack(#context_stack);
                         Self::implementation(#(#impl_args),*).into()
@@ -1016,36 +1049,40 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[doc(hidden)]
 #[proc_macro_attribute]
 pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let iocraft = match iocraft_path() {
+        Ok(path) => path,
+        Err(error) => return error.into_compile_error().into(),
+    };
     let layout_style_fields = [
         quote! {
             /// Sets the display mode for the element. Defaults to [`Display::Flex`].
             ///
             /// See [the MDN documentation for display](https://developer.mozilla.org/en-US/docs/Web/CSS/display).
-            pub display: ::iocraft::Display
+            pub display: #iocraft::Display
         },
         quote! {
             /// Sets the width of the element.
-            pub width: ::iocraft::Size
+            pub width: #iocraft::Size
         },
         quote! {
             /// Sets the height of the element.
-            pub height: ::iocraft::Size
+            pub height: #iocraft::Size
         },
         quote! {
             /// Sets the minimum width of the element.
-            pub min_width: ::iocraft::Size
+            pub min_width: #iocraft::Size
         },
         quote! {
             /// Sets the minimum height of the element.
-            pub min_height: ::iocraft::Size
+            pub min_height: #iocraft::Size
         },
         quote! {
             /// Sets the maximum width of the element.
-            pub max_width: ::iocraft::Size
+            pub max_width: #iocraft::Size
         },
         quote! {
             /// Sets the maximum height of the element.
-            pub max_height: ::iocraft::Size
+            pub max_height: #iocraft::Size
         },
         quote! {
             /// Defines the gaps in between rows or columns of flex items.
