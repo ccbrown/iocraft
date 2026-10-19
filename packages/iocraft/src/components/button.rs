@@ -1,7 +1,7 @@
 use crate::{
     component, components::View, element, hooks::UseTerminalEvents, AnyElement,
-    FullscreenMouseEvent, HandlerMut, Hooks, KeyCode, KeyEvent, KeyEventKind, MouseEventKind,
-    Props, TerminalEvent,
+    FullscreenMouseEvent, HandlerMut, Hooks, KeyCode, KeyEvent, KeyEventKind, MouseButton,
+    MouseEventKind, Props, TerminalEvent,
 };
 
 /// The props which can be passed to the [`Button`] component.
@@ -15,7 +15,7 @@ pub struct ButtonProps<'a> {
     ///
     /// The button can be triggered two ways:
     ///
-    /// - By clicking on it with the mouse while in fullscreen mode.
+    /// - By clicking on it with the primary mouse button while in fullscreen mode.
     /// - By pressing the Enter or Space key while [`has_focus`](Self::has_focus) is `true`.
     pub handler: HandlerMut<'static, ()>,
 
@@ -56,7 +56,7 @@ pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<An
         let has_focus = props.has_focus;
         move |event| match event {
             TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
-                kind: MouseEventKind::Down(_),
+                kind: MouseEventKind::Down(MouseButton::Left),
                 ..
             }) => {
                 handler(());
@@ -82,7 +82,7 @@ pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<An
 mod tests {
     use crate::prelude::*;
     use crate::MouseButton;
-    use futures::stream::StreamExt;
+    use futures::{stream::StreamExt, FutureExt};
     use macro_rules_attribute::apply;
     use smol_macros::test;
 
@@ -164,5 +164,31 @@ mod tests {
             .await;
         let expected = vec!["Exit\n"];
         assert_eq!(actual, expected);
+    }
+    #[apply(test!)]
+    async fn test_secondary_clicks_do_not_activate_the_button() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent);
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        assert_eq!(frames.next().await.unwrap().to_string(), "Exit\n");
+        for button in [MouseButton::Right, MouseButton::Middle] {
+            sender
+                .unbounded_send(TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                    MouseEventKind::Down(button),
+                    2,
+                    0,
+                )))
+                .unwrap();
+        }
+        assert!(frames.next().now_or_never().is_none());
+        sender
+            .unbounded_send(TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                MouseEventKind::Down(MouseButton::Left),
+                2,
+                0,
+            )))
+            .unwrap();
+        assert!(frames.next().await.is_none());
     }
 }
