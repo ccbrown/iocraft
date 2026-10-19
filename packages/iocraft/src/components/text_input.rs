@@ -110,6 +110,7 @@ pub struct TextInputProps {
 
     /// If true (requires `multiline`), the input auto-grows its height to
     /// fit wrapped content instead of filling the container.
+    /// This can be changed at runtime, even when the content is unchanged.
     pub auto_grow: bool,
 
     /// The color to make the cursor. Defaults to gray.
@@ -324,6 +325,7 @@ impl Component for TextBufferView {
                 );
             }
         } else {
+            self.prev_row_count = 0;
             updater.set_layout_style(
                 LayoutStyle {
                     position: Position::Absolute,
@@ -730,6 +732,53 @@ mod tests {
     use futures::stream::StreamExt;
     use macro_rules_attribute::apply;
     use smol_macros::test;
+
+    #[component]
+    fn AutoGrowToggle(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut auto_grow = hooks.use_state(|| true);
+        hooks.use_terminal_events(move |event| {
+            if matches!(
+                event,
+                TerminalEvent::Key(KeyEvent {
+                    code: KeyCode::Char('t'),
+                    kind: KeyEventKind::Press,
+                    ..
+                })
+            ) {
+                auto_grow.set(!auto_grow.get());
+            }
+        });
+        element! {
+            View(width: 12, height: 5, flex_direction: FlexDirection::Column) {
+                Text(content: format!("auto={}", auto_grow.get()))
+                TextInput(value: "a\nb", multiline: true, auto_grow: auto_grow.get())
+                Text(content: "footer")
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_auto_grow_can_be_reenabled_without_changing_the_value() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(AutoGrowToggle);
+        let mut output = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        for (step, expected_footer_row) in [3, 4, 3].into_iter().enumerate() {
+            if step > 0 {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Char('t'),
+                    )))
+                    .unwrap();
+            }
+            let frame = output.next().await.unwrap().to_string();
+            assert_eq!(
+                frame.lines().position(|line| line == "footer"),
+                Some(expected_footer_row),
+                "{frame:?}"
+            );
+        }
+    }
 
     #[derive(Default, Props)]
     struct MyComponentProps {
