@@ -1317,10 +1317,12 @@ line two
         assert_eq!(view.get_text(0, 0, 2, 1), "ok");
         let mut negative = canvas.subview_mut(isize::MIN, 0, 0, 0, 2, 1);
         negative.set_background_color(isize::MIN, 0, usize::MAX, 1, Color::Red);
+        negative.set_text(isize::MIN, 0, "bad", CanvasTextStyle::default());
         assert_eq!(
             canvas.cell(0, 0).unwrap().background_color,
             Some(Color::Blue)
         );
+        assert_eq!(canvas.get_text(0, 0, 2, 1), "ok");
         assert_eq!(
             canvas.subview_mut(1, 0, 0, 0, 2, 1).cell(isize::MAX, 0),
             None
