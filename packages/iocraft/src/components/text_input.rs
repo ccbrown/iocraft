@@ -741,7 +741,10 @@ mod tests {
     }
 
     #[component]
-    fn AutoGrowToggle(mut hooks: Hooks, props: &AutoGrowToggleProps) -> impl Into<AnyElement<'static>> {
+    fn AutoGrowToggle(
+        mut hooks: Hooks,
+        props: &AutoGrowToggleProps,
+    ) -> impl Into<AnyElement<'static>> {
         let auto_grow = hooks.use_state(|| true);
         *props.state.lock().unwrap() = Some(auto_grow);
         element! {
