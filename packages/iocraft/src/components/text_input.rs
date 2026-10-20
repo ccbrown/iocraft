@@ -218,11 +218,10 @@ impl TextBuffer {
     }
 
     fn offset_for_closest_column_in_row(&self, row: u16, col: u16) -> usize {
-        let row = &self.rows[row as usize];
+        let row_idx = row as usize;
+        let row = &self.rows[row_idx];
         let col = col as usize;
-        if col >= row.width {
-            row.offset + row.len
-        } else {
+        if col < row.width {
             let mut width = 0;
             for (idx, grapheme) in
                 self.text[row.offset..row.offset + row.len].grapheme_indices(true)
@@ -232,7 +231,16 @@ impl TextBuffer {
                 }
                 width += grapheme.width();
             }
-            row.offset + row.len
+        }
+        let end = row.offset + row.len;
+        if self
+            .rows
+            .get(row_idx + 1)
+            .is_some_and(|next| next.offset == end)
+        {
+            previous_grapheme_offset(&self.text, end)
+        } else {
+            end
         }
     }
 
@@ -761,6 +769,8 @@ mod tests {
     struct CrlfInputProps {
         cursor: usize,
         #[iocraft(required)]
+        width: u16,
+        #[iocraft(required)]
         initial_value: &'static str,
         #[iocraft(required)]
         observed: Arc<Mutex<String>>,
@@ -778,7 +788,7 @@ mod tests {
         }
         let observed = props.observed.clone();
         element! {
-            View(width: 11, height: 3) {
+            View(width: Size::Length(props.width as _), height: 3) {
                 TextInput(
                     has_focus: true,
                     multiline: true,
@@ -813,6 +823,7 @@ mod tests {
                 .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
             let mut app = element!(CrlfInput(
                 cursor: cursor,
+                width: 11_u16,
                 initial_value: initial_value,
                 observed: observed.clone(),
             ));
@@ -828,6 +839,44 @@ mod tests {
                 expected_frame
             );
         }
+    }
+
+    #[apply(test!)]
+    async fn test_narrow_wrap_vertical_backspace_removes_whole_grapheme() {
+        let observed = Arc::new(Mutex::new(String::new()));
+        let mut app = element!(CrlfInput(
+            cursor: 0_usize,
+            width: 2_u16,
+            initial_value: "👩‍👩x",
+            observed: observed.clone(),
+        ));
+        let render = async {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            let _ = futures::poll!(frames.next());
+            let _ = futures::poll!(frames.next());
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Down,
+                )))
+                .unwrap();
+            frames.next().await.unwrap();
+            for code in [KeyCode::Backspace, KeyCode::Char('!')] {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                    .unwrap();
+            }
+            frames.for_each(|_| async {}).await;
+        };
+        smol::future::or(render, async {
+            smol::Timer::after(std::time::Duration::from_secs(5)).await;
+            panic!("narrow wrapped input did not finish");
+        })
+        .await;
+        assert_eq!(*observed.lock().unwrap(), "!x");
     }
 
     #[test]
@@ -1114,6 +1163,25 @@ mod tests {
         assert_eq!(buffer.row_end_offset(3), 6);
         assert_eq!(buffer.above_offset(3, None), 0);
         assert_eq!(buffer.below_offset(0, None), 3);
+    }
+
+    #[test]
+    fn test_up_stays_in_previous_wrapped_row() {
+        let buffer = TextBuffer::new("abcdef", 3);
+        assert_eq!(buffer.above_offset(6, Some(3)), 2);
+    }
+
+    #[test]
+    fn test_down_does_not_skip_wrapped_row() {
+        let buffer = TextBuffer::new("abcd\nabcdefgh", 4);
+        assert_eq!(buffer.below_offset(4, Some(4)), 8);
+        assert_eq!(buffer.below_offset(8, Some(4)), 13);
+    }
+
+    #[test]
+    fn test_up_into_wide_grapheme_stays_in_previous_row() {
+        let buffer = TextBuffer::new("👩‍👩x", 1);
+        assert_eq!(buffer.above_offset(buffer.text.len(), None), 0);
     }
 
     #[test]
