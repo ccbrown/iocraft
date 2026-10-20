@@ -99,7 +99,7 @@ new_length_percentage_type!(
 );
 
 new_length_percentage_type!(
-    /// Defines the gaps in between rows or columns of flex items.
+    /// Defines the gaps in between rows or columns of flex or grid items.
     ///
     /// See [the MDN documentation for gap](https://developer.mozilla.org/en-US/docs/Web/CSS/gap).
     Gap
@@ -291,8 +291,18 @@ impl From<LayoutStyle> for Style {
             flex_grow: s.flex_grow,
             flex_shrink: s.flex_shrink.unwrap_or(1.0),
             align_items: s.align_items,
+            align_self: s.align_self,
+            justify_items: s.justify_items,
+            justify_self: s.justify_self,
             align_content: s.align_content,
             justify_content: s.justify_content,
+            grid_template_rows: s.grid_template_rows,
+            grid_template_columns: s.grid_template_columns,
+            grid_auto_rows: s.grid_auto_rows,
+            grid_auto_columns: s.grid_auto_columns,
+            grid_auto_flow: s.grid_auto_flow,
+            grid_row: s.grid_row,
+            grid_column: s.grid_column,
             ..Default::default()
         }
     }

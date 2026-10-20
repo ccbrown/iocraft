@@ -344,6 +344,11 @@ impl Component for View {
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
+    use crate::taffy::{
+        geometry::Line,
+        prelude::{fr, length, line, minmax, percent, span},
+        style::{GridAutoFlow, GridPlacement},
+    };
     use indoc::indoc;
 
     #[derive(Default, Props)]
@@ -684,6 +689,137 @@ mod tests {
                 │                  │
                 │                  │
                 └──────────────────┘
+            "},
+        );
+    }
+
+    #[test]
+    fn grid_column_span_and_gaps() {
+        assert_eq!(
+            element! {
+                View(
+                    display: Display::Grid,
+                    width: 11,
+                    border_style: BorderStyle::Single,
+                    gap: 1,
+                    grid_template_columns: vec![length(3.0_f32), length(5.0_f32)],
+                    grid_template_rows: vec![length(1.0_f32), length(1.0_f32)],
+                ) {
+                    View(grid_column: Line::<GridPlacement> { start: line(1), end: span(2) }) {
+                        Text(content: "wide")
+                    }
+                    Text(content: "B")
+                    Text(content: "C")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌─────────┐
+                │wide     │
+                │         │
+                │B   C    │
+                └─────────┘
+            "},
+        );
+    }
+
+    #[test]
+    fn grid_row_span() {
+        assert_eq!(
+            element! {
+                View(
+                    display: Display::Grid,
+                    width: 9,
+                    border_style: BorderStyle::Single,
+                    gap: 1,
+                    grid_template_columns: vec![length(3.0_f32), length(3.0_f32)],
+                    grid_template_rows: vec![length(1.0_f32), length(1.0_f32)],
+                ) {
+                    View(grid_column: line::<Line<_>>(1), grid_row: span::<Line<_>>(2)) {
+                        Text(content: "A\nB\nC")
+                    }
+                    Text(content: "d")
+                    Text(content: "e")
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌───────┐
+                │A   d  │
+                │B      │
+                │C   e  │
+                └───────┘
+            "},
+        );
+    }
+
+    #[test]
+    fn grid_implicit_columns_and_item_alignment() {
+        assert_eq!(
+            element! {
+                View(
+                    display: Display::Grid,
+                    width: 9,
+                    border_style: BorderStyle::Single,
+                    gap: 1,
+                    grid_template_rows: vec![length(1.0_f32), length(1.0_f32)],
+                    grid_auto_columns: vec![length(3.0_f32)],
+                    grid_auto_flow: GridAutoFlow::Column,
+                    justify_items: AlignItems::End,
+                ) {
+                    Text(content: "A")
+                    Text(content: "B")
+                    Text(content: "C")
+                    View(justify_self: AlignItems::Start) {
+                        Text(content: "D")
+                    }
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌───────┐
+                │  A   C│
+                │       │
+                │  B D  │
+                └───────┘
+            "},
+        );
+    }
+
+    #[test]
+    fn grid_fractional_tracks_and_implicit_rows() {
+        assert_eq!(
+            element! {
+                View(
+                    display: Display::Grid,
+                    width: 22,
+                    border_style: BorderStyle::Single,
+                    grid_template_columns: vec![
+                        percent(0.5_f32),
+                        minmax(length(0.0_f32), fr(1.0_f32)),
+                        fr(1.0_f32),
+                    ],
+                    grid_auto_rows: vec![length(3.0_f32)],
+                    align_items: AlignItems::End,
+                ) {
+                    Text(content: "A")
+                    Text(content: "B")
+                    Text(content: "C")
+                    View(align_self: AlignItems::Start) {
+                        Text(content: "D")
+                    }
+                }
+            }
+            .to_string(),
+            indoc! {"
+                ┌────────────────────┐
+                │                    │
+                │                    │
+                │A         B    C    │
+                │D                   │
+                │                    │
+                │                    │
+                └────────────────────┘
             "},
         );
     }

@@ -139,7 +139,7 @@ mod flattened_exports {
 
 pub use flattened_exports::*;
 
-/// Re-exported [`taffy`] crate, which powers flexbox layout in `iocraft`.
+/// Re-exported [`taffy`] crate, which powers flexbox and grid layout in `iocraft`.
 ///
 /// This allows you to reference `taffy` types (e.g. [`taffy::Size`],
 /// [`taffy::AvailableSpace`]) in your own code without adding a separate
