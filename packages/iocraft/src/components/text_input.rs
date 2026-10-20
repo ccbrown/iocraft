@@ -343,6 +343,12 @@ impl Component for TextBufferView {
     }
 }
 
+#[derive(Default)]
+struct TextInputEditState {
+    last_prop_value: String,
+    cursor_before_edits: Option<usize>,
+}
+
 /// `TextInput` is a component that can receive text input from the user.
 ///
 /// It will fill the available width and display the current value. Typically, you will want to
@@ -390,8 +396,9 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         TextWrap::NoWrap
     };
 
-    // Keep the last accepted or submitted value so a batch of input events edits one buffer.
+    // Keep pending edits separate from accepted props so rejected changes do not move the caret.
     let mut prev_value = hooks.use_state(|| "".to_string());
+    let mut edit_state = hooks.use_ref(TextInputEditState::default);
     let mut cursor_offset = hooks.use_state(|| 0usize);
     let mut requested_cursor_offset = hooks.use_state(|| None);
     let mut scroll_offset_row = hooks.use_state(|| 0u16);
@@ -424,14 +431,30 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         (&props.value, max_text_width),
     );
 
-    // Update the cursor position if the value has changed.
+    let (prop_changed, cursor_before_edits) = {
+        let edit = edit_state.read();
+        (
+            edit.last_prop_value != props.value,
+            edit.cursor_before_edits,
+        )
+    };
     if props.value.as_str() != prev_value.read().as_str() {
-        let new_cursor_offset =
-            new_cursor_offset(&prev_value.read(), cursor_offset.get(), &props.value);
+        let new_cursor_offset = if prop_changed {
+            new_cursor_offset(&prev_value.read(), cursor_offset.get(), &props.value)
+        } else {
+            cursor_before_edits.unwrap_or_else(|| cursor_offset.get())
+        };
         if cursor_offset != new_cursor_offset {
             cursor_offset.set(new_cursor_offset);
         }
         prev_value.set(props.value.clone());
+    }
+    if prop_changed || cursor_before_edits.is_some() {
+        let mut edit = edit_state.write();
+        if prop_changed {
+            edit.last_prop_value.clone_from(&props.value);
+        }
+        edit.cursor_before_edits = None;
     }
 
     // Update the cursor position if the user requested it.
@@ -483,6 +506,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         let mut buffer = buffer.clone();
         let mut buffer_width = max_text_width;
         let mut buffer_dirty = false;
+        let mut has_pending_edit = false;
         let mut on_change = props.on_change.take();
         move |event| {
             if !has_focus {
@@ -628,6 +652,10 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 cursor_offset.set(position);
             }
             if let Some(value) = changed_value {
+                if buffer_dirty && !has_pending_edit {
+                    edit_state.write().cursor_before_edits = Some(old_position);
+                    has_pending_edit = true;
+                }
                 on_change(value);
             }
         }
@@ -743,6 +771,7 @@ mod tests {
         initial_value: String,
         requested_cursor_offset: Option<usize>,
         uppercase: bool,
+        reject_shrinking_changes: bool,
     }
 
     #[component]
@@ -752,6 +781,7 @@ mod tests {
         let mut handle = hooks.use_ref_default::<TextInputHandle>();
         let requested_cursor_offset = props.requested_cursor_offset;
         let uppercase = props.uppercase;
+        let reject_shrinking_changes = props.reject_shrinking_changes;
         hooks.use_effect(
             move || {
                 if let Some(offset) = requested_cursor_offset {
@@ -770,7 +800,12 @@ mod tests {
                 TextInput(
                     has_focus: true,
                     value: value.to_string(),
-                    on_change: move |new_value: String| value.set(if uppercase { new_value.to_uppercase() } else { new_value }),
+                    on_change: move |new_value: String| {
+                        let accept = !reject_shrinking_changes || new_value.len() >= value.read().len();
+                        if accept {
+                            value.set(if uppercase { new_value.to_uppercase() } else { new_value });
+                        }
+                    },
                     handle,
                 )
             }
@@ -1077,6 +1112,43 @@ mod tests {
             )))
             .unwrap();
         assert_eq!(frames.next().await.unwrap().to_string().trim(), "a!a");
+    }
+
+    #[apply(test!)]
+    async fn test_rejected_delete_preserves_cursor_after_redraw() {
+        smol::future::or(
+            async {
+                let (sender, events) = futures::channel::mpsc::unbounded();
+                let mut app = element!(MyComponent(
+                    initial_value: "aaa",
+                    reject_shrinking_changes: true,
+                ));
+                let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                futures::pin_mut!(frames);
+                frames.next().await.unwrap();
+                for code in [KeyCode::Home, KeyCode::Right, KeyCode::Delete] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                assert_eq!(frames.next().await.unwrap().to_string().trim(), "aaa");
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Char('!'),
+                    )))
+                    .unwrap();
+                assert_eq!(frames.next().await.unwrap().to_string().trim(), "a!aa");
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("controlled TextInput did not redraw");
+            },
+        )
+        .await;
     }
 
     #[apply(test!)]
