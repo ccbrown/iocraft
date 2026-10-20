@@ -72,3 +72,16 @@ impl ConstSelfProps {
 struct SelfBoundProps<T: Into<Self> + Send + Sync> {
     value: Option<T>,
 }
+
+#[derive(Props)]
+struct NestedItemSelfProps {
+    value: [u8; {
+        struct Local;
+        impl Local {
+            const WIDTH: usize = 2;
+            const SIZE: usize = Self::WIDTH;
+        }
+        Local::SIZE
+    }],
+    next: Option<Box<Self>>,
+}

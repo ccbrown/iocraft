@@ -281,9 +281,12 @@ impl Parse for ParsedProps {
     }
 }
 
+// Nested items bind their own Self; both visitors enter through the outer struct directly.
 struct FindSelf(bool);
 
 impl<'ast> syn::visit::Visit<'ast> for FindSelf {
+    fn visit_item(&mut self, _item: &'ast syn::Item) {}
+
     fn visit_path(&mut self, path: &'ast syn::Path) {
         if self.0 {
             return;
@@ -301,6 +304,8 @@ impl<'ast> syn::visit::Visit<'ast> for FindSelf {
 struct PropsSelfPath(syn::Path);
 
 impl syn::visit_mut::VisitMut for PropsSelfPath {
+    fn visit_item_mut(&mut self, _item: &mut syn::Item) {}
+
     fn visit_path_mut(&mut self, path: &mut syn::Path) {
         syn::visit_mut::visit_path_mut(self, path);
         if path
