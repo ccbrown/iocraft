@@ -3,6 +3,7 @@ use crate::{
     component::{ComponentHelperExt, Components, InstantiatedComponent},
     context::{Context, ContextStack, SystemContext},
     element::ElementExt,
+    hooks::EventPath,
     multimap::AppendOnlyMultimap,
     props::AnyProps,
     terminal::{MockTerminalConfig, MockTerminalOutputStream, Terminal, TerminalEvents},
@@ -38,6 +39,7 @@ pub struct ComponentUpdater<'a, 'b: 'a, 'c: 'a, 'w> {
     unattached_child_node_ids: &'a mut Vec<NodeId>,
     context: &'a mut UpdateContext<'b, 'w>,
     component_context_stack: &'a mut ContextStack<'c>,
+    event_path: &'a EventPath<'a>,
 }
 
 impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
@@ -47,6 +49,7 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
         unattached_child_node_ids: &'a mut Vec<NodeId>,
         context: &'a mut UpdateContext<'b, 'w>,
         component_context_stack: &'a mut ContextStack<'c>,
+        event_path: &'a EventPath<'a>,
     ) -> Self {
         Self {
             node_id,
@@ -55,6 +58,7 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
             unattached_child_node_ids,
             context,
             component_context_stack,
+            event_path,
         }
     }
 
@@ -193,6 +197,7 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
                         child_node_ids,
                         component_context_stack,
                         child.props_mut(),
+                        Some(self.event_path),
                     );
 
                     used_components.push_back(child.key().clone(), component);
@@ -394,6 +399,7 @@ impl<'a> Tree<'a> {
                 &mut wrapper_child_node_ids,
                 &mut component_context_stack,
                 self.root_component_props.borrow(),
+                None,
             );
             context.did_clear_terminal_output
         };
