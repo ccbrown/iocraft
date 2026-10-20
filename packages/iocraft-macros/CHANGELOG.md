@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Grid track, placement, and alignment properties in `with_layout_style_props`.
+
 ## [0.2.5](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.4...iocraft-macros-v0.2.5) - 2026-10-09
 
 ### Added

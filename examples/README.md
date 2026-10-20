@@ -22,3 +22,12 @@ To run any of the examples, use `cargo run --example NAME`. For example, to run 
 |[use_input.rs](./use_input.rs)<br />Demonstrates using keyboard input to move a 👾.|![preview](./images/use_input.png)|
 |[use_output.rs](./use_output.rs)<br />Continuously logs text output above the rendered component.|![preview](./images/use_output.png)|
 |[weather.rs](./weather.rs)<br />Demonstrates asynchronous loading of data from remote APIs in response to user input.|![preview](./images/weather.png)|
+
+## Grid layouts
+
+[`grid.rs`](./grid.rs) uses `Display::Grid` to arrange a header, sidebar, and two
+content panels. It combines fractional column widths with row and column spans.
+Taffy's sizing and placement helpers are available through `iocraft::taffy`;
+absolute track lengths are measured in terminal cells.
+
+Run it with `cargo run --example grid`.

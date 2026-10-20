@@ -1063,19 +1063,19 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             pub max_height: ::iocraft::Size
         },
         quote! {
-            /// Defines the gaps in between rows or columns of flex items.
+            /// Defines the gaps in between rows or columns of flex or grid items.
             ///
             /// See [the MDN documentation for gap](https://developer.mozilla.org/en-US/docs/Web/CSS/gap).
             pub gap: ::iocraft::Gap
         },
         quote! {
-            /// Defines the gaps in between columns of flex items.
+            /// Defines the gaps in between columns of flex or grid items.
             ///
             /// See [the MDN documentation for column-gap](https://developer.mozilla.org/en-US/docs/Web/CSS/column-gap).
             pub column_gap: ::iocraft::Gap
         },
         quote! {
-            /// Defines the gaps in between rows of flex items.
+            /// Defines the gaps in between rows of flex or grid items.
             ///
             /// See [the MDN documentation for row-gap](https://developer.mozilla.org/en-US/docs/Web/CSS/row-gap).
             pub row_gap: ::iocraft::Gap
@@ -1111,7 +1111,7 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             pub padding_left: ::iocraft::Padding
         },
         quote! {
-            /// Controls how the element is layed out and whether it will be controlled by the flexbox.
+            /// Controls how the element is positioned within its parent's layout.
             pub position: ::iocraft::Position
         },
         quote! {
@@ -1207,22 +1207,68 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             pub flex_shrink: Option<f32>
         },
         quote! {
-            /// Controls the alignment of items along the cross axis of a flex container.
+            /// Controls item alignment along a flex container's cross axis or a grid's block axis.
             ///
             /// See [the MDN documentation for align-items](https://developer.mozilla.org/en-US/docs/Web/CSS/align-items).
             pub align_items: Option<::iocraft::AlignItems>
         },
         quote! {
-            /// Controls the distribution of space between and around items along a flex container's cross axis.
+            /// Overrides the parent's `align_items` for this flex or grid item.
+            pub align_self: Option<::iocraft::taffy::style::AlignSelf>
+        },
+        quote! {
+            /// Controls the alignment of grid items along the inline axis.
+            pub justify_items: Option<::iocraft::taffy::style::JustifyItems>
+        },
+        quote! {
+            /// Overrides the parent's `justify_items` for this grid item.
+            pub justify_self: Option<::iocraft::taffy::style::JustifySelf>
+        },
+        quote! {
+            /// Distributes space along a flex container's cross axis or a grid's block axis.
             ///
             /// See [the MDN documentation for align-content](https://developer.mozilla.org/en-US/docs/Web/CSS/align-content).
             pub align_content: Option<::iocraft::AlignContent>
         },
         quote! {
-            /// Controls the distribution of space between and around items along a flex container's main axis.
+            /// Distributes space along a flex container's main axis or a grid's inline axis.
             ///
             /// See [the MDN documentation for justify-content](https://developer.mozilla.org/en-US/docs/Web/CSS/justify-content).
             pub justify_content: Option<::iocraft::JustifyContent>
+        },
+        quote! {
+            /// Sets the explicit column tracks when `display` is `Display::Grid`.
+            ///
+            /// Use the sizing helpers in `iocraft::taffy::prelude`, such as `fr`, `length`,
+            /// `minmax`, and `repeat`.
+            pub grid_template_columns: Vec<::iocraft::taffy::style::TrackSizingFunction>
+        },
+        quote! {
+            /// Sets the explicit row tracks when `display` is `Display::Grid`.
+            pub grid_template_rows: Vec<::iocraft::taffy::style::TrackSizingFunction>
+        },
+        quote! {
+            /// Sets the sizes of implicitly created grid columns.
+            pub grid_auto_columns: Vec<::iocraft::taffy::style::NonRepeatedTrackSizingFunction>
+        },
+        quote! {
+            /// Sets the sizes of implicitly created grid rows.
+            pub grid_auto_rows: Vec<::iocraft::taffy::style::NonRepeatedTrackSizingFunction>
+        },
+        quote! {
+            /// Controls row-wise or column-wise grid auto-placement and dense packing.
+            pub grid_auto_flow: ::iocraft::taffy::style::GridAutoFlow
+        },
+        quote! {
+            /// Sets this item's start/end column lines or span within its parent grid.
+            ///
+            /// Use Taffy's `line::<Line<_>>(index)` or `span::<Line<_>>(count)` helpers,
+            /// or `Line<GridPlacement>` to set both ends explicitly.
+            pub grid_column: ::iocraft::taffy::geometry::Line<::iocraft::taffy::style::GridPlacement>
+        },
+        quote! {
+            /// Sets this item's start/end row lines or span within its parent grid.
+            pub grid_row: ::iocraft::taffy::geometry::Line<::iocraft::taffy::style::GridPlacement>
         },
         quote! {
             /// Defines the behavior when content does not fit within the element's padding box.
@@ -1255,7 +1301,16 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             let struct_name = &ast.ident;
             let field_assignments = layout_style_fields.iter().map(|field| {
                 let field_name = &field.ident;
-                quote! { ret.#field_name = self.#field_name; }
+                let is_vec = matches!(
+                    &field.ty,
+                    syn::Type::Path(ty)
+                        if ty.path.segments.last().is_some_and(|segment| segment.ident == "Vec")
+                );
+                if is_vec {
+                    quote! { ret.#field_name = self.#field_name.clone(); }
+                } else {
+                    quote! { ret.#field_name = self.#field_name; }
+                }
             });
 
             let where_clause = &ast.generics.where_clause;
