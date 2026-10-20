@@ -290,4 +290,123 @@ mod tests {
         );
         worker.join().unwrap();
     }
+
+    #[test]
+    fn test_backend_output_is_flushed_on_the_next_update() {
+        use crate::prelude::*;
+        use futures::{stream, stream::BoxStream, StreamExt};
+        use std::io;
+
+        #[derive(Default)]
+        struct Trace {
+            stdout: Option<StdoutHandle>,
+            batches: Vec<Vec<String>>,
+            ready_after_flush: Vec<bool>,
+        }
+
+        struct RecordingBackend(Arc<Mutex<Trace>>);
+
+        impl TerminalBackend for RecordingBackend {
+            fn clear_canvas(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+
+            fn write_canvas(&mut self, _: Option<&Canvas>, _: &Canvas) -> io::Result<()> {
+                Ok(())
+            }
+
+            fn print_above(&mut self, messages: &[Passthrough<'_>]) -> io::Result<()> {
+                let nested = {
+                    let mut trace = self.0.lock().unwrap();
+                    trace.batches.push(
+                        messages
+                            .iter()
+                            .map(|message| message.content.to_string())
+                            .collect(),
+                    );
+                    (trace.batches.len() == 1).then(|| trace.stdout.as_ref().unwrap().clone())
+                };
+                if let Some(stdout) = nested {
+                    stdout.println("nested");
+                }
+                Ok(())
+            }
+
+            fn event_stream(
+                &mut self,
+            ) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
+                Ok(stream::pending().boxed())
+            }
+        }
+
+        struct FlushProbe {
+            output: UseOutputImpl,
+            trace: Arc<Mutex<Trace>>,
+            updates: usize,
+        }
+
+        impl Hook for FlushProbe {
+            fn poll_change(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<()> {
+                Pin::new(&mut self.get_mut().output).poll_change(cx)
+            }
+
+            fn post_component_update(&mut self, updater: &mut ComponentUpdater) {
+                self.output.post_component_update(updater);
+                let ready = Pin::new(&mut self.output)
+                    .poll_change(&mut core::task::Context::from_waker(&noop_waker()))
+                    .is_ready();
+                self.trace.lock().unwrap().ready_after_flush.push(ready);
+            }
+        }
+
+        #[derive(Props)]
+        struct FlushProps {
+            trace: Arc<Mutex<Trace>>,
+        }
+
+        #[component]
+        fn FlushingComponent(
+            mut hooks: Hooks,
+            props: &FlushProps,
+        ) -> impl Into<AnyElement<'static>> {
+            let trace = props.trace.clone();
+            let probe = hooks.use_hook(move || {
+                let mut output = UseOutputImpl::default();
+                let stdout = output.use_stdout();
+                trace.lock().unwrap().stdout = Some(stdout.clone());
+                stdout.println("outer");
+                FlushProbe {
+                    output,
+                    trace,
+                    updates: 0,
+                }
+            });
+            probe.updates += 1;
+            if probe.updates == 2 {
+                hooks.use_context_mut::<SystemContext>().exit();
+            }
+            element!(Text(content: "frame"))
+        }
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let trace = Arc::new(Mutex::new(Trace::default()));
+            let backend = RecordingBackend(trace.clone());
+            let mut element = element!(FlushingComponent(trace: trace.clone()));
+            smol::block_on(element.render_loop().backend(backend)).unwrap();
+            let mut trace = trace.lock().unwrap();
+            sender
+                .send((
+                    std::mem::take(&mut trace.batches),
+                    std::mem::take(&mut trace.ready_after_flush),
+                ))
+                .unwrap();
+        });
+        let (batches, ready) = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("backend output must not deadlock");
+        assert_eq!(batches, [vec!["outer"], vec!["nested"]]);
+        assert_eq!(ready, [true, false]);
+        worker.join().unwrap();
+    }
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- allow reentrant formatting, wake callbacks, and backend writes in `use_output` ([#279](https://github.com/ccbrown/iocraft/pull/279))
+
 ## [0.9.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.2...iocraft-v0.9.3) - 2026-10-14
 
 ### Fixed
