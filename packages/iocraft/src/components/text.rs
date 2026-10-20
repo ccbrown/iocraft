@@ -55,6 +55,7 @@ pub struct TextProps {
     pub wrap: TextWrap,
 
     /// The text alignment.
+    /// Leading Unicode whitespace contributes to the aligned display width.
     pub align: TextAlign,
 
     /// The text decoration.
@@ -215,9 +216,9 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
         while let Some(mut line) = lines.next() {
             if self.skip_leading_whitespace && !self.line_encountered_non_whitespace {
                 let to_skip = line
-                    .chars()
-                    .position(|c| !c.is_whitespace())
-                    .unwrap_or(line.len());
+                    .char_indices()
+                    .find(|(_, c)| !c.is_whitespace())
+                    .map_or(line.len(), |(offset, _)| offset);
                 let (whitespace, remaining) = line.split_at(to_skip);
                 self.x += whitespace.width() as isize;
                 line = remaining;
@@ -305,6 +306,18 @@ mod tests {
         }
         .to_string();
         assert_eq!(actual, "\n\nhello\n\nworld\nfooter\n");
+    }
+
+    #[test]
+    fn test_alignment_preserves_unicode_indentation() {
+        let actual = element! {
+            View(width: 12, flex_direction: FlexDirection::Column) {
+                Text(content: "\u{2003}hello", align: TextAlign::Right)
+                Text(content: "footer")
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "       hello\nfooter\n");
     }
 
     #[test]
