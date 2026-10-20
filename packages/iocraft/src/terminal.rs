@@ -275,7 +275,8 @@ impl<'a> Terminal<'a> {
 
     /// Wraps a series of terminal updates in a synchronized update block, making sure to end the
     /// synchronized update even if there is an error or panic.
-    /// A frame-finalization error is returned unless the update itself already failed.
+    /// If ending the synchronized update fails, its error is returned unless the update itself
+    /// already failed.
     pub fn synchronized_update<F>(&mut self, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut Self) -> io::Result<()>,
