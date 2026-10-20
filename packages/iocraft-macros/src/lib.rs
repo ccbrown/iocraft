@@ -1088,131 +1088,131 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             /// Defines the gaps in between rows or columns of flex items.
             ///
             /// See [the MDN documentation for gap](https://developer.mozilla.org/en-US/docs/Web/CSS/gap).
-            pub gap: ::iocraft::Gap
+            pub gap: #iocraft::Gap
         },
         quote! {
             /// Defines the gaps in between columns of flex items.
             ///
             /// See [the MDN documentation for column-gap](https://developer.mozilla.org/en-US/docs/Web/CSS/column-gap).
-            pub column_gap: ::iocraft::Gap
+            pub column_gap: #iocraft::Gap
         },
         quote! {
             /// Defines the gaps in between rows of flex items.
             ///
             /// See [the MDN documentation for row-gap](https://developer.mozilla.org/en-US/docs/Web/CSS/row-gap).
-            pub row_gap: ::iocraft::Gap
+            pub row_gap: #iocraft::Gap
         },
         quote! {
             /// Defines the area to reserve around the element's content, but inside the border.
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
-            pub padding: ::iocraft::Padding
+            pub padding: #iocraft::Padding
         },
         quote! {
             /// Defines the area to reserve above the element's content, but inside the border.
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
-            pub padding_top: ::iocraft::Padding
+            pub padding_top: #iocraft::Padding
         },
         quote! {
             /// Defines the area to reserve to the right of the element's content, but inside the border.
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
-            pub padding_right: ::iocraft::Padding
+            pub padding_right: #iocraft::Padding
         },
         quote! {
             /// Defines the area to reserve below the element's content, but inside the border.
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
-            pub padding_bottom: ::iocraft::Padding
+            pub padding_bottom: #iocraft::Padding
         },
         quote! {
             /// Defines the area to reserve to the left of the element's content, but inside the border.
             ///
             /// See [the MDN documentation for padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding).
-            pub padding_left: ::iocraft::Padding
+            pub padding_left: #iocraft::Padding
         },
         quote! {
             /// Controls how the element is layed out and whether it will be controlled by the flexbox.
-            pub position: ::iocraft::Position
+            pub position: #iocraft::Position
         },
         quote! {
             /// Sets the position of a positioned element.
             ///
             /// See [the MDN documentation for inset](https://developer.mozilla.org/en-US/docs/Web/CSS/inset).
-            pub inset: ::iocraft::Inset
+            pub inset: #iocraft::Inset
         },
         quote! {
             /// Sets the vertical position of a positioned element.
             ///
             /// See [the MDN documentation for top](https://developer.mozilla.org/en-US/docs/Web/CSS/top).
-            pub top: ::iocraft::Inset
+            pub top: #iocraft::Inset
         },
         quote! {
             /// Sets the horizontal position of a positioned element.
             ///
             /// See [the MDN documentation for right](https://developer.mozilla.org/en-US/docs/Web/CSS/right).
-            pub right: ::iocraft::Inset
+            pub right: #iocraft::Inset
         },
         quote! {
             /// Sets the vertical position of a positioned element.
             ///
             /// See [the MDN documentation for bottom](https://developer.mozilla.org/en-US/docs/Web/CSS/bottom).
-            pub bottom: ::iocraft::Inset
+            pub bottom: #iocraft::Inset
         },
         quote! {
             /// Sets the horizontal position of a positioned element.
             ///
             /// See [the MDN documentation for left](https://developer.mozilla.org/en-US/docs/Web/CSS/left).
-            pub left: ::iocraft::Inset
+            pub left: #iocraft::Inset
         },
         quote! {
             /// Defines the area to reserve around the element's content, but outside the border.
             ///
             /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
-            pub margin: ::iocraft::Margin
+            pub margin: #iocraft::Margin
         },
         quote! {
             /// Defines the area to reserve above the element's content, but outside the border.
             ///
             /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
-            pub margin_top: ::iocraft::Margin
+            pub margin_top: #iocraft::Margin
         },
         quote! {
             /// Defines the area to reserve to the right of the element's content, but outside the border.
             ///
             /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
-            pub margin_right: ::iocraft::Margin
+            pub margin_right: #iocraft::Margin
         },
         quote! {
             /// Defines the area to reserve below the element's content, but outside the border.
             ///
             /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
-            pub margin_bottom: ::iocraft::Margin
+            pub margin_bottom: #iocraft::Margin
         },
         quote! {
             /// Defines the area to reserve to the left of the element's content, but outside the border.
             ///
             /// See [the MDN documentation for margin](https://developer.mozilla.org/en-US/docs/Web/CSS/margin).
-            pub margin_left: ::iocraft::Margin
+            pub margin_left: #iocraft::Margin
         },
         quote! {
             /// Defines how items are placed along the main axis of a flex container.
             ///
             /// See [the MDN documentation for flex-direction](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-direction).
-            pub flex_direction: ::iocraft::FlexDirection
+            pub flex_direction: #iocraft::FlexDirection
         },
         quote! {
             /// Defines whether items are forced onto one line or can wrap into multiple lines.
             ///
             /// See [the MDN documentation for flex-wrap](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-wrap).
-            pub flex_wrap: ::iocraft::FlexWrap
+            pub flex_wrap: #iocraft::FlexWrap
         },
         quote! {
             /// Sets the initial main size of a flex item.
             ///
             /// See [the MDN documentation for flex-basis](https://developer.mozilla.org/en-US/docs/Web/CSS/flex-basis).
-            pub flex_basis: ::iocraft::FlexBasis
+            pub flex_basis: #iocraft::FlexBasis
         },
         quote! {
             /// Sets the flex grow factor, which specifies how much free space should be assigned
@@ -1232,37 +1232,37 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             /// Controls the alignment of items along the cross axis of a flex container.
             ///
             /// See [the MDN documentation for align-items](https://developer.mozilla.org/en-US/docs/Web/CSS/align-items).
-            pub align_items: Option<::iocraft::AlignItems>
+            pub align_items: Option<#iocraft::AlignItems>
         },
         quote! {
             /// Controls the distribution of space between and around items along a flex container's cross axis.
             ///
             /// See [the MDN documentation for align-content](https://developer.mozilla.org/en-US/docs/Web/CSS/align-content).
-            pub align_content: Option<::iocraft::AlignContent>
+            pub align_content: Option<#iocraft::AlignContent>
         },
         quote! {
             /// Controls the distribution of space between and around items along a flex container's main axis.
             ///
             /// See [the MDN documentation for justify-content](https://developer.mozilla.org/en-US/docs/Web/CSS/justify-content).
-            pub justify_content: Option<::iocraft::JustifyContent>
+            pub justify_content: Option<#iocraft::JustifyContent>
         },
         quote! {
             /// Defines the behavior when content does not fit within the element's padding box.
             ///
             /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
-            pub overflow: Option<::iocraft::Overflow>
+            pub overflow: Option<#iocraft::Overflow>
         },
         quote! {
             /// Defines the behavior when content does not fit within the element's padding box in the horizontal direction.
             ///
             /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
-            pub overflow_x: Option<::iocraft::Overflow>
+            pub overflow_x: Option<#iocraft::Overflow>
         },
         quote! {
             /// Defines the behavior when content does not fit within the element's padding box in the vertical direction.
             ///
             /// See [the MDN documentation for overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow).
-            pub overflow_y: Option<::iocraft::Overflow>
+            pub overflow_y: Option<#iocraft::Overflow>
         },
     ]
     .map(|tokens| syn::Field::parse_named.parse2(tokens).unwrap());
@@ -1309,8 +1309,8 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
 
                 impl #generics #struct_name #bracketed_generic_names #where_clause {
                     /// Returns the layout style based on the layout-related fields of this struct.
-                    pub fn layout_style(&self) -> ::iocraft::LayoutStyle {
-                        let mut ret: ::iocraft::LayoutStyle = Default::default();
+                    pub fn layout_style(&self) -> #iocraft::LayoutStyle {
+                        let mut ret: #iocraft::LayoutStyle = Default::default();
                         #(#field_assignments)*
                         ret
                     }

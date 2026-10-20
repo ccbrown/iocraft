@@ -1,5 +1,6 @@
 use uiterm::prelude::*;
 
+#[uiterm::with_layout_style_props]
 #[derive(Props)]
 struct MessageProps {
     #[iocraft(required)]
