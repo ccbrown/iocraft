@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- allow cloning handlers and converting them to `HandlerMut` without `Clone`, `Send`, or `Sync` bounds on the payload ([#297](https://github.com/ccbrown/iocraft/pull/297))
+
 ## [0.9.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.2...iocraft-v0.9.3) - 2026-10-14
 
 ### Fixed

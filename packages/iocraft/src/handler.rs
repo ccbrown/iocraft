@@ -165,4 +165,23 @@ mod tests {
         binded(());
         assert!(!handler.is_default());
     }
+
+    #[test]
+    fn test_non_clone_non_send_payload_can_clone_and_convert() {
+        use std::{rc::Rc, sync::Mutex};
+
+        struct Payload(Rc<usize>);
+
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let callback_calls = calls.clone();
+        let handler = Handler::from(move |payload: Payload| {
+            callback_calls.lock().unwrap().push(*payload.0);
+        });
+        let mut mutable: HandlerMut<'static, Payload> = handler.clone().into();
+
+        handler(Payload(Rc::new(7)));
+        mutable(Payload(Rc::new(11)));
+
+        assert_eq!(*calls.lock().unwrap(), [7, 11]);
+    }
 }
