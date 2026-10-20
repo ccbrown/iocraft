@@ -454,4 +454,47 @@ mod tests {
         state *= 2;
         state /= 2;
     }
+
+    #[test]
+    fn test_replaced_value_drop_can_read_replacement() {
+        use std::sync::{Arc, Mutex};
+
+        struct Value {
+            number: u32,
+            on_drop: Option<Box<dyn FnOnce() + Send + Sync>>,
+        }
+
+        impl Drop for Value {
+            fn drop(&mut self) {
+                if let Some(on_drop) = self.on_drop.take() {
+                    on_drop();
+                }
+            }
+        }
+
+        let observed = Arc::new(Mutex::new(None));
+        let mut hook = UseStateImpl::new(Value {
+            number: 1,
+            on_drop: None,
+        });
+        let mut state = hook.state;
+        let reader = state;
+        let on_drop_observed = observed.clone();
+        state.write().on_drop = Some(Box::new(move || {
+            *on_drop_observed.lock().unwrap() =
+                Some(reader.inner.try_read().ok().map(|value| value.value.number));
+        }));
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        let _ = Pin::new(&mut hook).poll_change(&mut cx);
+
+        state.set(Value {
+            number: 2,
+            on_drop: None,
+        });
+
+        assert_eq!(*observed.lock().unwrap(), Some(Some(2)));
+        assert_eq!(Pin::new(&mut hook).poll_change(&mut cx), Poll::Ready(()));
+        assert_eq!(Pin::new(&mut hook).poll_change(&mut cx), Poll::Pending);
+    }
 }
