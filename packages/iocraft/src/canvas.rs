@@ -56,6 +56,7 @@ pub struct CanvasTextStyle {
     pub color: Option<Color>,
 
     /// The weight of the text.
+    /// Bold and light replace each other rather than combining terminal attributes.
     pub weight: Weight,
 
     /// Whether the text is underlined.
@@ -340,7 +341,7 @@ impl Canvas {
             if ansi {
                 let mut needs_reset = false;
                 if let Some(c) = &cell.character {
-                    if c.style.weight != text_style.weight && c.style.weight == Weight::Normal {
+                    if c.style.weight != text_style.weight && text_style.weight != Weight::Normal {
                         needs_reset = true;
                     }
                     if !c.style.underline && text_style.underline {
@@ -848,10 +849,54 @@ mod tests {
     }
 
     #[test]
+    fn test_canvas_weight_transitions_clear_previous_intensity() {
+        let mut canvas = Canvas::new(3, 1);
+        for (x, weight, text) in [
+            (0, Weight::Bold, "B"),
+            (1, Weight::Light, "L"),
+            (2, Weight::Bold, "B"),
+        ] {
+            canvas.subview_mut(0, 0, 0, 0, 3, 1).set_text(
+                x,
+                0,
+                text,
+                CanvasTextStyle {
+                    weight,
+                    ..Default::default()
+                },
+            );
+        }
+        let mut bytes = Vec::new();
+        canvas.write_ansi(&mut bytes).unwrap();
+        let output = String::from_utf8(bytes).unwrap();
+        let tokens = regex::Regex::new(r"\x1b\[([0-9;]*)m|([BL])").unwrap();
+        let (mut bold, mut faint) = (false, false);
+        let mut cells = Vec::new();
+        for token in tokens.captures_iter(&output) {
+            if let Some(parameters) = token.get(1) {
+                for parameter in parameters.as_str().split(';') {
+                    let code = parameter.parse::<u16>().ok();
+                    let reset = parameter.is_empty() || matches!(code, Some(0 | 22));
+                    bold = !reset && (bold || code == Some(1));
+                    faint = !reset && (faint || code == Some(2));
+                }
+            } else {
+                cells.push((token[2].as_bytes()[0], bold, faint));
+            }
+        }
+        assert_eq!(
+            cells,
+            vec![
+                (b'B', true, false),
+                (b'L', false, true),
+                (b'B', true, false)
+            ]
+        );
+    }
+
+    #[test]
     fn test_canvas_text_styles() {
         let mut canvas = Canvas::new(100, 1);
-        assert_eq!(canvas.width(), 100);
-        assert_eq!(canvas.height(), 1);
 
         canvas
             .subview_mut(0, 0, 0, 0, 1, 1)
@@ -939,48 +984,31 @@ mod tests {
         let mut actual = Vec::new();
         canvas.write_ansi(&mut actual).unwrap();
 
-        let mut expected = Vec::new();
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
-        write!(expected, csi!("{}m"), sgr::UNDERLINED).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
-        write!(expected, csi!("{}m"), sgr::ITALIC).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), sgr::DIM).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Green)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), sgr::REVERSE).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Green)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("K")).unwrap();
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, "\r\n").unwrap();
-
-        assert_eq!(actual, expected);
+        let mut vt = avt::Vt::new(100, 2);
+        vt.feed_str(std::str::from_utf8(&actual).unwrap());
+        let line = vt.line(0);
+        for (i, (color, weight, underline, italic, invert)) in [
+            (None, Weight::Normal, false, false, false),
+            (Some(9), Weight::Bold, true, false, false),
+            (Some(9), Weight::Bold, false, true, false),
+            (Some(9), Weight::Bold, false, false, false),
+            (Some(9), Weight::Light, false, false, false),
+            (Some(9), Weight::Normal, false, false, false),
+            (Some(10), Weight::Normal, false, false, false),
+            (Some(10), Weight::Normal, false, false, true),
+            (Some(10), Weight::Normal, false, false, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let pen = line.cells()[i].pen();
+            assert_eq!(pen.foreground(), color.map(avt::Color::Indexed), "{i}");
+            assert_eq!(pen.is_bold(), weight == Weight::Bold, "{i}");
+            assert_eq!(pen.is_faint(), weight == Weight::Light, "{i}");
+            assert_eq!(pen.is_underline(), underline, "{i}");
+            assert_eq!(pen.is_italic(), italic, "{i}");
+            assert_eq!(pen.is_inverse(), invert, "{i}");
+        }
     }
 
     #[test]
