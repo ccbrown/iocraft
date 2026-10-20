@@ -182,6 +182,8 @@ mod tests {
                 .unwrap();
         }
         assert!(frames.next().now_or_never().is_none());
+        // The first poll forwards events; this one lets the button handle them.
+        assert!(frames.next().now_or_never().is_none());
         sender
             .unbounded_send(TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
                 MouseEventKind::Down(MouseButton::Left),
