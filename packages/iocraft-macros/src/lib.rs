@@ -331,7 +331,20 @@ impl ToTokens for ParsedProps {
                         lifetime_index += 1;
                         quote!(#a, #b: #a)
                     }
-                    _ => quote!(#param),
+                    GenericParam::Type(ty) => {
+                        let attrs = &ty.attrs;
+                        let name = &ty.ident;
+                        let colon = &ty.colon_token;
+                        let bounds = &ty.bounds;
+                        quote!(#(#attrs)* #name #colon #bounds)
+                    }
+                    GenericParam::Const(c) => {
+                        let attrs = &c.attrs;
+                        let const_token = &c.const_token;
+                        let name = &c.ident;
+                        let ty = &c.ty;
+                        quote!(#(#attrs)* #const_token #name: #ty)
+                    }
                 })
             };
 
@@ -640,6 +653,8 @@ impl ToTokens for ParsedProps {
 /// Most importantly, this marks a struct as being
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
+///
+/// Property structs may use defaulted type and const generic parameters.
 ///
 /// Fields are initialized with their [`Default`] value unless they are marked as required:
 ///
