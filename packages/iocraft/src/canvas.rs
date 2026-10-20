@@ -242,12 +242,15 @@ impl Canvas {
         style: CanvasTextStyle,
         clip: std::ops::Range<isize>,
     ) {
+        if x >= clip.end {
+            return;
+        }
         let row = &mut self.cells[y];
-        let mut paint_character = |value: &str| {
+        let mut paint_character = |value: &str, width: usize| {
             if x >= clip.end {
                 return false;
             }
-            let width = value.width().max(1) as isize;
+            let width = width.max(1) as isize;
             if x >= clip.start && x + width <= clip.end {
                 let start = x as usize;
                 let end = start + width as usize;
@@ -264,10 +267,20 @@ impl Canvas {
             true
         };
 
-        for grapheme in text.graphemes(true) {
-            if !paint_character(grapheme) {
-                break;
+        let mut graphemes = text.grapheme_indices(true);
+        if let Some((mut start, first)) = graphemes.next() {
+            let mut width = first.width();
+            for (index, grapheme) in graphemes {
+                let next_width = grapheme.width();
+                if next_width > 0 {
+                    if !paint_character(&text[start..index], width) {
+                        return;
+                    }
+                    start = index;
+                    width = next_width;
+                }
             }
+            paint_character(&text[start..], width);
         }
     }
 
@@ -660,6 +673,26 @@ mod tests {
                 .subview_mut(0, 0, 0, 0, 3, 1)
                 .set_text(0, 0, text, CanvasTextStyle::default());
             assert_eq!(canvas.to_string(), format!("{text}\n"));
+        }
+    }
+
+    #[test]
+    fn test_canvas_keeps_zero_width_suffixes_in_their_character_group() {
+        for (width, text, expected) in [
+            (2, "a\u{200b}b", "a\u{200b}b\n"),
+            (1, "a\u{200b}b", "a\u{200b}\n"),
+            (2, "界\u{200b}x", "界\u{200b}\n"),
+            (2, "a\u{200b}\u{2060}b", "a\u{200b}\u{2060}b\n"),
+            (2, "\u{200b}b", " \u{200b}b\n"),
+        ] {
+            let mut canvas = Canvas::new(width, 1);
+            canvas.subview_mut(0, 0, 0, 0, width, 1).set_text(
+                0,
+                0,
+                text,
+                CanvasTextStyle::default(),
+            );
+            assert_eq!(canvas.to_string(), expected, "width {width}, text {text:?}");
         }
     }
 
