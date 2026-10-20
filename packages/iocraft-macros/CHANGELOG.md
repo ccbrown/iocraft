@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- resolve renamed dependency paths in macro expansions, including layout-style properties ([#301](https://github.com/ccbrown/iocraft/pull/301))
-
 ## [0.2.5](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.4...iocraft-macros-v0.2.5) - 2026-10-09
 
 ### Added
