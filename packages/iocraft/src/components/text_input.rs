@@ -1080,6 +1080,25 @@ mod tests {
     }
 
     #[apply(test!)]
+    async fn test_batched_deletions_at_text_boundaries() {
+        for (movement, deletion, expected) in [
+            (KeyCode::Home, KeyCode::Backspace, "!abc"),
+            (KeyCode::End, KeyCode::Delete, "abc!"),
+        ] {
+            let events = [movement, deletion, KeyCode::Char('!')]
+                .into_iter()
+                .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
+            let frames: Vec<_> = element!(MyComponent(initial_value: "abc"))
+                .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                    events,
+                )))
+                .collect()
+                .await;
+            assert_eq!(frames.last().unwrap().to_string().trim(), expected);
+        }
+    }
+
+    #[apply(test!)]
     async fn test_batched_navigation_uses_edited_utf8() {
         let frames: Vec<_> = element!(MyComponent(initial_value: "界a"))
             .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter([
