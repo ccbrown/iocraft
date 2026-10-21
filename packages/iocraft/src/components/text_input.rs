@@ -561,7 +561,6 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         KeyCode::Enter if multiline => {
                             value.insert(temp_cursor_offset, '\n');
                             temp_cursor_offset += 1;
-                            new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                             on_change(value.clone());
                         }
                         KeyCode::Left => {
@@ -831,6 +830,7 @@ mod tests {
             ("a\r\nb", 3_usize, Some(KeyCode::Backspace), "a!b", "a!b"),
             ("a\r\nb", 1, Some(KeyCode::Delete), "a!b", "a!b"),
             ("a\r\nb", 2, None, "a!\r\nb", "a!\nb"),
+            ("a\rb", 2, Some(KeyCode::Enter), "a\r\n!b", "a\n!b"),
             ("a界b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
             ("a界b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
             ("ae\u{301}b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
