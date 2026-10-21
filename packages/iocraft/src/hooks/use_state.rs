@@ -133,8 +133,9 @@ impl<T: 'static> ops::Deref for StateRef<'_, T> {
 }
 
 /// A mutable reference to the value of a [`State`].
+/// Changed state wakes its consumer only after this reference releases the write borrow.
 pub struct StateMutRef<'a, T: 'static> {
-    inner: <SyncStorage as AnyStorage>::Mut<'a, StateValue<T>>,
+    inner: Option<<SyncStorage as AnyStorage>::Mut<'a, StateValue<T>>>,
     did_deref_mut: bool,
 }
 
@@ -142,24 +143,30 @@ impl<T: 'static> ops::Deref for StateMutRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner.value
+        &self.inner.as_ref().unwrap().value
     }
 }
 
 impl<T: 'static> ops::DerefMut for StateMutRef<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.did_deref_mut = true;
-        &mut self.inner.value
+        &mut self.inner.as_mut().unwrap().value
     }
 }
 
 impl<T: 'static> Drop for StateMutRef<'_, T> {
     fn drop(&mut self) {
-        if self.did_deref_mut {
-            self.inner.did_change = true;
-            if let Some(waker) = self.inner.waker.take() {
-                waker.wake();
+        let waker = {
+            let mut inner = self.inner.take().unwrap();
+            if self.did_deref_mut {
+                inner.did_change = true;
+                inner.waker.take()
+            } else {
+                None
             }
+        };
+        if let Some(waker) = waker {
+            waker.wake();
         }
     }
 }
@@ -270,7 +277,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// reference returned by this method exists.</div>
     pub fn try_write(&mut self) -> Option<StateMutRef<'_, T>> {
         self.inner.try_write().ok().map(|inner| StateMutRef {
-            inner,
+            inner: Some(inner),
             did_deref_mut: false,
         })
     }
@@ -496,5 +503,36 @@ mod tests {
         assert_eq!(*observed.lock().unwrap(), Some(Some(2)));
         assert_eq!(Pin::new(&mut hook).poll_change(&mut cx), Poll::Ready(()));
         assert_eq!(Pin::new(&mut hook).poll_change(&mut cx), Poll::Pending);
+    }
+
+    #[test]
+    fn test_woken_consumer_can_read_changed_state() {
+        use std::{
+            sync::{mpsc, Arc},
+            task::Wake,
+            time::Duration,
+        };
+        struct ReadState {
+            state: State<u32>,
+            result: mpsc::Sender<u32>,
+        }
+        impl Wake for ReadState {
+            fn wake(self: Arc<Self>) {
+                self.result.send(self.state.get()).unwrap();
+            }
+        }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut owner = UseStateImpl::new(0u32);
+            let mut state = owner.state;
+            let waker = Waker::from(Arc::new(ReadState {
+                state,
+                result: sender,
+            }));
+            let mut cx = Context::from_waker(&waker);
+            assert!(Pin::new(&mut owner).poll_change(&mut cx).is_pending());
+            state.set(42);
+        });
+        assert_eq!(receiver.recv_timeout(Duration::from_secs(5)).unwrap(), 42);
     }
 }
