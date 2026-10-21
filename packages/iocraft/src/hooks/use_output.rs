@@ -14,7 +14,6 @@ mod private {
 /// output will be appended to stdout or stderr, above the rendered component output.
 ///
 /// Both `print` and `println` methods are available for writing output with or without newlines.
-/// Formatting, wake callbacks, and backend writes run without holding the output queue lock.
 ///
 /// # Example
 ///
