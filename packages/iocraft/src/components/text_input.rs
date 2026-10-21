@@ -108,6 +108,7 @@ pub struct TextInputProps {
     /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
     /// Multiline paste preserves the original text.
     /// Cursor movement and deletion preserve Unicode grapheme clusters, including CRLF.
+    /// After insertion, the cursor advances past any newly joined grapheme.
     /// At a soft wrap, the boundary offset belongs to the start of the following row.
     pub multiline: bool,
 
@@ -437,9 +438,9 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
             cursor_offset.set(new_cursor_offset);
         }
         prev_value.set(props.value.clone());
-        if new_cursor_offset_hint.get() != NewCursorOffsetHint::None {
-            new_cursor_offset_hint.set(NewCursorOffsetHint::None);
-        }
+    }
+    if new_cursor_offset_hint.get() != NewCursorOffsetHint::None {
+        new_cursor_offset_hint.set(NewCursorOffsetHint::None);
     }
 
     // Update the cursor position if the user requested it.
@@ -531,7 +532,9 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         KeyCode::Char(c) => {
                             value.insert(temp_cursor_offset, c);
                             temp_cursor_offset += c.len_utf8();
-                            temp_cursor_offset = clamp_cursor_offset(&value, temp_cursor_offset);
+                            temp_cursor_offset =
+                                cursor_offset_after_insertion(&value, temp_cursor_offset);
+                            new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                             on_change(value.clone());
                         }
                         KeyCode::Backspace => {
@@ -558,6 +561,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         KeyCode::Enter if multiline => {
                             value.insert(temp_cursor_offset, '\n');
                             temp_cursor_offset += 1;
+                            new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                             on_change(value.clone());
                         }
                         KeyCode::Left => {
@@ -611,7 +615,8 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     };
                     value.insert_str(temp_cursor_offset, &data);
                     temp_cursor_offset += data.len();
-                    temp_cursor_offset = clamp_cursor_offset(&value, temp_cursor_offset);
+                    temp_cursor_offset = cursor_offset_after_insertion(&value, temp_cursor_offset);
+                    new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                     on_change(value.clone());
                     vertical_movement_col_preference.set(None);
                 }
@@ -648,6 +653,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 enum NewCursorOffsetHint {
     #[default]
     None,
+    Insertion,
     Backspace,
     Deletion,
 }
@@ -706,6 +712,18 @@ fn next_grapheme_offset(value: &str, offset: usize) -> usize {
         .unwrap_or(value.len())
 }
 
+fn cursor_offset_after_insertion(value: &str, offset: usize) -> usize {
+    let mut cursor = GraphemeCursor::new(offset, value.len(), true);
+    if cursor.is_boundary(value, 0).unwrap() {
+        offset
+    } else {
+        cursor
+            .next_boundary(value, 0)
+            .unwrap()
+            .unwrap_or(value.len())
+    }
+}
+
 fn clamp_cursor_offset(value: &str, offset: usize) -> usize {
     let mut offset = offset.min(value.len());
     while !value.is_char_boundary(offset) {
@@ -734,7 +752,11 @@ fn new_cursor_offset(
 
     let offset = if value.len() >= prev_value.len() && has_same_head && has_same_tail {
         // insertion (or no change)
-        cursor_offset + (value.len() - prev_value.len())
+        let offset = cursor_offset + (value.len() - prev_value.len());
+        if hint == NewCursorOffsetHint::Insertion {
+            return cursor_offset_after_insertion(value, offset);
+        }
+        offset
     } else if value.len() < prev_value.len() && has_same_tail && has_same_head {
         // ambiguous case, could be backspace or deletion
         if hint == NewCursorOffsetHint::Deletion {
@@ -842,41 +864,92 @@ mod tests {
     }
 
     #[apply(test!)]
-    async fn test_narrow_wrap_vertical_backspace_removes_whole_grapheme() {
-        let observed = Arc::new(Mutex::new(String::new()));
-        let mut app = element!(CrlfInput(
-            cursor: 0_usize,
-            width: 2_u16,
-            initial_value: "👩‍👩x",
-            observed: observed.clone(),
-        ));
-        let render = async {
-            let (sender, events) = futures::channel::mpsc::unbounded();
-            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
-            futures::pin_mut!(frames);
-            frames.next().await.unwrap();
-            let _ = futures::poll!(frames.next());
-            let _ = futures::poll!(frames.next());
-            sender
-                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+    async fn test_inserted_joiner_keeps_caret_after_merged_grapheme() {
+        for (initial_value, expected) in [("👩👩", "👩‍👩!"), ("👩👩z", "👩‍👩!z")]
+        {
+            for insert in [
+                TerminalEvent::BracketedPaste("\u{200d}".to_string()),
+                TerminalEvent::Key(KeyEvent::new(
                     KeyEventKind::Press,
-                    KeyCode::Down,
-                )))
-                .unwrap();
-            frames.next().await.unwrap();
-            for code in [KeyCode::Backspace, KeyCode::Char('!')] {
-                sender
-                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
-                    .unwrap();
+                    KeyCode::Char('\u{200d}'),
+                )),
+            ] {
+                let observed = Arc::new(Mutex::new(String::new()));
+                let mut app = element!(CrlfInput(
+                    cursor: "👩".len(),
+                    width: 11_u16,
+                    initial_value: initial_value,
+                    observed: observed.clone(),
+                ));
+                let render = async {
+                    let (sender, events) = futures::channel::mpsc::unbounded();
+                    let frames =
+                        app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                    futures::pin_mut!(frames);
+                    frames.next().await.unwrap();
+                    let _ = futures::poll!(frames.next());
+                    let _ = futures::poll!(frames.next());
+                    sender.unbounded_send(insert).unwrap();
+                    frames.next().await.unwrap();
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            KeyCode::Char('!'),
+                        )))
+                        .unwrap();
+                    frames.for_each(|_| async {}).await;
+                };
+                smol::future::or(render, async {
+                    smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                    panic!("joined grapheme input did not finish");
+                })
+                .await;
+                assert_eq!(*observed.lock().unwrap(), expected);
             }
-            frames.for_each(|_| async {}).await;
-        };
-        smol::future::or(render, async {
-            smol::Timer::after(std::time::Duration::from_secs(5)).await;
-            panic!("narrow wrapped input did not finish");
-        })
-        .await;
-        assert_eq!(*observed.lock().unwrap(), "!x");
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_wrapped_vertical_backspace_removes_whole_grapheme() {
+        for (initial_value, expected) in [("👩‍👩x", "!x"), ("a \u{301}b", "! \u{301}b")] {
+            let observed = Arc::new(Mutex::new(String::new()));
+            let mut app = element!(CrlfInput(
+                cursor: 0_usize,
+                width: 2_u16,
+                initial_value: initial_value,
+                observed: observed.clone(),
+            ));
+            let render = async {
+                let (sender, events) = futures::channel::mpsc::unbounded();
+                let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                futures::pin_mut!(frames);
+                frames.next().await.unwrap();
+                let _ = futures::poll!(frames.next());
+                let _ = futures::poll!(frames.next());
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Down,
+                    )))
+                    .unwrap();
+                frames.next().await.unwrap();
+                for code in [KeyCode::Backspace, KeyCode::Char('!')] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                frames.for_each(|_| async {}).await;
+            };
+            smol::future::or(render, async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("wrapped input did not finish");
+            })
+            .await;
+            assert_eq!(*observed.lock().unwrap(), expected);
+        }
     }
 
     #[test]

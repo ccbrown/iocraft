@@ -3,7 +3,7 @@ use core::{
     fmt::{self, Display},
     mem,
 };
-use unicode_segmentation::UnicodeSegmentation;
+use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete, UnicodeSegmentation};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// A `SegmentedString` is a string consisting of multiple segments, which don't have to be
@@ -135,22 +135,65 @@ impl<'a> SegmentedString<'a> {
             return vec![];
         }
 
+        let len = self.segments.iter().map(|segment| segment.len()).sum();
+        let mut cursor = GraphemeCursor::new(0, len, true);
+        let (mut grapheme_segment, mut grapheme_start) = (0, 0);
+        // Keep whole-text grapheme boundaries without copying the styled segments.
+        let mut grapheme_boundaries = std::iter::from_fn(|| loop {
+            match cursor.next_boundary(self.segments[grapheme_segment], grapheme_start) {
+                Ok(boundary) => return boundary,
+                Err(GraphemeIncomplete::NextChunk) => {
+                    grapheme_start += self.segments[grapheme_segment].len();
+                    grapheme_segment += 1;
+                }
+                Err(GraphemeIncomplete::PreContext(offset)) => {
+                    let (mut segment, mut start) = (grapheme_segment, grapheme_start);
+                    while start >= offset && segment > 0 {
+                        segment -= 1;
+                        start -= self.segments[segment].len();
+                    }
+                    cursor.provide_context(&self.segments[segment][..offset - start], start);
+                }
+                Err(incomplete) => {
+                    unreachable!("forward grapheme cursor has a valid chunk: {incomplete:?}");
+                }
+            }
+        })
+        .peekable();
+
         let chars = self
             .segments
             .iter()
             .enumerate()
-            .flat_map(|(i, s)| s.char_indices().map(move |(j, c)| ((i, j), c)));
+            .flat_map(|(i, s)| s.char_indices().map(move |(j, c)| ((i, j), c)))
+            .scan(0, |offset, ((segment, character), c)| {
+                let index = (segment, character, *offset);
+                *offset += c.len_utf8();
+                Some((index, c))
+            });
 
         let break_opportunities = linebreaks_iter(
             chars,
-            (self.segments.len() - 1, self.segments.last().unwrap().len()),
+            (
+                self.segments.len() - 1,
+                self.segments.last().unwrap().len(),
+                len,
+            ),
         );
 
         let mut lines = Vec::new();
         let mut current_line = SegmentedStringLine::default();
 
         let (mut start_segment_idx, mut start_char_idx) = (0, 0);
-        for ((segment_idx, char_idx), opportunity_type) in break_opportunities {
+        for ((segment_idx, char_idx, offset), opportunity_type) in break_opportunities {
+            if opportunity_type == BreakOpportunity::Allowed {
+                while grapheme_boundaries.peek().is_some_and(|&end| end < offset) {
+                    grapheme_boundaries.next();
+                }
+                if grapheme_boundaries.peek() != Some(&offset) {
+                    continue;
+                }
+            }
             let mut new_line_segments = vec![];
 
             while start_segment_idx < segment_idx {
@@ -278,6 +321,35 @@ impl<'a> FromIterator<&'a str> for SegmentedString<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_soft_wrap_preserves_graphemes_across_segments() {
+        let cases: &[(&[&str], &str)] = &[
+            (&["a ", "\u{301}b"], "a \u{301}b"),
+            (&["", "a ", "", "\u{301}b", ""], "a \u{301}b"),
+            (&["🇺", "🇸 ", "\u{301}x"], "🇺🇸 \u{301}x"),
+        ];
+        for &(segments, text) in cases {
+            let value: SegmentedString = segments.iter().copied().collect();
+            let lines = value.wrap(1);
+            assert!(lines
+                .iter()
+                .flat_map(|line| &line.segments)
+                .flat_map(|segment| segment.text.chars())
+                .eq(text.chars()));
+            let mut end = 0;
+            for line in lines {
+                end += line
+                    .segments
+                    .iter()
+                    .map(|segment| segment.text.len())
+                    .sum::<usize>();
+                assert!(GraphemeCursor::new(end, text.len(), true)
+                    .is_boundary(text, 0)
+                    .unwrap());
+            }
+        }
+    }
 
     #[test]
     fn test_forced_wrap_keeps_a_joined_emoji_intact() {
