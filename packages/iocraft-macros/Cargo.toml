@@ -10,6 +10,7 @@ repository = "https://github.com/ccbrown/iocraft"
 proc-macro = true
 
 [dependencies]
+proc-macro-crate = "3"
 proc-macro2 = "1.0.86"
 quote = "1.0.37"
 syn = { version = "2.0.77", features = ["full"] }
