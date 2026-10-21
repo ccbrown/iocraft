@@ -257,6 +257,10 @@ impl ComponentDrawer<'_> {
         self.node_position
     }
 
+    pub(crate) fn clip_rect(&self) -> Rect<u16> {
+        self.clip_rect
+    }
+
     /// Gets the region of the canvas that the component should be drawn to.
     pub fn canvas(&mut self) -> CanvasSubviewMut<'_> {
         self.context.canvas.subview_mut(

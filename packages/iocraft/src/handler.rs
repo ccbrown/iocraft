@@ -53,6 +53,8 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
 /// For component properties consider using [`HandlerMut`] over this, as [`Handler`] is more restrictive.
 /// Just as [`Fn`] can be used where an [`FnMut`] is expected, [`Handler`] can be used where a [`HandlerMut`]
 /// is expected via [`From`] or [`Handler::bind`].
+/// Cloning shares the callback rather than cloning inputs. Inputs need not implement
+/// `Clone`, `Send`, or `Sync` for cloning or conversion to [`HandlerMut`].
 ///
 /// # Example
 ///
@@ -77,8 +79,13 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
 /// }
 /// # }
 /// ```
-#[derive(Clone)]
 pub struct Handler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
+
+impl<T> Clone for Handler<T> {
+    fn clone(&self) -> Self {
+        Self(self.0, Arc::clone(&self.1))
+    }
+}
 
 impl<T> Handler<T> {
     /// Returns `true` if the handler was default-initialized.
@@ -118,7 +125,7 @@ impl<T: Clone + Send + Sync + 'static> Handler<T> {
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> From<Handler<T>> for HandlerMut<'static, T> {
+impl<T: 'static> From<Handler<T>> for HandlerMut<'static, T> {
     fn from(handler: Handler<T>) -> Self {
         Self::from(move |value| handler.1(value))
     }
@@ -157,5 +164,24 @@ mod tests {
         let binded = handler.bind(42);
         binded(());
         assert!(!handler.is_default());
+    }
+
+    #[test]
+    fn test_non_clone_non_send_payload_can_clone_and_convert() {
+        use std::{rc::Rc, sync::Mutex};
+
+        struct Payload(Rc<usize>);
+
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let callback_calls = calls.clone();
+        let handler = Handler::from(move |payload: Payload| {
+            callback_calls.lock().unwrap().push(*payload.0);
+        });
+        let mut mutable: HandlerMut<'static, Payload> = handler.clone().into();
+
+        handler(Payload(Rc::new(7)));
+        mutable(Payload(Rc::new(11)));
+
+        assert_eq!(*calls.lock().unwrap(), [7, 11]);
     }
 }
