@@ -55,6 +55,7 @@ pub struct TextProps {
     pub wrap: TextWrap,
 
     /// The text alignment.
+    /// Leading Unicode whitespace contributes to the aligned display width.
     pub align: TextAlign,
 
     /// The text decoration.
@@ -71,8 +72,6 @@ pub struct TextProps {
 }
 
 /// `Text` is a component that renders a text string.
-///
-/// Style-only updates reuse the text measurement function.
 ///
 /// # Example
 ///
@@ -114,8 +113,8 @@ impl Text {
     fn do_wrap(s: &str, width: usize) -> String {
         let s: SegmentedString = s.into();
         let mut ret = String::new();
-        for line in s.wrap(width) {
-            if !ret.is_empty() {
+        for (index, line) in s.wrap(width).into_iter().enumerate() {
+            if index > 0 {
                 ret.push('\n');
             }
             ret.push_str(line.to_string().trim_end());
@@ -216,9 +215,9 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
         while let Some(mut line) = lines.next() {
             if self.skip_leading_whitespace && !self.line_encountered_non_whitespace {
                 let to_skip = line
-                    .chars()
-                    .position(|c| !c.is_whitespace())
-                    .unwrap_or(line.len());
+                    .char_indices()
+                    .find(|(_, c)| !c.is_whitespace())
+                    .map_or(line.len(), |(offset, _)| offset);
                 let (whitespace, remaining) = line.split_at(to_skip);
                 self.x += whitespace.width() as isize;
                 line = remaining;
@@ -304,6 +303,30 @@ mod tests {
     use crate::color::{csi, sgr};
     use crate::prelude::*;
     use std::io::Write;
+
+    #[test]
+    fn test_wrapping_preserves_leading_blank_rows() {
+        let actual = element! {
+            View(width: 12, flex_direction: FlexDirection::Column) {
+                Text(content: "\n\nhello\n\nworld")
+                Text(content: "footer")
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "\n\nhello\n\nworld\nfooter\n");
+    }
+
+    #[test]
+    fn test_alignment_preserves_unicode_indentation() {
+        let actual = element! {
+            View(width: 12, flex_direction: FlexDirection::Column) {
+                Text(content: "\u{2003}hello", align: TextAlign::Right)
+                Text(content: "footer")
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "       hello\nfooter\n");
+    }
 
     #[test]
     fn test_text() {
