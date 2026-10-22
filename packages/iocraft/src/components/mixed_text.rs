@@ -224,6 +224,35 @@ mod tests {
     }
 
     #[test]
+    fn test_wrapping_preserves_styled_graphemes_and_following_text() {
+        for (width, expected, final_row) in [(1, "a\n \u{301}\nb\n", 2), (2, "a \u{301}\nb\n", 1)] {
+            let canvas = element! {
+                View(width: width) {
+                    MixedText(contents: vec![
+                        MixedTextContent::new("a ").color(Color::Red),
+                        MixedTextContent::new("\u{301}b").color(Color::Blue),
+                    ])
+                }
+            }
+            .render(None);
+            assert_eq!(canvas.to_string(), expected, "width {width}");
+            assert_eq!(
+                canvas.cell(0, 0).unwrap().text_style().unwrap().color,
+                Some(Color::Red),
+            );
+            assert_eq!(
+                canvas
+                    .cell(0, final_row)
+                    .unwrap()
+                    .text_style()
+                    .unwrap()
+                    .color,
+                Some(Color::Blue),
+            );
+        }
+    }
+
+    #[test]
     fn test_mixed_text_hyperlink() {
         let mut out = Vec::new();
         element! {

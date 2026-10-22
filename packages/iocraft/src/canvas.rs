@@ -56,7 +56,6 @@ pub struct CanvasTextStyle {
     pub color: Option<Color>,
 
     /// The weight of the text.
-    /// Bold and light replace each other rather than combining terminal attributes.
     pub weight: Weight,
 
     /// Whether the text is underlined.
@@ -104,9 +103,6 @@ impl CanvasCell {
 ///
 /// - When implementing low-level components, you'll need to utilize the `Canvas` drawing methods.
 /// - When implementing unit tests for components, you may want to render to a `Canvas` for inspection.
-///
-/// Character groups containing only zero-width marks reserve one column. Both styled and
-/// unstyled writers emit a blank base before those marks so the output occupies that column.
 #[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
@@ -143,8 +139,6 @@ impl Canvas {
     /// Each row within the region produces one line in the result, separated
     /// by newlines. Trailing whitespace on each line is trimmed. Out-of-bounds
     /// coordinates are clamped silently.
-    /// A wide character is included once; its continuation columns do not
-    /// introduce spaces into the extracted text.
     pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
         let mut lines = Vec::with_capacity(h);
         for row_idx in y..y + h {
@@ -243,11 +237,27 @@ impl Canvas {
         style: CanvasTextStyle,
         clip: std::ops::Range<isize>,
     ) {
-        if x >= clip.end {
+        if x > clip.end {
             return;
         }
         let row = &mut self.cells[y];
         let mut paint_character = |value: &str, width: usize| {
+            // A separately styled suffix can extend the glyph at the row's right edge.
+            if width == 0 && x > clip.start {
+                if let Some((start, character)) = row[..x as usize]
+                    .iter_mut()
+                    .enumerate()
+                    .rev()
+                    .find_map(|(i, cell)| cell.character.as_mut().map(|character| (i, character)))
+                {
+                    if start as isize >= clip.start
+                        && start + character.value.width().max(1) == x as usize
+                    {
+                        character.value.push_str(value);
+                        return true;
+                    }
+                }
+            }
             if x >= clip.end {
                 return false;
             }
@@ -640,9 +650,7 @@ impl CanvasSubviewMut<'_> {
 
     /// Writes text to the region.
     ///
-    /// Extended grapheme clusters are only written when their full column width fits the clip
-    /// region. Clipping preserves the original coordinates and never splits combining,
-    /// joined-emoji, or regional-indicator sequences.
+    /// Characters that don't fully fit within the region are not written.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         let x = self.x + x;
         let min_x = self.clip_x.max(0);
@@ -1062,6 +1070,23 @@ mod tests {
         );
 
         assert_eq!(canvas.to_string(), "e\u{301}\n");
+    }
+
+    #[test]
+    fn test_styled_suffix_keeps_wide_glyph_and_clipped_sibling() {
+        let mut canvas = Canvas::new(3, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 3, 1)
+            .set_text(0, 0, "界x", CanvasTextStyle::default());
+        canvas
+            .subview_mut(0, 0, 0, 0, 2, 1)
+            .set_text(2, 0, "\u{301}y", CanvasTextStyle::default());
+        assert_eq!(canvas.to_string(), "界\u{301}x\n");
+
+        canvas
+            .subview_mut(2, 0, 2, 0, 1, 1)
+            .set_text(0, 0, "\u{301}", CanvasTextStyle::default());
+        assert_eq!(canvas.cell(0, 0).unwrap().text(), Some("界\u{301}"));
     }
 
     #[test]

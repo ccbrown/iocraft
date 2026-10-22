@@ -3,7 +3,7 @@ use core::{
     fmt::{self, Display},
     mem,
 };
-use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete, UnicodeSegmentation};
+use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// A `SegmentedString` is a string consisting of multiple segments, which don't have to be
@@ -30,13 +30,14 @@ impl<'a> SegmentedStringLine<'a> {
     }
 
     /// Removes trailing whitespace from the line.
+    /// Non-whitespace suffixes are retained even when their display width is zero.
     pub fn trim_end(&mut self) {
         for i in (0..self.segments.len()).rev() {
             let segment = &mut self.segments[i];
             let width_before = segment.width;
             segment.trim_end();
             self.width -= width_before - segment.width;
-            if segment.width > 0 {
+            if !segment.text.is_empty() {
                 break;
             } else {
                 self.segments.pop();
@@ -88,6 +89,38 @@ impl Display for SegmentedStringLineSegment<'_> {
     }
 }
 
+fn segmented_grapheme_boundaries<'a>(
+    len: usize,
+    chunk: impl Fn(usize) -> &'a str,
+) -> impl Iterator<Item = (usize, usize, usize)> {
+    let mut cursor = GraphemeCursor::new(0, len, true);
+    let (mut segment, mut start) = (0, 0);
+    std::iter::from_fn(move || loop {
+        match cursor.next_boundary(chunk(segment), start) {
+            Ok(Some(offset)) => return Some((segment, offset - start, offset)),
+            Ok(None) => return None,
+            Err(GraphemeIncomplete::NextChunk) => {
+                start += chunk(segment).len();
+                segment += 1;
+            }
+            Err(GraphemeIncomplete::PreContext(offset)) => {
+                let (mut context_segment, mut context_start) = (segment, start);
+                while context_start >= offset && context_segment > 0 {
+                    context_segment -= 1;
+                    context_start -= chunk(context_segment).len();
+                }
+                cursor.provide_context(
+                    &chunk(context_segment)[..offset - context_start],
+                    context_start,
+                );
+            }
+            Err(incomplete) => {
+                unreachable!("forward grapheme cursor has a valid chunk: {incomplete:?}");
+            }
+        }
+    })
+}
+
 impl<'a> SegmentedString<'a> {
     fn new_segmented_string_line_segment(
         &self,
@@ -130,36 +163,17 @@ impl<'a> SegmentedString<'a> {
     }
 
     /// Wraps the string into lines of a given width without splitting extended grapheme clusters.
+    /// Style segments share the row's width budget and retain their source indices and byte offsets.
     pub fn wrap(&self, width: usize) -> Vec<SegmentedStringLine<'_>> {
         if self.segments.is_empty() {
             return vec![];
         }
 
         let len = self.segments.iter().map(|segment| segment.len()).sum();
-        let mut cursor = GraphemeCursor::new(0, len, true);
-        let (mut grapheme_segment, mut grapheme_start) = (0, 0);
         // Keep whole-text grapheme boundaries without copying the styled segments.
-        let mut grapheme_boundaries = std::iter::from_fn(|| loop {
-            match cursor.next_boundary(self.segments[grapheme_segment], grapheme_start) {
-                Ok(boundary) => return boundary,
-                Err(GraphemeIncomplete::NextChunk) => {
-                    grapheme_start += self.segments[grapheme_segment].len();
-                    grapheme_segment += 1;
-                }
-                Err(GraphemeIncomplete::PreContext(offset)) => {
-                    let (mut segment, mut start) = (grapheme_segment, grapheme_start);
-                    while start >= offset && segment > 0 {
-                        segment -= 1;
-                        start -= self.segments[segment].len();
-                    }
-                    cursor.provide_context(&self.segments[segment][..offset - start], start);
-                }
-                Err(incomplete) => {
-                    unreachable!("forward grapheme cursor has a valid chunk: {incomplete:?}");
-                }
-            }
-        })
-        .peekable();
+        let mut grapheme_boundaries = segmented_grapheme_boundaries(len, |i| self.segments[i])
+            .map(|(_, _, offset)| offset)
+            .peekable();
 
         let chars = self
             .segments
@@ -234,44 +248,70 @@ impl<'a> SegmentedString<'a> {
                     lines.push(current_line);
                     current_line = SegmentedStringLine::default();
                 }
-                for segment in new_line_segments {
-                    let trailing_whitespace_idx = segment
-                        .text
-                        .char_indices()
+                let len = new_line_segments
+                    .iter()
+                    .map(|segment| segment.text.len())
+                    .sum();
+                let trailing_start = len
+                    - new_line_segments
+                        .iter()
                         .rev()
-                        .take_while(|(_, c)| c.is_whitespace())
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(segment.text.len());
-                    let trailing_whitespace_width = segment.text[trailing_whitespace_idx..].width();
-
-                    if current_line.width + (segment.width - trailing_whitespace_width) > width {
-                        // This segment is too wide, we need to forcefully break it
-                        let mut w = 0;
-                        let mut start_idx = 0;
-                        for (idx, grapheme) in segment.text.grapheme_indices(true) {
-                            if idx >= trailing_whitespace_idx {
-                                break;
-                            }
-                            let grapheme_width = grapheme.width();
-                            if w > 0 && w + grapheme_width > width {
-                                // We have a full line
-                                current_line.push_segment(segment.substring(start_idx, idx));
-                                lines.push(current_line);
-                                current_line = SegmentedStringLine::default();
-                                w = 0;
-                                start_idx = idx;
-                            }
-                            w += grapheme_width;
-                        }
-                        // Add the remaining part of the segment, if any
-                        if start_idx < segment.text.len() {
-                            current_line
-                                .push_segment(segment.substring(start_idx, segment.text.len()));
-                        }
+                        .flat_map(|segment| segment.text.chars().rev())
+                        .take_while(|c| c.is_whitespace())
+                        .map(char::len_utf8)
+                        .sum::<usize>();
+                let mut start = (0, 0, 0);
+                let mut fragments = Vec::new();
+                for (segment_idx, char_idx, offset) in
+                    segmented_grapheme_boundaries(len, |i| new_line_segments[i].text)
+                {
+                    let single;
+                    let pieces = if start.0 == segment_idx {
+                        single = [new_line_segments[segment_idx].substring(start.1, char_idx)];
+                        &single[..]
                     } else {
-                        current_line.push_segment(segment);
+                        fragments.clear();
+                        for (i, segment) in new_line_segments
+                            .iter()
+                            .enumerate()
+                            .take(segment_idx + 1)
+                            .skip(start.0)
+                        {
+                            let begin = if i == start.0 { start.1 } else { 0 };
+                            let end = if i == segment_idx {
+                                char_idx
+                            } else {
+                                segment.text.len()
+                            };
+                            if begin < end {
+                                fragments.push(segment.substring(begin, end));
+                            }
+                        }
+                        &fragments[..]
+                    };
+                    let grapheme_width: usize = pieces.iter().map(|piece| piece.width).sum();
+                    if start.2 < trailing_start
+                        && current_line.width > 0
+                        && current_line.width + grapheme_width > width
+                    {
+                        lines.push(mem::take(&mut current_line));
                     }
+                    for piece in pieces {
+                        if let Some(previous) =
+                            current_line.segments.last_mut().filter(|previous| {
+                                previous.index == piece.index
+                                    && previous.offset + previous.text.len() == piece.offset
+                            })
+                        {
+                            previous.text = &self.segments[piece.index]
+                                [previous.offset..piece.offset + piece.text.len()];
+                            previous.width += piece.width;
+                            current_line.width += piece.width;
+                        } else {
+                            current_line.push_segment(piece.clone());
+                        }
+                    }
+                    start = (segment_idx, char_idx, offset);
                 }
             }
 
@@ -324,31 +364,61 @@ mod tests {
 
     #[test]
     fn test_soft_wrap_preserves_graphemes_across_segments() {
-        let cases: &[(&[&str], &str)] = &[
-            (&["a ", "\u{301}b"], "a \u{301}b"),
-            (&["", "a ", "", "\u{301}b", ""], "a \u{301}b"),
-            (&["🇺", "🇸 ", "\u{301}x"], "🇺🇸 \u{301}x"),
+        type ExpectedRow<'a> = (&'a str, usize, &'a [(usize, usize)]);
+        let cases: &[(&[&str], usize, &[ExpectedRow<'_>])] = &[
+            (
+                &["a ", "\u{301}b"],
+                1,
+                &[
+                    ("a", 1, &[(0, 0)]),
+                    (" \u{301}", 1, &[(0, 1), (1, 0)]),
+                    ("b", 1, &[(1, 2)]),
+                ],
+            ),
+            (
+                &["a ", "\u{301}b"],
+                2,
+                &[("a \u{301}", 2, &[(0, 0), (1, 0)]), ("b", 1, &[(1, 2)])],
+            ),
+            (
+                &["", "a ", "", "\u{301}b", ""],
+                1,
+                &[
+                    ("a", 1, &[(1, 0)]),
+                    (" \u{301}", 1, &[(1, 1), (3, 0)]),
+                    ("b", 1, &[(3, 2)]),
+                ],
+            ),
         ];
-        for &(segments, text) in cases {
+        for &(segments, width, expected) in cases {
             let value: SegmentedString = segments.iter().copied().collect();
-            let lines = value.wrap(1);
-            assert!(lines
+            let lines = value.wrap(width);
+            let rows: Vec<_> = lines
                 .iter()
-                .flat_map(|line| &line.segments)
-                .flat_map(|segment| segment.text.chars())
-                .eq(text.chars()));
-            let mut end = 0;
-            for line in lines {
-                end += line
-                    .segments
-                    .iter()
-                    .map(|segment| segment.text.len())
-                    .sum::<usize>();
-                assert!(GraphemeCursor::new(end, text.len(), true)
-                    .is_boundary(text, 0)
-                    .unwrap());
-            }
+                .map(|line| {
+                    (
+                        line.to_string(),
+                        line.width,
+                        line.segments
+                            .iter()
+                            .map(|segment| (segment.index, segment.offset))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect();
+            let expected: Vec<_> = expected
+                .iter()
+                .map(|&(text, width, regions)| (text.to_string(), width, regions.to_vec()))
+                .collect();
+            assert_eq!(rows, expected, "{segments:?} at width {width}");
         }
+    }
+
+    #[test]
+    fn test_forced_wrap_keeps_split_regional_indicators_together() {
+        let value: SegmentedString = ["🇺", "🇸 ", "\u{301}x"].into_iter().collect();
+        let rows: Vec<_> = value.wrap(1).iter().map(ToString::to_string).collect();
+        assert_eq!(rows, ["🇺🇸", " \u{301}", "x"]);
     }
 
     #[test]
