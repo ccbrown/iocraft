@@ -372,7 +372,7 @@ mod tests {
         ] {
             let hits = Arc::new(Mutex::new(Vec::new()));
             element! {
-                View(width: width, height: height, overflow: Overflow::Hidden) {
+                View(width: width, height: height, overflow: Overflow::Visible) {
                     ClippedMouseTarget(
                         hits: hits.clone(),
                         left: left,
