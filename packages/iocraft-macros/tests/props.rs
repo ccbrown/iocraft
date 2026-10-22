@@ -85,3 +85,13 @@ struct NestedItemSelfProps {
     }],
     next: Option<Box<Self>>,
 }
+
+#[derive(Props)]
+struct StructWithLifetimeAndDefaultedType<'lt, T: Sync = i32> {
+    foo: &'lt T,
+}
+
+#[derive(Props)]
+struct StructWithLifetimeAndDefaultedConst<'lt, const N: usize = 4> {
+    foo: &'lt [i32; N],
+}
