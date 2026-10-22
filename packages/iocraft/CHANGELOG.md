@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Typed component events with `use_events` and `use_event_dispatcher`, including parent bubbling and `stop_propagation`.
+
 ## [0.9.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.2...iocraft-v0.9.3) - 2026-10-14
 
 ### Fixed
