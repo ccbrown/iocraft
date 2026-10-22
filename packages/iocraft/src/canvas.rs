@@ -6,7 +6,8 @@ use std::{
     io::{self, Write},
     sync::{Arc, Once},
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Character {
@@ -102,9 +103,6 @@ impl CanvasCell {
 ///
 /// - When implementing low-level components, you'll need to utilize the `Canvas` drawing methods.
 /// - When implementing unit tests for components, you may want to render to a `Canvas` for inspection.
-///
-/// Character groups containing only zero-width marks reserve one column. Both styled and
-/// unstyled writers emit a blank base before those marks so the output occupies that column.
 #[derive(Clone, PartialEq)]
 pub struct Canvas {
     width: usize,
@@ -141,8 +139,6 @@ impl Canvas {
     /// Each row within the region produces one line in the result, separated
     /// by newlines. Trailing whitespace on each line is trimmed. Out-of-bounds
     /// coordinates are clamped silently.
-    /// A wide character is included once; its continuation columns do not
-    /// introduce spaces into the extracted text.
     pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
         let mut lines = Vec::with_capacity(h);
         for row_idx in y..y + h {
@@ -241,12 +237,15 @@ impl Canvas {
         style: CanvasTextStyle,
         clip: std::ops::Range<isize>,
     ) {
+        if x >= clip.end {
+            return;
+        }
         let row = &mut self.cells[y];
-        let mut paint_character = |value: &str| {
+        let mut paint_character = |value: &str, width: usize| {
             if x >= clip.end {
                 return false;
             }
-            let width = value.width().max(1) as isize;
+            let width = width.max(1) as isize;
             if x >= clip.start && x + width <= clip.end {
                 let start = x as usize;
                 let end = start + width as usize;
@@ -263,18 +262,20 @@ impl Canvas {
             true
         };
 
-        // Keep zero-width suffixes with their base, including at the clip edge.
-        let mut start = 0;
-        for (index, c) in text.char_indices() {
-            if index > start && c.width().unwrap_or(0) > 0 {
-                if !paint_character(&text[start..index]) {
-                    return;
+        let mut graphemes = text.grapheme_indices(true);
+        if let Some((mut start, first)) = graphemes.next() {
+            let mut width = first.width();
+            for (index, grapheme) in graphemes {
+                let next_width = grapheme.width();
+                if next_width > 0 {
+                    if !paint_character(&text[start..index], width) {
+                        return;
+                    }
+                    start = index;
+                    width = next_width;
                 }
-                start = index;
             }
-        }
-        if start < text.len() {
-            paint_character(&text[start..]);
+            paint_character(&text[start..], width);
         }
     }
 
@@ -334,7 +335,7 @@ impl Canvas {
             if ansi {
                 let mut needs_reset = false;
                 if let Some(c) = &cell.character {
-                    if c.style.weight != text_style.weight && c.style.weight == Weight::Normal {
+                    if c.style.weight != text_style.weight && text_style.weight != Weight::Normal {
                         needs_reset = true;
                     }
                     if !c.style.underline && text_style.underline {
@@ -633,9 +634,7 @@ impl CanvasSubviewMut<'_> {
 
     /// Writes text to the region.
     ///
-    /// Character groups are only written when their full column width fits the clip region.
-    /// Clipping preserves the original text coordinates and keeps zero-width suffixes with
-    /// their base character.
+    /// Characters that don't fully fit within the region are not written.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         let x = self.x + x;
         let min_x = self.clip_x.max(0);
@@ -658,6 +657,46 @@ impl CanvasSubviewMut<'_> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+
+    #[test]
+    fn test_canvas_keeps_extended_graphemes_with_their_following_text() {
+        for text in ["👩‍💻x", "👩🏽x"] {
+            let mut canvas = Canvas::new(3, 1);
+            canvas
+                .subview_mut(0, 0, 0, 0, 3, 1)
+                .set_text(0, 0, text, CanvasTextStyle::default());
+            assert_eq!(canvas.to_string(), format!("{text}\n"));
+        }
+    }
+
+    #[test]
+    fn test_canvas_keeps_zero_width_suffixes_in_their_character_group() {
+        for (width, text, expected) in [
+            (2, "a\u{200b}b", "a\u{200b}b\n"),
+            (1, "a\u{200b}b", "a\u{200b}\n"),
+            (2, "界\u{200b}x", "界\u{200b}\n"),
+            (2, "a\u{200b}\u{2060}b", "a\u{200b}\u{2060}b\n"),
+            (2, "\u{200b}b", " \u{200b}b\n"),
+        ] {
+            let mut canvas = Canvas::new(width, 1);
+            canvas.subview_mut(0, 0, 0, 0, width, 1).set_text(
+                0,
+                0,
+                text,
+                CanvasTextStyle::default(),
+            );
+            assert_eq!(canvas.to_string(), expected, "width {width}, text {text:?}");
+        }
+    }
+
+    #[test]
+    fn test_canvas_clips_an_entire_regional_indicator_pair() {
+        let mut canvas = Canvas::new(1, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 1, 1)
+            .set_text(0, 0, "🇷🇺", CanvasTextStyle::default());
+        assert_eq!(canvas.to_string(), "\n");
+    }
 
     #[test]
     fn test_required_padding_zero_width_compatibility() {
@@ -802,10 +841,54 @@ mod tests {
     }
 
     #[test]
+    fn test_canvas_weight_transitions_clear_previous_intensity() {
+        let mut canvas = Canvas::new(3, 1);
+        for (x, weight, text) in [
+            (0, Weight::Bold, "B"),
+            (1, Weight::Light, "L"),
+            (2, Weight::Bold, "B"),
+        ] {
+            canvas.subview_mut(0, 0, 0, 0, 3, 1).set_text(
+                x,
+                0,
+                text,
+                CanvasTextStyle {
+                    weight,
+                    ..Default::default()
+                },
+            );
+        }
+        let mut bytes = Vec::new();
+        canvas.write_ansi(&mut bytes).unwrap();
+        let output = String::from_utf8(bytes).unwrap();
+        let tokens = regex::Regex::new(r"\x1b\[([0-9;]*)m|([BL])").unwrap();
+        let (mut bold, mut faint) = (false, false);
+        let mut cells = Vec::new();
+        for token in tokens.captures_iter(&output) {
+            if let Some(parameters) = token.get(1) {
+                for parameter in parameters.as_str().split(';') {
+                    let code = parameter.parse::<u16>().ok();
+                    let reset = parameter.is_empty() || matches!(code, Some(0 | 22));
+                    bold = !reset && (bold || code == Some(1));
+                    faint = !reset && (faint || code == Some(2));
+                }
+            } else {
+                cells.push((token[2].as_bytes()[0], bold, faint));
+            }
+        }
+        assert_eq!(
+            cells,
+            vec![
+                (b'B', true, false),
+                (b'L', false, true),
+                (b'B', true, false)
+            ]
+        );
+    }
+
+    #[test]
     fn test_canvas_text_styles() {
         let mut canvas = Canvas::new(100, 1);
-        assert_eq!(canvas.width(), 100);
-        assert_eq!(canvas.height(), 1);
 
         canvas
             .subview_mut(0, 0, 0, 0, 1, 1)
@@ -893,48 +976,31 @@ mod tests {
         let mut actual = Vec::new();
         canvas.write_ansi(&mut actual).unwrap();
 
-        let mut expected = Vec::new();
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
-        write!(expected, csi!("{}m"), sgr::UNDERLINED).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
-        write!(expected, csi!("{}m"), sgr::ITALIC).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, csi!("{}m"), sgr::BOLD).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), sgr::DIM).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Red)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Green)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("{}m"), sgr::REVERSE).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, csi!("{}m"), SgrColor::Foreground(Color::Green)).unwrap();
-        write!(expected, ".").unwrap();
-
-        write!(expected, csi!("K")).unwrap();
-        write!(expected, csi!("0m")).unwrap();
-        write!(expected, "\r\n").unwrap();
-
-        assert_eq!(actual, expected);
+        let mut vt = avt::Vt::new(100, 2);
+        vt.feed_str(std::str::from_utf8(&actual).unwrap());
+        let line = vt.line(0);
+        for (i, (color, weight, underline, italic, invert)) in [
+            (None, Weight::Normal, false, false, false),
+            (Some(9), Weight::Bold, true, false, false),
+            (Some(9), Weight::Bold, false, true, false),
+            (Some(9), Weight::Bold, false, false, false),
+            (Some(9), Weight::Light, false, false, false),
+            (Some(9), Weight::Normal, false, false, false),
+            (Some(10), Weight::Normal, false, false, false),
+            (Some(10), Weight::Normal, false, false, true),
+            (Some(10), Weight::Normal, false, false, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let pen = line.cells()[i].pen();
+            assert_eq!(pen.foreground(), color.map(avt::Color::Indexed), "{i}");
+            assert_eq!(pen.is_bold(), weight == Weight::Bold, "{i}");
+            assert_eq!(pen.is_faint(), weight == Weight::Light, "{i}");
+            assert_eq!(pen.is_underline(), underline, "{i}");
+            assert_eq!(pen.is_italic(), italic, "{i}");
+            assert_eq!(pen.is_inverse(), invert, "{i}");
+        }
     }
 
     #[test]

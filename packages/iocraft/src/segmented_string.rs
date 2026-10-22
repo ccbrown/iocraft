@@ -3,6 +3,7 @@ use core::{
     fmt::{self, Display},
     mem,
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// A `SegmentedString` is a string consisting of multiple segments, which don't have to be
@@ -128,7 +129,7 @@ impl<'a> SegmentedString<'a> {
         }
     }
 
-    /// Wraps the string into lines of a given width.
+    /// Wraps the string into lines of a given width without splitting extended grapheme clusters.
     pub fn wrap(&self, width: usize) -> Vec<SegmentedStringLine<'_>> {
         if self.segments.is_empty() {
             return vec![];
@@ -205,12 +206,12 @@ impl<'a> SegmentedString<'a> {
                         // This segment is too wide, we need to forcefully break it
                         let mut w = 0;
                         let mut start_idx = 0;
-                        for (idx, c) in segment.text.char_indices() {
+                        for (idx, grapheme) in segment.text.grapheme_indices(true) {
                             if idx >= trailing_whitespace_idx {
                                 break;
                             }
-                            let char_width = c.width().unwrap_or(0);
-                            if w > 0 && w + char_width > width {
+                            let grapheme_width = grapheme.width();
+                            if w > 0 && w + grapheme_width > width {
                                 // We have a full line
                                 current_line.push_segment(segment.substring(start_idx, idx));
                                 lines.push(current_line);
@@ -218,7 +219,7 @@ impl<'a> SegmentedString<'a> {
                                 w = 0;
                                 start_idx = idx;
                             }
-                            w += char_width;
+                            w += grapheme_width;
                         }
                         // Add the remaining part of the segment, if any
                         if start_idx < segment.text.len() {
@@ -277,6 +278,19 @@ impl<'a> FromIterator<&'a str> for SegmentedString<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_forced_wrap_keeps_a_joined_emoji_intact() {
+        let text = SegmentedString::from("a👩‍💻b");
+        let lines = text.wrap(1);
+        assert_eq!(
+            lines.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ["a", "👩‍💻", "b"],
+        );
+        assert_eq!(lines[1].width, 2);
+        assert_eq!(lines[1].segments[0].offset, 1);
+        assert_eq!(lines[2].segments[0].offset, 12);
+    }
 
     #[test]
     fn test_segmented_string_wrap() {

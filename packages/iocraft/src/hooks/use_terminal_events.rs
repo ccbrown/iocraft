@@ -4,7 +4,7 @@ use core::{
     task::{Context, Poll},
 };
 use futures::stream::Stream;
-use taffy::{Point, Size};
+use taffy::{Point, Rect, Size};
 
 mod private {
     pub trait Sealed {}
@@ -100,10 +100,10 @@ pub trait UseTerminalEvents: private::Sealed {
 
     /// Defines a callback to be invoked whenever a terminal event occurs within a component.
     ///
-    /// Unlike [`Self::use_terminal_events`], this hook will not be called for events such as mouse
-    /// events that occur outside of the component. Furthermore, coordinates will be translated to
-    /// component-local coordinates.
-    /// A component may start outside the canvas; its local origin is not clamped.
+    /// Unlike [`Self::use_terminal_events`], this hook ignores mouse events outside the component's
+    /// visible area, including ancestor clipping. Coordinates are relative to the component's
+    /// original, unclipped origin.
+    /// Negative origins and large unsigned dimensions do not truncate the local coordinates.
     fn use_local_terminal_events<F>(&mut self, f: F)
     where
         F: FnMut(TerminalEvent) + Send + 'static;
@@ -139,7 +139,7 @@ impl UseTerminalEvents for Hooks<'_, '_> {
 
 struct UseTerminalEventsImpl {
     events: Option<TerminalEvents>,
-    component_location: (Point<i16>, Size<u16>),
+    component_location: (Point<i16>, Size<u16>, Rect<u16>),
     in_component: bool,
     f: Option<Box<dyn FnMut(TerminalEvent) + Send + 'static>>,
 }
@@ -152,9 +152,16 @@ impl Hook for UseTerminalEventsImpl {
             .map(|events| pin!(events).poll_next(cx))
         {
             if self.in_component {
-                let (location, size) = self.component_location;
+                let (location, size, clip) = self.component_location;
                 match event {
                     TerminalEvent::FullscreenMouse(event) => {
+                        if event.column < clip.left
+                            || event.column >= clip.right
+                            || event.row < clip.top
+                            || event.row >= clip.bottom
+                        {
+                            continue;
+                        }
                         let row = i32::from(event.row) - i32::from(location.y);
                         let column = i32::from(event.column) - i32::from(location.x);
                         if row >= 0
@@ -193,7 +200,9 @@ impl Hook for UseTerminalEventsImpl {
     }
 
     fn post_component_draw(&mut self, drawer: &mut crate::ComponentDrawer) {
-        self.component_location = (drawer.canvas_position(), drawer.size());
+        if self.in_component {
+            self.component_location = (drawer.canvas_position(), drawer.size(), drawer.clip_rect());
+        }
     }
 }
 
@@ -289,15 +298,21 @@ mod tests {
     }
 
     #[derive(Props)]
-    struct LargeMouseTargetProps {
+    struct ClippedMouseTargetProps {
         #[iocraft(required)]
         hits: Arc<Mutex<Vec<(u16, u16)>>>,
+        #[iocraft(required)]
+        left: i32,
+        #[iocraft(required)]
+        width: i32,
+        #[iocraft(required)]
+        height: i32,
     }
 
     #[component]
-    fn LargeMouseTarget(
+    fn ClippedMouseTarget(
         mut hooks: Hooks,
-        props: &LargeMouseTargetProps,
+        props: &ClippedMouseTargetProps,
     ) -> impl Into<AnyElement<'static>> {
         let mut quit = hooks.use_state(|| false);
         let hits = props.hits.clone();
@@ -312,28 +327,71 @@ mod tests {
             hooks.use_context_mut::<SystemContext>().exit();
         }
         element! {
-            View(position: Position::Absolute, left: -32768, width: 32769, height: 40001)
+            View(
+                position: Position::Absolute,
+                left: props.left,
+                width: props.width,
+                height: props.height,
+            )
         }
     }
 
     #[apply(test!)]
-    async fn test_local_mouse_coordinates_do_not_wrap_at_i16_boundary() {
+    async fn test_local_mouse_respects_ancestor_clip_without_moving_origin() {
         let hits = Arc::new(Mutex::new(Vec::new()));
         element! {
-            View(width: 1, height: 40001) {
-                LargeMouseTarget(hits: hits.clone())
+            View(width: 10, height: 1) {
+                View(width: 4, height: 1, overflow: Overflow::Hidden) {
+                    ClippedMouseTarget(hits: hits.clone(), left: -3, width: 10, height: 1)
+                }
             }
         }
         .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
             TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
                 MouseEventKind::Down(MouseButton::Left),
                 0,
-                40000,
+                0,
+            )),
+            TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                MouseEventKind::Down(MouseButton::Left),
+                4,
+                0,
             )),
             TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
         ])))
         .for_each(|_| async {})
         .await;
-        assert_eq!(*hits.lock().unwrap(), vec![(32768, 40000)]);
+        assert_eq!(*hits.lock().unwrap(), vec![(3, 0)]);
+    }
+
+    #[apply(test!)]
+    async fn test_local_mouse_coordinates_do_not_wrap_at_i16_boundary() {
+        for (width, height, left, target_width, target_height, column, row, expected) in [
+            (1, 40001, -32768, 32769, 40001, 0, 40000, (32768, 40000)),
+            (40001, 1, 0, 40001, 1, 40000, 0, (40000, 0)),
+        ] {
+            let hits = Arc::new(Mutex::new(Vec::new()));
+            element! {
+                View(width: width, height: height, overflow: Overflow::Hidden) {
+                    ClippedMouseTarget(
+                        hits: hits.clone(),
+                        left: left,
+                        width: target_width,
+                        height: target_height,
+                    )
+                }
+            }
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                    MouseEventKind::Down(MouseButton::Left),
+                    column,
+                    row,
+                )),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
+            ])))
+            .for_each(|_| async {})
+            .await;
+            assert_eq!(*hits.lock().unwrap(), vec![expected]);
+        }
     }
 }

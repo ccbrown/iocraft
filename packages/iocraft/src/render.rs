@@ -257,6 +257,10 @@ impl ComponentDrawer<'_> {
         self.node_position
     }
 
+    pub(crate) fn clip_rect(&self) -> Rect<u16> {
+        self.clip_rect
+    }
+
     /// Gets the region of the canvas that the component should be drawn to.
     pub fn canvas(&mut self) -> CanvasSubviewMut<'_> {
         self.context.canvas.subview_mut(
@@ -309,23 +313,27 @@ impl ComponentDrawer<'_> {
         let old_clip_rect = self.clip_rect;
         let layout = self.layout();
         if overflow.x != Overflow::Visible {
-            self.clip_rect.left = self
-                .clip_rect
-                .left
-                .max((self.node_position.x + layout.border.left as i16).max(0) as u16);
+            let x = i32::from(self.node_position.x);
+            self.clip_rect.left = self.clip_rect.left.max(
+                x.saturating_add(layout.border.left as i32)
+                    .clamp(0, i32::from(u16::MAX)) as u16,
+            );
             self.clip_rect.right = self.clip_rect.right.min(
-                (self.node_position.x + self.node_size.width as i16 - layout.border.right as i16)
-                    .max(0) as u16,
+                (x + i32::from(self.node_size.width))
+                    .saturating_sub(layout.border.right as i32)
+                    .clamp(0, i32::from(u16::MAX)) as u16,
             );
         }
         if overflow.y != Overflow::Visible {
-            self.clip_rect.top = self
-                .clip_rect
-                .top
-                .max((self.node_position.y + layout.border.top as i16).max(0) as u16);
+            let y = i32::from(self.node_position.y);
+            self.clip_rect.top = self.clip_rect.top.max(
+                y.saturating_add(layout.border.top as i32)
+                    .clamp(0, i32::from(u16::MAX)) as u16,
+            );
             self.clip_rect.bottom = self.clip_rect.bottom.min(
-                (self.node_position.y + self.node_size.height as i16 - layout.border.bottom as i16)
-                    .max(0) as u16,
+                (y + i32::from(self.node_size.height))
+                    .saturating_sub(layout.border.bottom as i32)
+                    .clamp(0, i32::from(u16::MAX)) as u16,
             );
         }
         f(self);
