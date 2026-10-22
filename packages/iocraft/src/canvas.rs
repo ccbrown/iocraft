@@ -253,8 +253,12 @@ impl Canvas {
                     if start as isize >= clip.start
                         && start + character.value.width().max(1) == x as usize
                     {
+                        let previous_len = character.value.len();
                         character.value.push_str(value);
-                        return true;
+                        if character.value.width().max(1) == x as usize - start {
+                            return true;
+                        }
+                        character.value.truncate(previous_len);
                     }
                 }
             }
@@ -651,6 +655,8 @@ impl CanvasSubviewMut<'_> {
     /// Writes text to the region.
     ///
     /// Characters that don't fully fit within the region are not written.
+    /// A zero-width prefix can extend the preceding glyph inside the clip, retaining its style
+    /// without widening its occupied cell span.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         let x = self.x + x;
         let min_x = self.clip_x.max(0);
@@ -1087,6 +1093,18 @@ mod tests {
             .subview_mut(2, 0, 2, 0, 1, 1)
             .set_text(0, 0, "\u{301}", CanvasTextStyle::default());
         assert_eq!(canvas.cell(0, 0).unwrap().text(), Some("界\u{301}"));
+    }
+
+    #[test]
+    fn test_styled_variation_cannot_widen_a_glyph_across_the_clip() {
+        let mut canvas = Canvas::new(2, 1);
+        canvas
+            .subview_mut(0, 0, 0, 0, 2, 1)
+            .set_text(0, 0, "❤x", CanvasTextStyle::default());
+        canvas
+            .subview_mut(0, 0, 0, 0, 1, 1)
+            .set_text(1, 0, "\u{fe0f}", CanvasTextStyle::default());
+        assert_eq!(canvas.to_string(), "❤x\n");
     }
 
     #[test]
