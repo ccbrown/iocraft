@@ -110,7 +110,6 @@ pub struct TextInputProps {
 
     /// If true (requires `multiline`), the input auto-grows its height to
     /// fit wrapped content instead of filling the container.
-    /// This can be changed at runtime, even when the content is unchanged.
     pub auto_grow: bool,
 
     /// The color to make the cursor. Defaults to gray.
