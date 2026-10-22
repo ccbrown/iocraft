@@ -133,7 +133,6 @@ impl<T: 'static> ops::Deref for StateRef<'_, T> {
 }
 
 /// A mutable reference to the value of a [`State`].
-/// Changed state wakes its consumer only after this reference releases the write borrow.
 pub struct StateMutRef<'a, T: 'static> {
     inner: Option<<SyncStorage as AnyStorage>::Mut<'a, StateValue<T>>>,
     did_deref_mut: bool,
@@ -207,9 +206,6 @@ impl<T: Copy + Sync + Send + 'static> State<T> {
 
 impl<T: Sync + Send + 'static> State<T> {
     /// Sets the value of the state.
-    ///
-    /// The replaced value is dropped after releasing the write lock, so its destructor
-    /// can read the new state.
     pub fn set(&mut self, value: T) {
         if let Some(mut v) = self.try_write() {
             let old = std::mem::replace(&mut *v, value);

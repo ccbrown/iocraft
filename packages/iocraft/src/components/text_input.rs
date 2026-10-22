@@ -104,8 +104,7 @@ pub struct TextInputProps {
     pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
-    /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
-    /// Multiline paste preserves the original text.
+    /// If false, line breaks in pasted text are replaced with spaces.
     pub multiline: bool,
 
     /// If true (requires `multiline`), the input auto-grows its height to

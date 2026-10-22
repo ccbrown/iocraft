@@ -55,7 +55,6 @@ pub struct TextProps {
     pub wrap: TextWrap,
 
     /// The text alignment.
-    /// Leading Unicode whitespace contributes to the aligned display width.
     pub align: TextAlign,
 
     /// The text decoration.

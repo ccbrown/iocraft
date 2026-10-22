@@ -74,9 +74,6 @@ impl<T: Copy + Sync + Send + 'static> Ref<T> {
 
 impl<T: Sync + Send + 'static> Ref<T> {
     /// Sets the value of the ref.
-    ///
-    /// The replaced value is dropped after releasing the write lock, so its destructor
-    /// can read the new ref.
     pub fn set(&mut self, value: T) {
         if let Some(mut v) = self.try_write() {
             let old = std::mem::replace(&mut *v, value);

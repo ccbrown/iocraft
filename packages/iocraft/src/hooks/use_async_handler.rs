@@ -15,10 +15,8 @@ mod private {
 /// `UseAsyncHandler` is a hook that allows you to create a [`Handler`] which executes an
 /// asynchronous task that is bound to the lifetime of the component.
 ///
-/// If the component is dropped, all executing tasks will also be dropped.
-/// A task may enqueue another invocation without blocking the component.
-/// Keeping a handler after its component has been dropped does not keep its tasks alive.
-/// Invoking the handler after that point has no effect.
+/// If the component is dropped, all executing tasks will also be dropped, and invoking the
+/// handler after that point has no effect.
 pub trait UseAsyncHandler: private::Sealed {
     /// Returns a [`Handler`] which when invoked will execute the given function and drive the
     /// resulting future to completion.

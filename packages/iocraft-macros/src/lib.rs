@@ -737,8 +737,6 @@ impl ToTokens for ParsedProps {
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
 ///
-/// Property structs may use defaulted type and const generic parameters.
-///
 /// Fields are initialized with their [`Default`] value unless they are marked as required:
 ///
 /// ```
@@ -1099,10 +1097,9 @@ impl ToTokens for ParsedComponent {
 ///
 /// However, note that generic type parameters must be `'static`.
 ///
-/// # Lifetime diagnostics
+/// # Lifetimes
 ///
-/// Generated context-borrow errors point to the type of the `hooks` parameter. Prefer inferred
-/// lifetimes on `Hooks`: sharing an explicit lifetime between `Hooks` and the
+/// Prefer inferred lifetimes on `Hooks`. Sharing an explicit lifetime between `Hooks` and the
 /// returned element can keep the context borrow alive while the component updates its children.
 ///
 /// ```
