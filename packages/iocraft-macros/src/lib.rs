@@ -736,7 +736,6 @@ impl ToTokens for ParsedProps {
 /// Most importantly, this marks a struct as being
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
-/// `Self` in field types refers to the props struct, including in its builder.
 ///
 /// Property structs may use defaulted type and const generic parameters.
 ///
