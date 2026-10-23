@@ -168,6 +168,7 @@ impl Component for MixedText {
         let x_offset = paddings.iter().copied().min().unwrap_or(0);
 
         let mut drawer = TextDrawer::new(drawer, x_offset, self.align != TextAlign::Left);
+        let mut grapheme_buffer = String::new();
         for (mut line, padding) in lines.into_iter().zip(paddings) {
             if self.wrap == TextWrap::Wrap {
                 line.trim_end();
@@ -181,9 +182,8 @@ impl Component for MixedText {
                     None,
                 );
             }
-            let mut segments = line.segments.into_iter().peekable();
-            while let Some(segment) = segments.next() {
-                let content = &self.contents[segment.index];
+            line.for_each_grapheme_span(&mut grapheme_buffer, |text, index| {
+                let content = &self.contents[index];
                 let style = CanvasTextStyle {
                     color: content.color,
                     weight: content.weight,
@@ -191,12 +191,9 @@ impl Component for MixedText {
                     italic: content.italic,
                     invert: content.invert,
                 };
-                if segments.peek().is_some() {
-                    drawer.append_lines([segment.text], style, content.hyperlink.as_deref());
-                } else {
-                    drawer.append_lines([segment.text, ""], style, content.hyperlink.as_deref());
-                }
-            }
+                drawer.append_lines([text], style, content.hyperlink.as_deref());
+            });
+            drawer.append_lines(["", ""], CanvasTextStyle::default(), None);
         }
     }
 }
@@ -247,6 +244,32 @@ mod tests {
                     .text_style()
                     .unwrap()
                     .color,
+                Some(Color::Blue),
+            );
+        }
+    }
+
+    #[test]
+    fn test_split_zwj_preserves_following_text_and_styles() {
+        for wrap in [TextWrap::Wrap, TextWrap::NoWrap] {
+            let canvas = element! {
+                View(width: 3) {
+                    MixedText(wrap: wrap, contents: vec![
+                        MixedTextContent::new("👩").color(Color::Red),
+                        MixedTextContent::new("\u{200d}💻b").color(Color::Blue),
+                    ])
+                }
+            }
+            .render(None);
+            assert_eq!(canvas.to_string(), "👩‍💻b\n");
+            assert_eq!(canvas.cell(0, 0).unwrap().text(), Some("👩‍💻"));
+            assert_eq!(
+                canvas.cell(0, 0).unwrap().text_style().unwrap().color,
+                Some(Color::Red),
+            );
+            assert_eq!(canvas.cell(2, 0).unwrap().text(), Some("b"));
+            assert_eq!(
+                canvas.cell(2, 0).unwrap().text_style().unwrap().color,
                 Some(Color::Blue),
             );
         }

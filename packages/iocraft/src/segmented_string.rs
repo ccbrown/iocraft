@@ -29,8 +29,49 @@ impl<'a> SegmentedStringLine<'a> {
         self.segments.push(segment);
     }
 
+    pub(crate) fn for_each_grapheme_span(
+        &self,
+        buffer: &mut String,
+        mut f: impl FnMut(&str, usize),
+    ) {
+        if let [segment] = self.segments.as_slice() {
+            f(segment.text, segment.index);
+            return;
+        }
+        let len = self.segments.iter().map(|segment| segment.text.len()).sum();
+        let mut pending: Option<(usize, usize, usize)> = None;
+        for (start, end) in segmented_graphemes(len, &self.segments) {
+            if start.0 == end.0 {
+                match pending.take() {
+                    Some((segment, begin, _)) if segment == start.0 => {
+                        pending = Some((segment, begin, end.1));
+                    }
+                    previous => {
+                        if let Some((segment, begin, end)) = previous {
+                            let segment = &self.segments[segment];
+                            f(&segment.text[begin..end], segment.index);
+                        }
+                        pending = Some((start.0, start.1, end.1));
+                    }
+                }
+            } else {
+                if let Some((segment, begin, end)) = pending.take() {
+                    let segment = &self.segments[segment];
+                    f(&segment.text[begin..end], segment.index);
+                }
+                f(
+                    grapheme_text(&self.segments, start, end, buffer),
+                    self.segments[start.0].index,
+                );
+            }
+        }
+        if let Some((segment, begin, end)) = pending {
+            let segment = &self.segments[segment];
+            f(&segment.text[begin..end], segment.index);
+        }
+    }
+
     /// Removes trailing whitespace from the line.
-    /// Non-whitespace suffixes are retained even when their display width is zero.
     pub fn trim_end(&mut self) {
         for i in (0..self.segments.len()).rev() {
             let segment = &mut self.segments[i];
@@ -62,13 +103,13 @@ pub struct SegmentedStringLineSegment<'a> {
     pub text: &'a str,
     pub index: usize,
     pub offset: usize,
+    // Only the first fragment of a grapheme contributes to the line's width.
     pub width: usize,
 }
 
 impl SegmentedStringLineSegment<'_> {
-    fn substring(&self, start: usize, end: usize) -> Self {
+    fn substring(&self, start: usize, end: usize, width: usize) -> Self {
         let text = &self.text[start..end];
-        let width = text.width();
         SegmentedStringLineSegment {
             text,
             index: self.index,
@@ -78,8 +119,9 @@ impl SegmentedStringLineSegment<'_> {
     }
 
     fn trim_end(&mut self) {
-        self.text = self.text.trim_end();
-        self.width = self.text.width();
+        let text = self.text.trim_end();
+        self.width -= self.text[text.len()..].width();
+        self.text = text;
     }
 }
 
@@ -89,10 +131,12 @@ impl Display for SegmentedStringLineSegment<'_> {
     }
 }
 
+type SegmentBoundary = (usize, usize, usize);
+
 fn segmented_grapheme_boundaries<'a>(
     len: usize,
     chunk: impl Fn(usize) -> &'a str,
-) -> impl Iterator<Item = (usize, usize, usize)> {
+) -> impl Iterator<Item = SegmentBoundary> {
     let mut cursor = GraphemeCursor::new(0, len, true);
     let (mut segment, mut start) = (0, 0);
     std::iter::from_fn(move || loop {
@@ -119,6 +163,43 @@ fn segmented_grapheme_boundaries<'a>(
             }
         }
     })
+}
+
+fn segmented_graphemes<'a>(
+    len: usize,
+    segments: &'a [SegmentedStringLineSegment<'_>],
+) -> impl Iterator<Item = (SegmentBoundary, SegmentBoundary)> + 'a {
+    segmented_grapheme_boundaries(len, |i| segments[i].text).scan((0, 0, 0), move |start, end| {
+        while start.0 < end.0 && start.1 == segments[start.0].text.len() {
+            start.0 += 1;
+            start.1 = 0;
+        }
+        let range = (*start, end);
+        *start = end;
+        Some(range)
+    })
+}
+
+fn grapheme_text<'a>(
+    segments: &'a [SegmentedStringLineSegment<'_>],
+    start: SegmentBoundary,
+    end: SegmentBoundary,
+    buffer: &'a mut String,
+) -> &'a str {
+    if start.0 == end.0 {
+        return &segments[start.0].text[start.1..end.1];
+    }
+    buffer.clear();
+    for (i, segment) in segments.iter().enumerate().take(end.0 + 1).skip(start.0) {
+        let begin = if i == start.0 { start.1 } else { 0 };
+        let end = if i == end.0 {
+            end.1
+        } else {
+            segment.text.len()
+        };
+        buffer.push_str(&segment.text[begin..end]);
+    }
+    buffer
 }
 
 impl<'a> SegmentedString<'a> {
@@ -163,7 +244,6 @@ impl<'a> SegmentedString<'a> {
     }
 
     /// Wraps the string into lines of a given width without splitting extended grapheme clusters.
-    /// Style segments share the row's width budget and retain their source indices and byte offsets.
     pub fn wrap(&self, width: usize) -> Vec<SegmentedStringLine<'_>> {
         if self.segments.is_empty() {
             return vec![];
@@ -197,6 +277,8 @@ impl<'a> SegmentedString<'a> {
 
         let mut lines = Vec::new();
         let mut current_line = SegmentedStringLine::default();
+        let mut grapheme_buffer = String::new();
+        let mut segment_widths = Vec::new();
 
         let (mut start_segment_idx, mut start_char_idx) = (0, 0);
         for ((segment_idx, char_idx, offset), opportunity_type) in break_opportunities {
@@ -228,6 +310,23 @@ impl<'a> SegmentedString<'a> {
                 start_char_idx = char_idx;
             }
 
+            let len = new_line_segments
+                .iter()
+                .map(|segment| segment.text.len())
+                .sum();
+            if new_line_segments.len() > 1 {
+                segment_widths.clear();
+                segment_widths.resize(new_line_segments.len(), 0);
+                for (start, end) in segmented_graphemes(len, &new_line_segments) {
+                    let width =
+                        grapheme_text(&new_line_segments, start, end, &mut grapheme_buffer).width();
+                    segment_widths[start.0] += width;
+                }
+                for (segment, &width) in new_line_segments.iter_mut().zip(&segment_widths) {
+                    segment.width = width;
+                }
+            }
+
             let new_line_segments_width: usize = new_line_segments.iter().map(|s| s.width).sum();
 
             let trailing_whitespace_width: usize = new_line_segments
@@ -248,10 +347,6 @@ impl<'a> SegmentedString<'a> {
                     lines.push(current_line);
                     current_line = SegmentedStringLine::default();
                 }
-                let len = new_line_segments
-                    .iter()
-                    .map(|segment| segment.text.len())
-                    .sum();
                 let trailing_start = len
                     - new_line_segments
                         .iter()
@@ -260,14 +355,18 @@ impl<'a> SegmentedString<'a> {
                         .take_while(|c| c.is_whitespace())
                         .map(char::len_utf8)
                         .sum::<usize>();
-                let mut start = (0, 0, 0);
                 let mut fragments = Vec::new();
-                for (segment_idx, char_idx, offset) in
-                    segmented_grapheme_boundaries(len, |i| new_line_segments[i].text)
-                {
+                for (start, end) in segmented_graphemes(len, &new_line_segments) {
+                    let (segment_idx, char_idx, _) = end;
+                    let grapheme_width =
+                        grapheme_text(&new_line_segments, start, end, &mut grapheme_buffer).width();
                     let single;
                     let pieces = if start.0 == segment_idx {
-                        single = [new_line_segments[segment_idx].substring(start.1, char_idx)];
+                        single = [new_line_segments[segment_idx].substring(
+                            start.1,
+                            char_idx,
+                            grapheme_width,
+                        )];
                         &single[..]
                     } else {
                         fragments.clear();
@@ -284,12 +383,16 @@ impl<'a> SegmentedString<'a> {
                                 segment.text.len()
                             };
                             if begin < end {
-                                fragments.push(segment.substring(begin, end));
+                                let width = if fragments.is_empty() {
+                                    grapheme_width
+                                } else {
+                                    0
+                                };
+                                fragments.push(segment.substring(begin, end, width));
                             }
                         }
                         &fragments[..]
                     };
-                    let grapheme_width: usize = pieces.iter().map(|piece| piece.width).sum();
                     if start.2 < trailing_start
                         && current_line.width > 0
                         && current_line.width + grapheme_width > width
@@ -311,7 +414,6 @@ impl<'a> SegmentedString<'a> {
                             current_line.push_segment(piece.clone());
                         }
                     }
-                    start = (segment_idx, char_idx, offset);
                 }
             }
 
@@ -411,6 +513,25 @@ mod tests {
                 .map(|&(text, width, regions)| (text.to_string(), width, regions.to_vec()))
                 .collect();
             assert_eq!(rows, expected, "{segments:?} at width {width}");
+        }
+    }
+
+    #[test]
+    fn test_split_zwj_graphemes_use_one_width_budget() {
+        type ExpectedRow<'a> = (&'a str, usize);
+        let cases: &[(&[&str], usize, &[ExpectedRow<'_>])] = &[
+            (&["👩", "\u{200d}💻b"], 3, &[("👩‍💻b", 3)]),
+            (&["👩", "\u{200d}💻b"], 2, &[("👩‍💻", 2), ("b", 1)]),
+            (&["a ", "👩", "\u{200d}💻b"], 5, &[("a 👩‍💻b", 5)]),
+        ];
+        for &(segments, width, expected) in cases {
+            let value: SegmentedString = segments.iter().copied().collect();
+            let lines = value.wrap(width);
+            assert_eq!(lines.len(), expected.len(), "{segments:?} at width {width}");
+            for (line, &(text, columns)) in lines.iter().zip(expected) {
+                assert_eq!(line.to_string(), text);
+                assert_eq!(line.width, columns);
+            }
         }
     }
 
