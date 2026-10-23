@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.5...iocraft-macros-v0.2.6) - 2026-10-23
+
+### Fixed
+
+- keep Self field types attached to the props struct ([#285](https://github.com/ccbrown/iocraft/pull/285))
+- let the macros follow renamed Cargo dependencies ([#301](https://github.com/ccbrown/iocraft/pull/301))
+- *(macros)* omit generic defaults from covariance helper functions ([#260](https://github.com/ccbrown/iocraft/pull/260))
+
+### Other
+
+- clean up ai comments and add guidance ([#306](https://github.com/ccbrown/iocraft/pull/306))
+
 ## [0.2.5](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.4...iocraft-macros-v0.2.5) - 2026-10-09
 
 ### Added
