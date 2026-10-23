@@ -171,7 +171,7 @@ impl Component for MixedText {
         let mut grapheme_buffer = String::new();
         for (mut line, padding) in lines.into_iter().zip(paddings) {
             if self.wrap == TextWrap::Wrap {
-                line.trim_end();
+                line.trim_end(&mut grapheme_buffer);
             }
 
             let additional_padding = padding - x_offset;
@@ -218,6 +218,19 @@ mod tests {
             .to_string(),
             "this is a\nwrapping test\n"
         );
+    }
+
+    #[test]
+    fn test_trimmed_blank_rows_render_in_place() {
+        for content in ["a\n\nb", "a\n \nb"] {
+            let canvas = element! {
+                View(width: 4) {
+                    MixedText(contents: vec![MixedTextContent::new(content)])
+                }
+            }
+            .render(None);
+            assert_eq!(canvas.to_string(), "a\n\nb\n", "{content:?}");
+        }
     }
 
     #[test]

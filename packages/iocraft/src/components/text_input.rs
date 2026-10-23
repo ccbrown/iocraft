@@ -107,7 +107,6 @@ pub struct TextInputProps {
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
     /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
     /// Multiline paste preserves the original text.
-    /// Cursor movement and deletion preserve Unicode grapheme clusters, including CRLF.
     /// After insertion, the cursor advances past any newly joined grapheme.
     /// At a soft wrap, the boundary offset belongs to the start of the following row.
     pub multiline: bool,

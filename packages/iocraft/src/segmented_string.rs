@@ -71,18 +71,22 @@ impl<'a> SegmentedStringLine<'a> {
         }
     }
 
-    /// Removes trailing whitespace from the line.
-    pub fn trim_end(&mut self) {
-        for i in (0..self.segments.len()).rev() {
-            let segment = &mut self.segments[i];
-            let width_before = segment.width;
-            segment.trim_end();
-            self.width -= width_before - segment.width;
-            if !segment.text.is_empty() {
+    /// Removes trailing whitespace, reusing `buffer` for split graphemes.
+    pub fn trim_end(&mut self, buffer: &mut String) {
+        let mut changed = false;
+        while let Some(segment) = self.segments.last_mut() {
+            let text = segment.text.trim_end();
+            changed |= text.len() != segment.text.len();
+            segment.text = text;
+            if !text.is_empty() {
                 break;
-            } else {
-                self.segments.pop();
             }
+            self.segments.pop();
+            changed = true;
+        }
+        if changed {
+            let len = self.segments.iter().map(|segment| segment.text.len()).sum();
+            self.width = assign_segment_widths(len, &mut self.segments, buffer);
         }
     }
 }
@@ -117,12 +121,6 @@ impl SegmentedStringLineSegment<'_> {
             width,
         }
     }
-
-    fn trim_end(&mut self) {
-        let text = self.text.trim_end();
-        self.width -= self.text[text.len()..].width();
-        self.text = text;
-    }
 }
 
 impl Display for SegmentedStringLineSegment<'_> {
@@ -133,22 +131,25 @@ impl Display for SegmentedStringLineSegment<'_> {
 
 type SegmentBoundary = (usize, usize, usize);
 
-fn segmented_grapheme_boundaries<'a>(
+fn next_segmented_grapheme_boundary<'a>(
     len: usize,
+    cursor: &mut GraphemeCursor,
+    position: &mut (usize, usize),
     chunk: impl Fn(usize) -> &'a str,
-) -> impl Iterator<Item = SegmentBoundary> {
-    let mut cursor = GraphemeCursor::new(0, len, true);
-    let (mut segment, mut start) = (0, 0);
-    std::iter::from_fn(move || loop {
-        match cursor.next_boundary(chunk(segment), start) {
-            Ok(Some(offset)) => return Some((segment, offset - start, offset)),
+) -> Option<SegmentBoundary> {
+    if len == 0 {
+        return None;
+    }
+    loop {
+        match cursor.next_boundary(chunk(position.0), position.1) {
+            Ok(Some(offset)) => return Some((position.0, offset - position.1, offset)),
             Ok(None) => return None,
             Err(GraphemeIncomplete::NextChunk) => {
-                start += chunk(segment).len();
-                segment += 1;
+                position.1 += chunk(position.0).len();
+                position.0 += 1;
             }
             Err(GraphemeIncomplete::PreContext(offset)) => {
-                let (mut context_segment, mut context_start) = (segment, start);
+                let (mut context_segment, mut context_start) = *position;
                 while context_start >= offset && context_segment > 0 {
                     context_segment -= 1;
                     context_start -= chunk(context_segment).len();
@@ -162,6 +163,17 @@ fn segmented_grapheme_boundaries<'a>(
                 unreachable!("forward grapheme cursor has a valid chunk: {incomplete:?}");
             }
         }
+    }
+}
+
+fn segmented_grapheme_boundaries<'a>(
+    len: usize,
+    chunk: impl Fn(usize) -> &'a str,
+) -> impl Iterator<Item = SegmentBoundary> {
+    let mut cursor = GraphemeCursor::new(0, len, true);
+    let mut position = (0, 0);
+    std::iter::from_fn(move || {
+        next_segmented_grapheme_boundary(len, &mut cursor, &mut position, &chunk)
     })
 }
 
@@ -200,6 +212,37 @@ fn grapheme_text<'a>(
         buffer.push_str(&segment.text[begin..end]);
     }
     buffer
+}
+
+fn assign_segment_widths(
+    len: usize,
+    segments: &mut [SegmentedStringLineSegment<'_>],
+    buffer: &mut String,
+) -> usize {
+    if let [segment] = segments {
+        segment.width = segment.text.width();
+        return segment.width;
+    }
+    for segment in segments.iter_mut() {
+        segment.width = 0;
+    }
+    let mut cursor = GraphemeCursor::new(0, len, true);
+    let mut position = (0, 0);
+    let mut start = (0, 0, 0);
+    let mut width = 0;
+    while let Some(end) =
+        next_segmented_grapheme_boundary(len, &mut cursor, &mut position, |i| segments[i].text)
+    {
+        while start.0 < end.0 && start.1 == segments[start.0].text.len() {
+            start.0 += 1;
+            start.1 = 0;
+        }
+        let grapheme_width = grapheme_text(segments, start, end, buffer).width();
+        segments[start.0].width += grapheme_width;
+        width += grapheme_width;
+        start = end;
+    }
+    width
 }
 
 impl<'a> SegmentedString<'a> {
@@ -278,7 +321,6 @@ impl<'a> SegmentedString<'a> {
         let mut lines = Vec::new();
         let mut current_line = SegmentedStringLine::default();
         let mut grapheme_buffer = String::new();
-        let mut segment_widths = Vec::new();
 
         let (mut start_segment_idx, mut start_char_idx) = (0, 0);
         for ((segment_idx, char_idx, offset), opportunity_type) in break_opportunities {
@@ -314,20 +356,11 @@ impl<'a> SegmentedString<'a> {
                 .iter()
                 .map(|segment| segment.text.len())
                 .sum();
-            if new_line_segments.len() > 1 {
-                segment_widths.clear();
-                segment_widths.resize(new_line_segments.len(), 0);
-                for (start, end) in segmented_graphemes(len, &new_line_segments) {
-                    let width =
-                        grapheme_text(&new_line_segments, start, end, &mut grapheme_buffer).width();
-                    segment_widths[start.0] += width;
-                }
-                for (segment, &width) in new_line_segments.iter_mut().zip(&segment_widths) {
-                    segment.width = width;
-                }
-            }
-
-            let new_line_segments_width: usize = new_line_segments.iter().map(|s| s.width).sum();
+            let new_line_segments_width = if new_line_segments.len() > 1 {
+                assign_segment_widths(len, &mut new_line_segments, &mut grapheme_buffer)
+            } else {
+                new_line_segments.first().map_or(0, |segment| segment.width)
+            };
 
             let trailing_whitespace_width: usize = new_line_segments
                 .iter()
@@ -463,6 +496,22 @@ impl<'a> FromIterator<&'a str> for SegmentedString<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_trimmed_split_grapheme_widths() {
+        let value: SegmentedString = ["\u{600}", " "].into_iter().collect();
+        let mut line = value.wrap(4).pop().unwrap();
+        line.trim_end(&mut String::new());
+        assert_eq!(line.to_string(), "\u{600}");
+        assert_eq!(line.width, "\u{600}".width());
+        assert_eq!(
+            line.segments
+                .iter()
+                .map(|segment| segment.width)
+                .sum::<usize>(),
+            line.width,
+        );
+    }
 
     #[test]
     fn test_soft_wrap_preserves_graphemes_across_segments() {
