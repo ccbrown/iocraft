@@ -161,17 +161,19 @@ impl Hook for UseTerminalEventsImpl {
                         {
                             continue;
                         }
-                        if event.row as i16 >= location.y && event.column as i16 >= location.x {
-                            let row = (event.row as i16 - location.y) as u16;
-                            let column = (event.column as i16 - location.x) as u16;
-                            if row < size.height && column < size.width {
-                                if let Some(f) = &mut self.f {
-                                    f(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
-                                        row,
-                                        column,
-                                        ..event
-                                    }));
-                                }
+                        let row = i32::from(event.row) - i32::from(location.y);
+                        let column = i32::from(event.column) - i32::from(location.x);
+                        if row >= 0
+                            && column >= 0
+                            && row < i32::from(size.height)
+                            && column < i32::from(size.width)
+                        {
+                            if let Some(f) = &mut self.f {
+                                f(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
+                                    row: row as u16,
+                                    column: column as u16,
+                                    ..event
+                                }));
                             }
                         }
                     }
@@ -298,6 +300,12 @@ mod tests {
     struct ClippedMouseTargetProps {
         #[iocraft(required)]
         hits: Arc<Mutex<Vec<(u16, u16)>>>,
+        #[iocraft(required)]
+        left: i32,
+        #[iocraft(required)]
+        width: i32,
+        #[iocraft(required)]
+        height: i32,
     }
 
     #[component]
@@ -318,7 +326,12 @@ mod tests {
             hooks.use_context_mut::<SystemContext>().exit();
         }
         element! {
-            View(position: Position::Absolute, left: -3, width: 10, height: 1)
+            View(
+                position: Position::Absolute,
+                left: props.left,
+                width: props.width,
+                height: props.height,
+            )
         }
     }
 
@@ -328,7 +341,7 @@ mod tests {
         element! {
             View(width: 10, height: 1) {
                 View(width: 4, height: 1, overflow: Overflow::Hidden) {
-                    ClippedMouseTarget(hits: hits.clone())
+                    ClippedMouseTarget(hits: hits.clone(), left: -3, width: 10, height: 1)
                 }
             }
         }
@@ -348,5 +361,36 @@ mod tests {
         .for_each(|_| async {})
         .await;
         assert_eq!(*hits.lock().unwrap(), vec![(3, 0)]);
+    }
+
+    #[apply(test!)]
+    async fn test_local_mouse_coordinates_do_not_wrap_at_i16_boundary() {
+        for (width, height, left, target_width, target_height, column, row, expected) in [
+            (1, 40001, -32768, 32769, 40001, 0, 40000, (32768, 40000)),
+            (40001, 1, 0, 40001, 1, 40000, 0, (40000, 0)),
+        ] {
+            let hits = Arc::new(Mutex::new(Vec::new()));
+            element! {
+                View(width: width, height: height, overflow: Overflow::Visible) {
+                    ClippedMouseTarget(
+                        hits: hits.clone(),
+                        left: left,
+                        width: target_width,
+                        height: target_height,
+                    )
+                }
+            }
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                    MouseEventKind::Down(MouseButton::Left),
+                    column,
+                    row,
+                )),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
+            ])))
+            .for_each(|_| async {})
+            .await;
+            assert_eq!(*hits.lock().unwrap(), vec![expected]);
+        }
     }
 }
