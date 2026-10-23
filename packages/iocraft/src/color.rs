@@ -146,8 +146,8 @@ impl Color {
 
 /// Serializes colors as strings such as `"red"`, `"ansi_(42)"`, or `"rgb_(1,2,3)"`.
 ///
-/// XXX: This format matches crossterm's so that data serialized before iocraft
-/// switched to its own `Color` type continues to round-trip. Don't change it.
+/// This format matches crossterm's so that data serialized before iocraft switched to its own
+/// `Color` type continues to round-trip.
 #[cfg(feature = "serde")]
 impl serde::Serialize for Color {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

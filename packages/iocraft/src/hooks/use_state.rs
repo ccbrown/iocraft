@@ -134,7 +134,7 @@ impl<T: 'static> ops::Deref for StateRef<'_, T> {
 
 /// A mutable reference to the value of a [`State`].
 pub struct StateMutRef<'a, T: 'static> {
-    inner: <SyncStorage as AnyStorage>::Mut<'a, StateValue<T>>,
+    inner: Option<<SyncStorage as AnyStorage>::Mut<'a, StateValue<T>>>,
     did_deref_mut: bool,
 }
 
@@ -142,24 +142,30 @@ impl<T: 'static> ops::Deref for StateMutRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner.value
+        &self.inner.as_ref().unwrap().value
     }
 }
 
 impl<T: 'static> ops::DerefMut for StateMutRef<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.did_deref_mut = true;
-        &mut self.inner.value
+        &mut self.inner.as_mut().unwrap().value
     }
 }
 
 impl<T: 'static> Drop for StateMutRef<'_, T> {
     fn drop(&mut self) {
-        if self.did_deref_mut {
-            self.inner.did_change = true;
-            if let Some(waker) = self.inner.waker.take() {
-                waker.wake();
+        let waker = {
+            let mut inner = self.inner.take().unwrap();
+            if self.did_deref_mut {
+                inner.did_change = true;
+                inner.waker.take()
+            } else {
+                None
             }
+        };
+        if let Some(waker) = waker {
+            waker.wake();
         }
     }
 }
@@ -202,7 +208,9 @@ impl<T: Sync + Send + 'static> State<T> {
     /// Sets the value of the state.
     pub fn set(&mut self, value: T) {
         if let Some(mut v) = self.try_write() {
-            *v = value;
+            let old = std::mem::replace(&mut *v, value);
+            drop(v);
+            drop(old);
         }
     }
 
@@ -265,7 +273,7 @@ impl<T: Sync + Send + 'static> State<T> {
     /// reference returned by this method exists.</div>
     pub fn try_write(&mut self) -> Option<StateMutRef<'_, T>> {
         self.inner.try_write().ok().map(|inner| StateMutRef {
-            inner,
+            inner: Some(inner),
             did_deref_mut: false,
         })
     }
@@ -448,5 +456,79 @@ mod tests {
         state -= 1;
         state *= 2;
         state /= 2;
+    }
+
+    #[test]
+    fn test_replaced_value_drop_can_read_replacement() {
+        use std::sync::{Arc, Mutex};
+
+        struct Value {
+            number: u32,
+            on_drop: Option<Box<dyn FnOnce() + Send + Sync>>,
+        }
+
+        impl Drop for Value {
+            fn drop(&mut self) {
+                if let Some(on_drop) = self.on_drop.take() {
+                    on_drop();
+                }
+            }
+        }
+
+        let observed = Arc::new(Mutex::new(None));
+        let mut hook = UseStateImpl::new(Value {
+            number: 1,
+            on_drop: None,
+        });
+        let mut state = hook.state;
+        let reader = state;
+        let on_drop_observed = observed.clone();
+        state.write().on_drop = Some(Box::new(move || {
+            *on_drop_observed.lock().unwrap() =
+                Some(reader.inner.try_read().ok().map(|value| value.value.number));
+        }));
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        let _ = Pin::new(&mut hook).poll_change(&mut cx);
+
+        state.set(Value {
+            number: 2,
+            on_drop: None,
+        });
+
+        assert_eq!(*observed.lock().unwrap(), Some(Some(2)));
+        assert_eq!(Pin::new(&mut hook).poll_change(&mut cx), Poll::Ready(()));
+        assert_eq!(Pin::new(&mut hook).poll_change(&mut cx), Poll::Pending);
+    }
+
+    #[test]
+    fn test_woken_consumer_can_read_changed_state() {
+        use std::{
+            sync::{mpsc, Arc},
+            task::Wake,
+            time::Duration,
+        };
+        struct ReadState {
+            state: State<u32>,
+            result: mpsc::Sender<u32>,
+        }
+        impl Wake for ReadState {
+            fn wake(self: Arc<Self>) {
+                self.result.send(self.state.get()).unwrap();
+            }
+        }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut owner = UseStateImpl::new(0u32);
+            let mut state = owner.state;
+            let waker = Waker::from(Arc::new(ReadState {
+                state,
+                result: sender,
+            }));
+            let mut cx = Context::from_waker(&waker);
+            assert!(Pin::new(&mut owner).poll_change(&mut cx).is_pending());
+            state.set(42);
+        });
+        assert_eq!(receiver.recv_timeout(Duration::from_secs(5)).unwrap(), 42);
     }
 }

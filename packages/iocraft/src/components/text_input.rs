@@ -57,6 +57,8 @@ impl TextInputHandle {
     /// Sets the cursor position to the specified offset.
     ///
     /// The offset is in bytes, not characters.
+    /// Offsets past the end are clamped to the value's length. An offset
+    /// inside a UTF-8 character is rounded down to that character's start.
     pub fn set_cursor_offset(&mut self, offset: usize) {
         if let Some(inner) = &mut self.inner {
             inner.requested_cursor_offset.set(Some(offset));
@@ -102,8 +104,7 @@ pub struct TextInputProps {
     pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
-    /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
-    /// Multiline paste preserves the original text.
+    /// If false, line breaks in pasted text are replaced with spaces.
     pub multiline: bool,
 
     /// If true (requires `multiline`), the input auto-grows its height to
@@ -328,6 +329,7 @@ impl Component for TextBufferView {
                 );
             }
         } else {
+            self.prev_row_count = 0;
             updater.set_layout_style(
                 LayoutStyle {
                     position: Position::Absolute,
@@ -350,7 +352,9 @@ impl Component for TextBufferView {
         }
         // Apply large buffer offsets while painting, not through 16-bit layout positions.
         let (cursor_row, cursor_col) = self.cursor_position;
-        if cursor_row >= self.scroll_offset_row + height {
+        if self.auto_grow {
+            self.scroll_offset_row = 0;
+        } else if cursor_row >= self.scroll_offset_row + height {
             self.scroll_offset_row = cursor_row - height + 1;
         } else if cursor_row < self.scroll_offset_row {
             self.scroll_offset_row = cursor_row;
@@ -372,6 +376,7 @@ impl Component for TextBufferView {
             canvas.clear_text(x, y, 1, 1);
             canvas.set_background_color(x, y, 1, 1, color);
         }
+        let x = -(self.scroll_offset_col as isize);
         for (y, line) in self
             .buffer
             .lines()
@@ -379,11 +384,13 @@ impl Component for TextBufferView {
             .take(height)
             .enumerate()
         {
-            canvas.set_text(
-                -(self.scroll_offset_col as isize),
+            canvas.set_text(x, y as isize, line, self.text_style);
+            canvas.set_hyperlink(
+                x,
                 y as isize,
-                line,
-                self.text_style,
+                self.buffer.rows[self.scroll_offset_row + y].width,
+                1,
+                None,
             );
         }
     }
@@ -394,8 +401,7 @@ impl Component for TextBufferView {
 /// It will fill the available width and display the current value. Typically, you will want to
 /// render it in a [`View`](crate::components::View) component of the desired text field size.
 ///
-/// Single-line values stay on one line and scroll horizontally to keep the cursor visible,
-/// even when their content is wider than the terminal's coordinate range.
+/// Single-line values scroll horizontally to keep the cursor visible.
 ///
 /// # Example
 ///
@@ -488,9 +494,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     }
 
     // Update the cursor position if the user requested it.
-    if let Some(requested) = requested_cursor_offset.get() {
+    if let Some(mut requested) = requested_cursor_offset.get() {
+        requested = requested.min(props.value.len());
+        while !props.value.is_char_boundary(requested) {
+            requested -= 1;
+        }
         if cursor_offset != requested {
-            cursor_offset.set(requested.min(props.value.len()));
+            cursor_offset.set(requested);
         }
         requested_cursor_offset.set(None);
     }
@@ -745,15 +755,112 @@ mod tests {
     use smol_macros::test;
     use std::sync::{Arc, Mutex};
 
+    #[derive(Props)]
+    struct AutoGrowToggleProps {
+        #[iocraft(required)]
+        state: Arc<Mutex<Option<State<bool>>>>,
+    }
+
+    #[component]
+    fn AutoGrowToggle(
+        mut hooks: Hooks,
+        props: &AutoGrowToggleProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let auto_grow = hooks.use_state(|| true);
+        *props.state.lock().unwrap() = Some(auto_grow);
+        element! {
+            View(width: 12, height: 5, flex_direction: FlexDirection::Column) {
+                Text(content: format!("auto={}", auto_grow.get()))
+                TextInput(value: "a\nb", multiline: true, auto_grow: auto_grow.get())
+                Text(content: "footer")
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_auto_grow_can_be_reenabled_without_changing_the_value() {
+        let state = Arc::new(Mutex::new(None));
+        let mut app = element!(AutoGrowToggle(state: state.clone()));
+        let mut output = app.mock_terminal_render_loop(Default::default());
+        for (step, expected_footer_row) in [3, 4, 3].into_iter().enumerate() {
+            if step > 0 {
+                let mut auto_grow = state.lock().unwrap().unwrap();
+                auto_grow.set(step == 2);
+            }
+            let frame = output.next().await.unwrap().to_string();
+            assert_eq!(
+                frame.lines().position(|line| line == "footer"),
+                Some(expected_footer_row),
+                "{frame:?}"
+            );
+        }
+    }
+
+    #[component]
+    fn ScrolledAutoGrowToggle(
+        mut hooks: Hooks,
+        props: &AutoGrowToggleProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let auto_grow = hooks.use_state(|| false);
+        *props.state.lock().unwrap() = Some(auto_grow);
+        element! {
+            View(width: 12, height: if auto_grow.get() { 3 } else { 1 }) {
+                TextInput(value: "a\nb\nc", multiline: true, auto_grow: auto_grow.get())
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_auto_grow_reveals_previously_scrolled_rows() {
+        let state = Arc::new(Mutex::new(None));
+        let mut app = element!(ScrolledAutoGrowToggle(state: state.clone()));
+        let mut output = app.mock_terminal_render_loop(Default::default());
+        assert_eq!(output.next().await.unwrap().to_string(), "c\n");
+
+        let mut auto_grow = state.lock().unwrap().unwrap();
+        auto_grow.set(true);
+        assert_eq!(output.next().await.unwrap().to_string(), "a\nb\nc\n");
+    }
+
+    #[test]
+    fn test_scrolled_input_clears_only_overlaid_hyperlinks() {
+        let url = "https://example.com/underlay";
+        let canvas = element! {
+            View(width: 6, height: 1, position: Position::Relative) {
+                Text(content: "uvwxyz", hyperlink: Some(url.to_owned()))
+                View(position: Position::Absolute, left: 1, top: 0, width: 3, height: 1) {
+                    TextInput(value: "abcdef")
+                }
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.to_string(), "uefxyz\n");
+        assert_eq!(canvas.cell(0, 0).unwrap().hyperlink.as_deref(), Some(url));
+        assert_eq!(canvas.cell(1, 0).unwrap().hyperlink, None);
+        assert_eq!(canvas.cell(2, 0).unwrap().hyperlink, None);
+        assert_eq!(canvas.cell(3, 0).unwrap().hyperlink.as_deref(), Some(url));
+    }
+
     #[derive(Default, Props)]
     struct MyComponentProps {
         initial_value: String,
+        requested_cursor_offset: Option<usize>,
     }
 
     #[component]
     fn MyComponent(mut hooks: Hooks, props: &MyComponentProps) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
         let mut value = hooks.use_state(|| props.initial_value.clone());
+        let mut handle = hooks.use_ref_default::<TextInputHandle>();
+        let requested_cursor_offset = props.requested_cursor_offset;
+        hooks.use_effect(
+            move || {
+                if let Some(offset) = requested_cursor_offset {
+                    handle.write().set_cursor_offset(offset);
+                }
+            },
+            (),
+        );
 
         if value.read().contains("!") {
             system.exit();
@@ -765,6 +872,7 @@ mod tests {
                     has_focus: true,
                     value: value.to_string(),
                     on_change: move |new_value| value.set(new_value),
+                    handle,
                 )
             }
         }
@@ -925,6 +1033,26 @@ mod tests {
                 .await;
 
             assert_eq!(actual, vec!["  \n", expected], "{pasted:?}");
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_text_input_requested_cursor_boundaries() {
+        for (offset, expected) in [(1, "!é界"), (2, "é!界"), (usize::MAX, "é界!")] {
+            let frames = element! {
+                MyComponent(initial_value: "é界", requested_cursor_offset: Some(offset))
+            }
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                vec![TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                ))],
+            )))
+            .map(|canvas| canvas.to_string())
+            .collect::<Vec<_>>()
+            .await;
+
+            assert_eq!(frames.last().unwrap().trim(), expected, "{offset}");
         }
     }
 
