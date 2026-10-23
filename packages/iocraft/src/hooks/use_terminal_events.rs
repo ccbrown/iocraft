@@ -103,7 +103,6 @@ pub trait UseTerminalEvents: private::Sealed {
     /// Unlike [`Self::use_terminal_events`], this hook ignores mouse events outside the component's
     /// visible area, including ancestor clipping. Coordinates are relative to the component's
     /// original, unclipped origin.
-    /// Negative origins and large unsigned dimensions do not truncate the local coordinates.
     fn use_local_terminal_events<F>(&mut self, f: F)
     where
         F: FnMut(TerminalEvent) + Send + 'static;
