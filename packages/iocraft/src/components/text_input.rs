@@ -346,7 +346,7 @@ impl Component for TextBufferView {
 #[derive(Default)]
 struct TextInputEditState {
     last_prop_value: String,
-    cursor_before_edits: Option<usize>,
+    cursor_on_rejection: Option<(usize, Option<u16>)>,
 }
 
 /// `TextInput` is a component that can receive text input from the user.
@@ -431,30 +431,35 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         (&props.value, max_text_width),
     );
 
-    let (prop_changed, cursor_before_edits) = {
+    let (prop_changed, cursor_on_rejection) = {
         let edit = edit_state.read();
         (
             edit.last_prop_value != props.value,
-            edit.cursor_before_edits,
+            edit.cursor_on_rejection,
         )
     };
     if props.value.as_str() != prev_value.read().as_str() {
         let new_cursor_offset = if prop_changed {
             new_cursor_offset(&prev_value.read(), cursor_offset.get(), &props.value)
+        } else if let Some((position, preference)) = cursor_on_rejection {
+            if vertical_movement_col_preference.get() != preference {
+                vertical_movement_col_preference.set(preference);
+            }
+            position
         } else {
-            cursor_before_edits.unwrap_or_else(|| cursor_offset.get())
+            cursor_offset.get()
         };
         if cursor_offset != new_cursor_offset {
             cursor_offset.set(new_cursor_offset);
         }
         prev_value.set(props.value.clone());
     }
-    if prop_changed || cursor_before_edits.is_some() {
+    if prop_changed || cursor_on_rejection.is_some() {
         let mut edit = edit_state.write();
         if prop_changed {
             edit.last_prop_value.clone_from(&props.value);
         }
-        edit.cursor_before_edits = None;
+        edit.cursor_on_rejection = None;
     }
 
     // Update the cursor position if the user requested it.
@@ -506,7 +511,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         let mut buffer = buffer.clone();
         let mut buffer_width = max_text_width;
         let mut buffer_dirty = false;
-        let mut has_pending_edit = false;
+        let mut rejection_buffer: Option<(Arc<TextBuffer>, u16)> = None;
         let mut on_change = props.on_change.take();
         move |event| {
             if !has_focus {
@@ -627,23 +632,33 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     buffer_width = current_width;
                     buffer_dirty = false;
                 }
-                position = match movement {
-                    CursorMovement::Left => buffer.left_of_offset(position),
-                    CursorMovement::Right => buffer.right_of_offset(position),
-                    CursorMovement::Home => buffer.row_start_offset(position),
-                    CursorMovement::End => buffer.row_end_offset(position),
-                    CursorMovement::Up | CursorMovement::Down => {
-                        if vertical_movement_col_preference.get().is_none() {
-                            let (_, col) = buffer.row_column_for_offset(position);
-                            vertical_movement_col_preference.set(Some(col));
-                        }
-                        if matches!(movement, CursorMovement::Up) {
-                            buffer.above_offset(position, vertical_movement_col_preference.get())
-                        } else {
-                            buffer.below_offset(position, vertical_movement_col_preference.get())
-                        }
+                let mut preference = vertical_movement_col_preference.get();
+                position = cursor_after_movement(&buffer, position, movement, &mut preference);
+                if vertical_movement_col_preference.get() != preference {
+                    vertical_movement_col_preference.set(preference);
+                }
+                if let Some((original_buffer, original_width)) = rejection_buffer.as_mut() {
+                    if *original_width != current_width {
+                        *original_buffer = Arc::new(TextBuffer::new(
+                            original_buffer.text.clone(),
+                            current_width as _,
+                        ));
+                        *original_width = current_width;
                     }
-                };
+                    let cursor = edit_state.read().cursor_on_rejection;
+                    if let Some((position, mut preference)) = cursor {
+                        let position = cursor_after_movement(
+                            original_buffer,
+                            position,
+                            movement,
+                            &mut preference,
+                        );
+                        if clear_vertical_preference {
+                            preference = None;
+                        }
+                        edit_state.write().cursor_on_rejection = Some((position, preference));
+                    }
+                }
             }
             if clear_vertical_preference {
                 vertical_movement_col_preference.set(None);
@@ -652,9 +667,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 cursor_offset.set(position);
             }
             if let Some(value) = changed_value {
-                if buffer_dirty && !has_pending_edit {
-                    edit_state.write().cursor_before_edits = Some(old_position);
-                    has_pending_edit = true;
+                if buffer_dirty && rejection_buffer.is_none() {
+                    edit_state.write().cursor_on_rejection = Some((old_position, None));
+                    rejection_buffer = Some((buffer.clone(), buffer_width));
+                } else if let Some((_, preference)) =
+                    edit_state.write().cursor_on_rejection.as_mut()
+                {
+                    *preference = None;
                 }
                 on_change(value);
             }
@@ -693,6 +712,31 @@ enum CursorMovement {
     Down,
     Home,
     End,
+}
+
+fn cursor_after_movement(
+    buffer: &TextBuffer,
+    position: usize,
+    movement: CursorMovement,
+    col_preference: &mut Option<u16>,
+) -> usize {
+    match movement {
+        CursorMovement::Left => buffer.left_of_offset(position),
+        CursorMovement::Right => buffer.right_of_offset(position),
+        CursorMovement::Home | CursorMovement::End if buffer.text.is_empty() => 0,
+        CursorMovement::Home => buffer.row_start_offset(position),
+        CursorMovement::End => buffer.row_end_offset(position),
+        CursorMovement::Up | CursorMovement::Down => {
+            if col_preference.is_none() {
+                *col_preference = Some(buffer.row_column_for_offset(position).1);
+            }
+            if matches!(movement, CursorMovement::Up) {
+                buffer.above_offset(position, *col_preference)
+            } else {
+                buffer.below_offset(position, *col_preference)
+            }
+        }
+    }
 }
 
 fn normalize_single_line_paste(data: String) -> String {
@@ -772,6 +816,8 @@ mod tests {
         requested_cursor_offset: Option<usize>,
         uppercase: bool,
         reject_shrinking_changes: bool,
+        reject_character: Option<char>,
+        multiline: bool,
     }
 
     #[component]
@@ -782,6 +828,7 @@ mod tests {
         let requested_cursor_offset = props.requested_cursor_offset;
         let uppercase = props.uppercase;
         let reject_shrinking_changes = props.reject_shrinking_changes;
+        let reject_character = props.reject_character;
         hooks.use_effect(
             move || {
                 if let Some(offset) = requested_cursor_offset {
@@ -796,17 +843,19 @@ mod tests {
         }
 
         element! {
-            View(height: 1, width: 11, padding_left: 1) {
+            View(height: if props.multiline { 3 } else { 1 }, width: 11, padding_left: 1) {
                 TextInput(
                     has_focus: true,
                     value: value.to_string(),
                     on_change: move |new_value: String| {
-                        let accept = !reject_shrinking_changes || new_value.len() >= value.read().len();
+                        let accept = (!reject_shrinking_changes || new_value.len() >= value.read().len())
+                            && reject_character.is_none_or(|c| !new_value.contains(c));
                         if accept {
                             value.set(if uppercase { new_value.to_uppercase() } else { new_value });
                         }
                     },
                     handle,
+                    multiline: props.multiline,
                 )
             }
         }
@@ -1161,6 +1210,119 @@ mod tests {
                     )))
                     .unwrap();
                 assert_eq!(frames.next().await.unwrap().to_string().trim(), "a!aa");
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("controlled TextInput did not redraw");
+            },
+        )
+        .await;
+    }
+
+    #[component]
+    fn NavigationRejectionApp(
+        mut hooks: Hooks,
+        props: &MyComponentProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let mut event_count = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |_| event_count += 1);
+        // A rejected update must yield a frame even when the input looks unchanged.
+        element! {
+            View(flex_direction: FlexDirection::Column) {
+                MyComponent(
+                    initial_value: props.initial_value.clone(),
+                    reject_shrinking_changes: props.reject_shrinking_changes,
+                    reject_character: props.reject_character,
+                    multiline: props.multiline,
+                )
+                Text(content: event_count.to_string())
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_navigation_after_rejected_edit_survives_redraw() {
+        smol::future::or(
+            async {
+                for (initial, edit, movement, multiline, next_movement, expected) in [
+                    (
+                        "abc",
+                        KeyCode::Backspace,
+                        KeyCode::Home,
+                        false,
+                        None,
+                        "!abc",
+                    ),
+                    (
+                        "abc",
+                        KeyCode::Char('x'),
+                        KeyCode::Home,
+                        false,
+                        None,
+                        "!abc",
+                    ),
+                    ("", KeyCode::Char('x'), KeyCode::Home, false, None, "!"),
+                    (
+                        "abc",
+                        KeyCode::Backspace,
+                        KeyCode::Left,
+                        false,
+                        None,
+                        "ab!c",
+                    ),
+                    (
+                        "ab\ncdef",
+                        KeyCode::Backspace,
+                        KeyCode::Up,
+                        true,
+                        Some(KeyCode::Down),
+                        "ab\ncdef!",
+                    ),
+                ] {
+                    let (sender, events) = futures::channel::mpsc::unbounded();
+                    let mut app = element!(NavigationRejectionApp(
+                        initial_value: initial,
+                        reject_shrinking_changes: true,
+                        reject_character: Some('x'),
+                        multiline,
+                    ));
+                    let frames =
+                        app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                    futures::pin_mut!(frames);
+                    frames.next().await.unwrap();
+                    for code in [edit, movement] {
+                        sender
+                            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                                KeyEventKind::Press,
+                                code,
+                            )))
+                            .unwrap();
+                    }
+                    let height = if multiline { 3 } else { 1 };
+                    let frame = frames.next().await.unwrap();
+                    assert_eq!(frame.get_text(1, 0, 10, height).trim_end(), initial);
+                    if let Some(code) = next_movement {
+                        sender
+                            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                                KeyEventKind::Press,
+                                code,
+                            )))
+                            .unwrap();
+                        frames.next().await.unwrap();
+                    }
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            KeyCode::Char('!'),
+                        )))
+                        .unwrap();
+                    let frame = frames.next().await.unwrap();
+                    assert_eq!(
+                        frame.get_text(1, 0, 10, height).trim_end(),
+                        expected,
+                        "{edit:?} then {movement:?}"
+                    );
+                }
             },
             async {
                 smol::Timer::after(std::time::Duration::from_secs(5)).await;
