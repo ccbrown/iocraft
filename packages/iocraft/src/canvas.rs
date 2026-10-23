@@ -141,13 +141,13 @@ impl Canvas {
     /// coordinates are clamped silently.
     pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
         let mut lines = Vec::with_capacity(h);
-        for row_idx in y..y + h {
-            let Some(row) = self.cells.get(row_idx) else {
+        for offset in 0..h {
+            let Some(row) = y.checked_add(offset).and_then(|row| self.cells.get(row)) else {
                 lines.push(String::new());
                 continue;
             };
             let start = x.min(row.len());
-            let end = (x + w).min(row.len());
+            let end = x.saturating_add(w).min(row.len());
             let slice = &row[start..end];
             let last_non_empty = slice.iter().rposition(|cell| cell.character.is_some());
             let trim_end = match last_non_empty {
@@ -171,6 +171,7 @@ impl Canvas {
                     }
                 }
             }
+            s.truncate(s.trim_end().len());
             lines.push(s);
         }
         lines.join(
@@ -333,6 +334,23 @@ impl Canvas {
         self.width == other.width && self.row(y) == other.row(y)
     }
 
+    fn write_hyperlink<W: Write>(w: &mut W, url: &str) -> io::Result<()> {
+        w.write_all(b"\x1b]8;;")?;
+        let mut start = 0;
+        for (index, character) in url.char_indices() {
+            if character.is_control() {
+                w.write_all(&url.as_bytes()[start..index])?;
+                let mut bytes = [0; 4];
+                for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                    write!(w, "%{byte:02X}")?;
+                }
+                start = index + character.len_utf8();
+            }
+        }
+        w.write_all(&url.as_bytes()[start..])?;
+        w.write_all(b"\x1b\\")
+    }
+
     /// Writes a single row.
     ///
     /// In ANSI mode the caller must ensure that SGR state is reset (e.g. via
@@ -437,7 +455,7 @@ impl Canvas {
             if ansi && cell.hyperlink != hyperlink {
                 // OSC 8: close the previous link, then open the new one (if any).
                 match &cell.hyperlink {
-                    Some(url) => write!(w, "\x1b]8;;{}\x1b\\", url)?,
+                    Some(url) => Self::write_hyperlink(&mut w, url)?,
                     None => write!(w, "\x1b]8;;\x1b\\")?,
                 }
                 hyperlink = cell.hyperlink.clone();
@@ -550,106 +568,64 @@ pub struct CanvasSubviewMut<'a> {
 }
 
 impl CanvasSubviewMut<'_> {
+    // Widen before adding: a valid clipped region need not fit in isize.
+    fn clipped_rect(&self, x: isize, y: isize, w: usize, h: usize) -> (usize, usize, usize, usize) {
+        let left = self.x as i128 + x as i128;
+        let top = self.y as i128 + y as i128;
+        let width = self.canvas.width() as i128;
+        let height = self.canvas.height() as i128;
+        let start_x = left.max(self.clip_x as i128).clamp(0, width);
+        let start_y = top.max(self.clip_y as i128).clamp(0, height);
+        let end_x = (left + w as i128)
+            .min(self.clip_x as i128 + self.clip_width as i128)
+            .clamp(start_x, width);
+        let end_y = (top + h as i128)
+            .min(self.clip_y as i128 + self.clip_height as i128)
+            .clamp(start_y, height);
+        (
+            start_x as usize,
+            start_y as usize,
+            (end_x - start_x) as usize,
+            (end_y - start_y) as usize,
+        )
+    }
+
     /// Returns a reference to a cell at the given **relative** subview position.
     ///
     /// Returns `None` if the resulting absolute position is out of bounds or
     /// outside the clip region.
     pub fn cell(&self, x: isize, y: isize) -> Option<&CanvasCell> {
-        let abs_x = self.x + x;
-        let abs_y = self.y + y;
-        if abs_x < self.clip_x
-            || abs_y < self.clip_y
-            || abs_x < 0
-            || abs_y < 0
-            || abs_x >= self.clip_x + self.clip_width as isize
-            || abs_y >= self.clip_y + self.clip_height as isize
-        {
+        let (x, y, w, h) = self.clipped_rect(x, y, 1, 1);
+        if w == 0 || h == 0 {
             return None;
         }
-        self.canvas.cell(abs_x as usize, abs_y as usize)
+        self.canvas.cell(x, y)
     }
 
     /// Extracts plain text from a rectangular region using **relative** subview
     /// coordinates. The region is clamped to the clip bounds.
     pub fn get_text(&self, x: isize, y: isize, w: usize, h: usize) -> String {
-        let mut left = self.x + x;
-        let mut top = self.y + y;
-        let mut right = left + w as isize;
-        let mut bottom = top + h as isize;
-
-        left = left.max(self.clip_x).max(0);
-        top = top.max(self.clip_y).max(0);
-        right = right.min(self.clip_x + self.clip_width as isize).max(0);
-        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
-
-        self.canvas.get_text(
-            left as _,
-            top as _,
-            (right - left).max(0) as _,
-            (bottom - top).max(0) as _,
-        )
+        let (x, y, w, h) = self.clipped_rect(x, y, w, h);
+        self.canvas.get_text(x, y, w, h)
     }
 
     /// Fills the region with the given color.
     pub fn set_background_color(&mut self, x: isize, y: isize, w: usize, h: usize, color: Color) {
-        let mut left = self.x + x;
-        let mut top = self.y + y;
-        let mut right = left + w as isize;
-        let mut bottom = top + h as isize;
-
-        left = left.max(self.clip_x).max(0);
-        top = top.max(self.clip_y).max(0);
-        right = right.min(self.clip_x + self.clip_width as isize).max(0);
-        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
-
-        self.canvas.set_background_color(
-            left as _,
-            top as _,
-            (right - left).max(0) as _,
-            (bottom - top).max(0) as _,
-            color,
-        );
+        let (x, y, w, h) = self.clipped_rect(x, y, w, h);
+        self.canvas.set_background_color(x, y, w, h, color);
     }
 
     /// Sets the OSC 8 hyperlink for a rectangular region.
+    /// Control characters in the target are percent-encoded when written as ANSI.
     pub fn set_hyperlink(&mut self, x: isize, y: isize, w: usize, h: usize, url: Option<Arc<str>>) {
-        let mut left = self.x + x;
-        let mut top = self.y + y;
-        let mut right = left + w as isize;
-        let mut bottom = top + h as isize;
-
-        left = left.max(self.clip_x).max(0);
-        top = top.max(self.clip_y).max(0);
-        right = right.min(self.clip_x + self.clip_width as isize).max(0);
-        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
-
-        self.canvas.set_hyperlink(
-            left as _,
-            top as _,
-            (right - left).max(0) as _,
-            (bottom - top).max(0) as _,
-            url,
-        );
+        let (x, y, w, h) = self.clipped_rect(x, y, w, h);
+        self.canvas.set_hyperlink(x, y, w, h, url);
     }
 
     /// Removes text from the region.
     pub fn clear_text(&mut self, x: isize, y: isize, w: usize, h: usize) {
-        let mut left = self.x + x;
-        let mut top = self.y + y;
-        let mut right = left + w as isize;
-        let mut bottom = top + h as isize;
-
-        left = left.max(self.clip_x).max(0);
-        top = top.max(self.clip_y).max(0);
-        right = right.min(self.clip_x + self.clip_width as isize).max(0);
-        bottom = bottom.min(self.clip_y + self.clip_height as isize).max(0);
-
-        self.canvas.clear_text(
-            left as _,
-            top as _,
-            (right - left).max(0) as _,
-            (bottom - top).max(0) as _,
-        );
+        let (x, y, w, h) = self.clipped_rect(x, y, w, h);
+        self.canvas.clear_text(x, y, w, h);
     }
 
     /// Writes text to the region.
@@ -658,16 +634,25 @@ impl CanvasSubviewMut<'_> {
     /// A zero-width prefix can extend the preceding glyph inside the clip, retaining its style
     /// without widening its occupied cell span.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
-        let x = self.x + x;
+        let Ok(x) = isize::try_from(self.x as i128 + x as i128) else {
+            return;
+        };
         let min_x = self.clip_x.max(0);
-        let max_x = (self.clip_x + self.clip_width as isize).min(self.canvas.width() as isize);
+        let max_x = (self.clip_x as i128 + self.clip_width as i128).min(self.canvas.width() as i128)
+            as isize;
         if max_x <= min_x {
             return;
         }
-        let min_y = self.clip_y.max(0);
-        let max_y = (self.clip_y + self.clip_height as isize).min(self.canvas.height() as _) - 1;
-        for (y, line) in (self.y + y..).zip(text.lines()) {
-            if y >= min_y && y <= max_y {
+        let min_y = self.clip_y.max(0) as i128;
+        let max_y =
+            (self.clip_y as i128 + self.clip_height as i128).min(self.canvas.height() as i128);
+        let start_y = self.y as i128 + y as i128;
+        for (offset, line) in text.lines().enumerate() {
+            let y = start_y + offset as i128;
+            if y >= max_y {
+                break;
+            }
+            if y >= min_y {
                 self.canvas
                     .set_text_row(x, y as usize, line, style, min_x..max_x);
             }
@@ -1422,5 +1407,63 @@ line two
         write!(expected1, csi!("K")).unwrap();
         write!(expected1, csi!("0m")).unwrap();
         assert_eq!(row1, expected1);
+    }
+    #[test]
+    fn test_extraction_trims_stored_whitespace_without_trimming_the_start() {
+        let mut canvas = Canvas::new(12, 2);
+        canvas.subview_mut(0, 0, 0, 0, 12, 2).set_text(
+            0,
+            0,
+            " a \u{2003}\n   ",
+            CanvasTextStyle::default(),
+        );
+        assert_eq!(canvas.get_text(0, 0, 12, 2), " a\n");
+    }
+
+    #[test]
+    fn test_extreme_rectangles_clip_before_narrowing() {
+        let mut canvas = Canvas::new(2, 1);
+        assert_eq!(canvas.get_text(usize::MAX, 0, 1, 1), "");
+        assert_eq!(canvas.get_text(0, usize::MAX, 1, 2), "\n");
+        let mut view = canvas.subview_mut(0, 0, 0, 0, usize::MAX, usize::MAX);
+        view.set_text(0, 0, "ok", CanvasTextStyle::default());
+        view.set_background_color(0, 0, usize::MAX, usize::MAX, Color::Blue);
+        assert_eq!(view.get_text(0, 0, usize::MAX, 1), "ok");
+        assert_eq!(view.cell(1, 0).unwrap().background_color, Some(Color::Blue));
+        view.clear_text(isize::MAX, 0, usize::MAX, 1);
+        assert_eq!(view.get_text(0, 0, 2, 1), "ok");
+        let mut negative = canvas.subview_mut(isize::MIN, 0, 0, 0, 2, 1);
+        negative.set_background_color(isize::MIN, 0, usize::MAX, 1, Color::Red);
+        negative.set_text(isize::MIN, 0, "bad", CanvasTextStyle::default());
+        assert_eq!(
+            canvas.cell(0, 0).unwrap().background_color,
+            Some(Color::Blue)
+        );
+        assert_eq!(canvas.get_text(0, 0, 2, 1), "ok");
+        assert_eq!(
+            canvas.subview_mut(1, 0, 0, 0, 2, 1).cell(isize::MAX, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn test_hyperlink_controls_cannot_terminate_the_osc() {
+        let mut canvas = Canvas::new(5, 1);
+        let mut view = canvas.subview_mut(0, 0, 0, 0, 5, 1);
+        view.set_text(0, 0, "label", CanvasTextStyle::default());
+        view.set_hyperlink(
+            0,
+            0,
+            5,
+            1,
+            Some(Arc::from("https://example.test/\x1b\\\x1b[31m\u{7}\u{9b}")),
+        );
+        let mut output = Vec::new();
+        canvas.write_ansi(&mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("\x1b]8;;https://example.test/%1B\\%1B[31m%07%C2%9B\x1b\\"));
+        assert!(!output.contains("\x1b[31m"));
+        assert!(!output.contains('\u{7}'));
+        assert_eq!(canvas.get_text(0, 0, 5, 1), "label");
     }
 }
