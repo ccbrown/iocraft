@@ -9,6 +9,7 @@ To run any of the examples, use `cargo run --example NAME`. For example, to run 
 |Example|Preview|
 |---|:---:|
 |[borders.rs](./borders.rs)<br />Showcases various border styles.|![preview](./images/borders.png)|
+|[bubbling_events.rs](./bubbling_events.rs)<br />Dispatches typed events from a child to its parent; consumes selected events locally.|Run with `+`, `-`, `x`, and `q`.|
 |[calculator.rs](./calculator.rs)<br />Uses clickable buttons to provide a calculator app with light/dark mode themes.|![preview](./images/calculator.png)|
 |[context.rs](./context.rs)<br />Demonstrates using a custom context via `ContextProvider` and `use_context`.|![preview](./images/context.png)|
 |[counter.rs](./counter.rs)<br />Renders a dynamic component which spawns a future to increment a counter every 100ms.|![preview](./images/counter.png)|
