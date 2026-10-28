@@ -583,6 +583,14 @@ impl TerminalBackend for CrosstermBackend<'_> {
             let top_row = self.prev_canvas_top_row;
             let max_height = prev.height().max(canvas.height());
             for y in 0..max_height {
+                // XXX: Terminals clamp rows below the screen onto the last row, so writing them
+                // would overwrite the visible bottom row.
+                if self
+                    .size
+                    .is_some_and(|(_, height)| usize::from(top_row) + y >= usize::from(height))
+                {
+                    break;
+                }
                 if prev.row_eq(canvas, y) {
                     continue;
                 }
@@ -2122,5 +2130,107 @@ mod tests {
         assert_eq!(vt.line(2).text(), "row2      ");
         assert_eq!(vt.line(3).text(), "row3      ");
         assert_eq!(vt.line(4).text(), "FOOTER    ");
+    }
+
+    // A cached canvas may still be taller after the backend observes a resize.
+    fn fullscreen_shrink_canvases() -> (Canvas, Canvas, Canvas) {
+        assert_eq!(unicode_width::UnicodeWidthStr::width("╰────────╯"), 10);
+        fn canvas(height: usize, bottom: &str) -> Canvas {
+            let mut canvas = Canvas::new(10, height);
+            let mut view = canvas.subview_mut(0, 0, 0, 0, 10, height);
+            for (row, text) in [(0, "TITLE"), (1, "body"), (2, "FOOTER"), (3, bottom)] {
+                view.set_text(0, row, text, CanvasTextStyle::default());
+            }
+            if height > 4 {
+                view.set_text(0, 4, "old tail4", CanvasTextStyle::default());
+                view.set_text(0, 5, "old tail5", CanvasTextStyle::default());
+            }
+            canvas
+        }
+        (
+            canvas(6, "old bottom"),
+            canvas(4, "╰────────╯"),
+            canvas(4, "old bottom"),
+        )
+    }
+
+    fn fullscreen_shrink_terminal(
+        previous_size: (u16, u16),
+    ) -> (CrosstermBackend<'static>, Arc<Mutex<Vec<u8>>>) {
+        let (writer, bytes) = new_test_writer();
+        let mut terminal = new_fullscreen_term(writer, 0, 6);
+        terminal.size = Some((10, 4));
+        terminal.prev_size_on_write = Some(previous_size);
+        (terminal, bytes)
+    }
+
+    fn fullscreen_shrink_vt(seed: &Canvas) -> avt::Vt {
+        let mut bytes = Vec::new();
+        seed.write_ansi_without_final_newline(&mut bytes).unwrap();
+        let mut vt = avt::Vt::new(10, 4);
+        vt.feed_str(&String::from_utf8(bytes).unwrap());
+        vt
+    }
+
+    fn fullscreen_shrink_feed(vt: &mut avt::Vt, bytes: &Arc<Mutex<Vec<u8>>>) {
+        let bytes = std::mem::take(&mut *bytes.lock().unwrap());
+        vt.feed_str(&String::from_utf8(bytes).unwrap());
+    }
+
+    fn fullscreen_shrink_assert_border(vt: &avt::Vt) {
+        assert_eq!(vt.line(0).text(), "TITLE     ");
+        assert_eq!(vt.line(2).text(), "FOOTER    ");
+        assert_eq!(
+            vt.line(3).text(),
+            "╰────────╯",
+            "actual VT must retain bottom border"
+        );
+    }
+
+    #[test]
+    fn fullscreen_shrink_regression_retains_bottom_after_stale_tall_canvas() {
+        let (previous, next, seed) = fullscreen_shrink_canvases();
+        let (mut terminal, bytes) = fullscreen_shrink_terminal((10, 4));
+        let mut vt = fullscreen_shrink_vt(&seed);
+        terminal.write_canvas(Some(&previous), &next).unwrap();
+        fullscreen_shrink_feed(&mut vt, &bytes);
+        fullscreen_shrink_assert_border(&vt);
+        // This persistence assertion is only reached once the shrink passes.
+        terminal.write_canvas(Some(&next), &next).unwrap();
+        fullscreen_shrink_feed(&mut vt, &bytes);
+        fullscreen_shrink_assert_border(&vt);
+    }
+
+    #[test]
+    fn fullscreen_shrink_control_size_change_full_rewrite() {
+        let (previous, next, seed) = fullscreen_shrink_canvases();
+        let (mut terminal, bytes) = fullscreen_shrink_terminal((10, 6));
+        let mut vt = fullscreen_shrink_vt(&seed);
+        terminal.write_canvas(Some(&previous), &next).unwrap();
+        fullscreen_shrink_feed(&mut vt, &bytes);
+        fullscreen_shrink_assert_border(&vt);
+    }
+
+    #[test]
+    fn fullscreen_shrink_control_equal_height_diff() {
+        let (_, next, seed) = fullscreen_shrink_canvases();
+        let (mut terminal, bytes) = fullscreen_shrink_terminal((10, 4));
+        terminal.prev_canvas_height = 4;
+        let mut vt = fullscreen_shrink_vt(&seed);
+        terminal.write_canvas(Some(&seed), &next).unwrap();
+        fullscreen_shrink_feed(&mut vt, &bytes);
+        fullscreen_shrink_assert_border(&vt);
+    }
+
+    #[test]
+    fn fullscreen_shrink_control_explicit_full_rewrite_recovery() {
+        let (previous, next, seed) = fullscreen_shrink_canvases();
+        let (mut terminal, bytes) = fullscreen_shrink_terminal((10, 4));
+        let mut vt = fullscreen_shrink_vt(&seed);
+        terminal.write_canvas(Some(&previous), &next).unwrap();
+        fullscreen_shrink_feed(&mut vt, &bytes);
+        terminal.write_canvas(None, &next).unwrap();
+        fullscreen_shrink_feed(&mut vt, &bytes);
+        fullscreen_shrink_assert_border(&vt);
     }
 }
