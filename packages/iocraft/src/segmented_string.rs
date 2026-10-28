@@ -71,7 +71,7 @@ impl<'a> SegmentedStringLine<'a> {
         }
     }
 
-    /// Removes trailing whitespace, reusing `buffer` for split graphemes.
+    /// Removes trailing whitespace from the line.
     pub fn trim_end(&mut self, buffer: &mut String) {
         let mut changed = false;
         while let Some(segment) = self.segments.last_mut() {
