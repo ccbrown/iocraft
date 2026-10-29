@@ -2,7 +2,7 @@ use crate::{
     component,
     components::{TextDecoration, TextDrawer, TextWrap, View},
     element,
-    hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
+    hooks::{Ref, State, UseMemo, UseRef, UseState, UseTerminalEvents},
     segmented_string::SegmentedString,
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, HandlerMut,
     Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
@@ -101,6 +101,7 @@ pub struct TextInputProps {
     pub has_focus: bool,
 
     /// The handler to invoke when the value changes.
+    /// The parent controls `value` and may normalize or reject each change.
     pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
@@ -119,24 +120,25 @@ pub struct TextInputProps {
 }
 
 trait UseSize<'a> {
-    fn use_size(&mut self) -> (u16, u16);
+    fn use_size(&mut self) -> Ref<(u16, u16)>;
 }
 
 impl<'a> UseSize<'a> for Hooks<'a, '_> {
-    fn use_size(&mut self) -> (u16, u16) {
-        self.use_hook(UseSizeImpl::default).size
+    fn use_size(&mut self) -> Ref<(u16, u16)> {
+        let size = self.use_ref_default::<(u16, u16)>();
+        self.use_hook(|| UseSizeImpl { size });
+        size
     }
 }
 
-#[derive(Default)]
 struct UseSizeImpl {
-    size: (u16, u16),
+    size: Ref<(u16, u16)>,
 }
 
 impl Hook for UseSizeImpl {
     fn pre_component_draw(&mut self, drawer: &mut ComponentDrawer) {
         let s = drawer.size();
-        self.size = (s.width, s.height);
+        self.size.set((s.width, s.height));
     }
 }
 
@@ -342,10 +344,215 @@ impl Component for TextBufferView {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CursorAnchor {
+    position: usize,
+    action_index: usize,
+}
+
+#[derive(Clone, Copy)]
+enum TextEdit {
+    Insert { offset: usize, len: usize },
+    Remove { offset: usize, character: char },
+}
+
+impl TextEdit {
+    fn undo(self, value: &mut String) {
+        match self {
+            Self::Insert { offset, len } => value.replace_range(offset..offset + len, ""),
+            Self::Remove { offset, character } => value.insert(offset, character),
+        }
+    }
+}
+
+struct CursorCheckpoint {
+    edit: TextEdit,
+    anchor: CursorAnchor,
+    unchanged_head: usize,
+    unchanged_tail: usize,
+}
+
+impl CursorCheckpoint {
+    fn changed_range(&self, initial: &str, value: &str) -> Option<(usize, usize)> {
+        // The untouched edges do not need to be compared again.
+        changed_byte_range(
+            &initial[self.unchanged_head..initial.len() - self.unchanged_tail],
+            &value[self.unchanged_head..value.len() - self.unchanged_tail],
+        )
+        .map(|(start, end)| (self.unchanged_head + start, self.unchanged_head + end))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CursorAction {
+    Move(CursorMovement),
+    ClearPreference,
+}
+
+#[derive(Default)]
+struct TextInputEditState {
+    last_prop_value: String,
+    cursor_on_rejection: Option<(usize, Option<u16>)>,
+    latest_edit: Option<CursorCheckpoint>,
+    checkpoints: Vec<CursorCheckpoint>,
+    actions: Vec<CursorAction>,
+}
+
+impl TextInputEditState {
+    fn record_edit(
+        &mut self,
+        edit: TextEdit,
+        before_position: usize,
+        position: usize,
+        value_len: usize,
+    ) {
+        let (head, tail) = if let Some(previous) = &self.latest_edit {
+            (previous.unchanged_head, previous.unchanged_tail)
+        } else {
+            self.cursor_on_rejection = Some((before_position, None));
+            (self.last_prop_value.len(), self.last_prop_value.len())
+        };
+        let (offset, end) = match edit {
+            TextEdit::Insert { offset, len } => (offset, offset + len),
+            TextEdit::Remove { offset, .. } => (offset, offset),
+        };
+        let checkpoint = CursorCheckpoint {
+            edit,
+            anchor: CursorAnchor {
+                position,
+                action_index: self.actions.len(),
+            },
+            unchanged_head: head.min(offset),
+            unchanged_tail: tail.min(value_len - end),
+        };
+        if let Some(previous) = self.latest_edit.replace(checkpoint) {
+            self.checkpoints.push(previous);
+        }
+    }
+
+    fn record_movement(&mut self, movement: CursorMovement) {
+        if self.latest_edit.is_some() {
+            self.actions.push(CursorAction::Move(movement));
+        }
+    }
+
+    fn clear_preference(&mut self) {
+        if matches!(
+            self.actions.last(),
+            Some(CursorAction::Move(
+                CursorMovement::Up | CursorMovement::Down
+            ))
+        ) {
+            self.actions.push(CursorAction::ClearPreference);
+        }
+    }
+
+    fn accepted_anchor(
+        &self,
+        pending_value: &str,
+        accepted_value: &str,
+        prop_changed: bool,
+    ) -> Option<CursorAnchor> {
+        if self.checkpoints.is_empty() {
+            return None;
+        }
+        let latest = self.latest_edit.as_ref()?;
+        let mut value = pending_value.to_owned();
+        let accepted_range = if prop_changed {
+            changed_byte_range(&self.last_prop_value, accepted_value)
+        } else {
+            None
+        };
+        let mut normalized = None;
+        let mut normalized_suffix = false;
+        for checkpoint in std::iter::once(latest).chain(self.checkpoints.iter().rev()) {
+            if value == accepted_value {
+                return Some(checkpoint.anchor);
+            }
+            if !normalized_suffix
+                && accepted_range.is_some_and(|range| {
+                    checkpoint.changed_range(&self.last_prop_value, &value) == Some(range)
+                })
+            {
+                // Rejected insertions can share the accepted edit's changed range.
+                // Prefer a checkpoint whose caret suffix survives normalization.
+                let suffix_matches = accepted_value.ends_with(&value[checkpoint.anchor.position..]);
+                if normalized.is_none() || suffix_matches {
+                    normalized = Some(CursorAnchor {
+                        position: new_cursor_offset(
+                            &value,
+                            checkpoint.anchor.position,
+                            accepted_value,
+                        ),
+                        action_index: checkpoint.anchor.action_index,
+                    });
+                    normalized_suffix = suffix_matches;
+                }
+            }
+            checkpoint.edit.undo(&mut value);
+        }
+        normalized
+    }
+
+    fn reconciled_cursor(
+        &self,
+        pending_value: &str,
+        position: usize,
+        preference: Option<u16>,
+        buffer: &TextBuffer,
+        prop_changed: bool,
+    ) -> (usize, Option<u16>) {
+        let (mut position, mut preference, action_index) =
+            if let Some(anchor) = self.accepted_anchor(pending_value, &buffer.text, prop_changed) {
+                (anchor.position, None, anchor.action_index)
+            } else if let Some((position, preference)) =
+                self.cursor_on_rejection.filter(|_| !prop_changed)
+            {
+                (position, preference, 0)
+            } else if let Some(checkpoint) = &self.latest_edit {
+                (
+                    new_cursor_offset(pending_value, checkpoint.anchor.position, &buffer.text),
+                    None,
+                    checkpoint.anchor.action_index,
+                )
+            } else {
+                (
+                    if prop_changed {
+                        new_cursor_offset(pending_value, position, &buffer.text)
+                    } else {
+                        position
+                    },
+                    preference,
+                    self.actions.len(),
+                )
+            };
+        for &action in &self.actions[action_index..] {
+            match action {
+                CursorAction::Move(movement) => {
+                    position = cursor_after_movement(buffer, position, movement, &mut preference);
+                    if !matches!(movement, CursorMovement::Up | CursorMovement::Down) {
+                        preference = None;
+                    }
+                }
+                CursorAction::ClearPreference => preference = None,
+            }
+        }
+        (position, preference)
+    }
+
+    fn clear_pending(&mut self) {
+        self.cursor_on_rejection = None;
+        self.latest_edit = None;
+        self.checkpoints.clear();
+        self.actions.clear();
+    }
+}
+
 /// `TextInput` is a component that can receive text input from the user.
 ///
 /// It will fill the available width and display the current value. Typically, you will want to
 /// render it in a [`View`](crate::components::View) component of the desired text field size.
+/// Events received before the next redraw share the updated text and cursor position.
 ///
 /// # Example
 ///
@@ -388,14 +595,16 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         TextWrap::NoWrap
     };
 
+    // Keep pending edits separate from accepted props so rejected changes do not move the caret.
     let mut prev_value = hooks.use_state(|| "".to_string());
+    let mut edit_state = hooks.use_ref(TextInputEditState::default);
     let mut cursor_offset = hooks.use_state(|| 0usize);
     let mut requested_cursor_offset = hooks.use_state(|| None);
-    let mut new_cursor_offset_hint = hooks.use_state(|| NewCursorOffsetHint::None);
     let mut scroll_offset_row = hooks.use_state(|| 0u16);
     let mut scroll_offset_col = hooks.use_state(|| 0u16);
     let mut vertical_movement_col_preference = hooks.use_state(|| None);
-    let (width, height) = hooks.use_size();
+    let size = hooks.use_size();
+    let (width, height) = *size.read();
 
     if let Some(handle_ref) = props.handle.as_mut() {
         handle_ref.set(TextInputHandle {
@@ -421,21 +630,35 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         (&props.value, max_text_width),
     );
 
-    // Update the cursor position if the value has changed.
+    let (prop_changed, has_pending_edits) = {
+        let edit = edit_state.read();
+        (
+            edit.last_prop_value != props.value,
+            edit.latest_edit.is_some(),
+        )
+    };
     if props.value.as_str() != prev_value.read().as_str() {
-        let new_cursor_offset = new_cursor_offset(
+        let (position, preference) = edit_state.read().reconciled_cursor(
             &prev_value.read(),
             cursor_offset.get(),
-            &props.value,
-            new_cursor_offset_hint.get(),
+            vertical_movement_col_preference.get(),
+            &buffer,
+            prop_changed,
         );
-        if cursor_offset != new_cursor_offset {
-            cursor_offset.set(new_cursor_offset);
+        if vertical_movement_col_preference.get() != preference {
+            vertical_movement_col_preference.set(preference);
+        }
+        if cursor_offset != position {
+            cursor_offset.set(position);
         }
         prev_value.set(props.value.clone());
-        if new_cursor_offset_hint.get() != NewCursorOffsetHint::None {
-            new_cursor_offset_hint.set(NewCursorOffsetHint::None);
+    }
+    if prop_changed || has_pending_edits {
+        let mut edit = edit_state.write();
+        if prop_changed {
+            edit.last_prop_value.clone_from(&props.value);
         }
+        edit.clear_pending();
     }
 
     // Update the cursor position if the user requested it.
@@ -484,16 +707,23 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     }
 
     hooks.use_terminal_events({
-        let buffer = buffer.clone();
-        let mut value = props.value.clone();
-        let mut temp_cursor_offset = cursor_offset.get();
+        let mut buffer = buffer.clone();
+        let mut buffer_width = max_text_width;
+        let mut buffer_dirty = false;
         let mut on_change = props.on_change.take();
         move |event| {
             if !has_focus {
                 return;
             }
 
-            match event {
+            let old_position = cursor_offset.get();
+            let mut position = old_position;
+            let mut changed_value = None;
+            let mut movement = None;
+            let mut clear_vertical_preference = false;
+            let mut text_edit = None;
+
+            let code = match event {
                 TerminalEvent::Key(KeyEvent {
                     code,
                     kind,
@@ -504,15 +734,9 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     && !is_altgr_char(code, modifiers) =>
                 {
                     match code {
-                        KeyCode::Char('a') => {
-                            cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
-                            vertical_movement_col_preference.set(None);
-                        }
-                        KeyCode::Char('e') => {
-                            cursor_offset.set(buffer.row_end_offset(cursor_offset.get()));
-                            vertical_movement_col_preference.set(None);
-                        }
-                        _ => {}
+                        KeyCode::Char('a') => Some(KeyCode::Home),
+                        KeyCode::Char('e') => Some(KeyCode::End),
+                        _ => None,
                     }
                 }
                 TerminalEvent::Key(KeyEvent {
@@ -524,80 +748,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     && (!modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
                         || is_altgr_char(code, modifiers)) =>
                 {
-                    let mut clear_vertical_movement_col_preference = true;
-
-                    match code {
-                        KeyCode::Char(c) => {
-                            value.insert(temp_cursor_offset, c);
-                            temp_cursor_offset += c.len_utf8();
-                            on_change(value.clone());
-                        }
-                        KeyCode::Backspace => {
-                            if temp_cursor_offset > 0 {
-                                temp_cursor_offset -= value[..temp_cursor_offset]
-                                    .chars()
-                                    .last()
-                                    .unwrap()
-                                    .len_utf8();
-                                value.remove(temp_cursor_offset);
-                            }
-                            on_change(value.clone());
-                            new_cursor_offset_hint.set(NewCursorOffsetHint::Backspace);
-                        }
-                        KeyCode::Delete => {
-                            if temp_cursor_offset < value.len() {
-                                value.remove(temp_cursor_offset);
-                            }
-                            on_change(value.clone());
-                            new_cursor_offset_hint.set(NewCursorOffsetHint::Deletion);
-                        }
-                        KeyCode::Enter if multiline => {
-                            value.insert(temp_cursor_offset, '\n');
-                            temp_cursor_offset += 1;
-                            on_change(value.clone());
-                        }
-                        KeyCode::Left => {
-                            cursor_offset.set(buffer.left_of_offset(cursor_offset.get()));
-                        }
-                        KeyCode::Right => {
-                            cursor_offset.set(buffer.right_of_offset(cursor_offset.get()));
-                        }
-                        KeyCode::Up if multiline => {
-                            clear_vertical_movement_col_preference = false;
-                            if vertical_movement_col_preference.get().is_none() {
-                                let (_, col) = buffer.row_column_for_offset(cursor_offset.get());
-                                vertical_movement_col_preference.set(Some(col));
-                            }
-                            cursor_offset.set(buffer.above_offset(
-                                cursor_offset.get(),
-                                vertical_movement_col_preference.get(),
-                            ));
-                        }
-                        KeyCode::Down if multiline => {
-                            clear_vertical_movement_col_preference = false;
-                            if vertical_movement_col_preference.get().is_none() {
-                                let (_, col) = buffer.row_column_for_offset(cursor_offset.get());
-                                vertical_movement_col_preference.set(Some(col));
-                            }
-                            cursor_offset.set(buffer.below_offset(
-                                cursor_offset.get(),
-                                vertical_movement_col_preference.get(),
-                            ));
-                        }
-                        KeyCode::Home => {
-                            cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
-                        }
-                        KeyCode::End => {
-                            cursor_offset.set(buffer.row_end_offset(cursor_offset.get()));
-                        }
-                        _ => {
-                            clear_vertical_movement_col_preference = false;
-                        }
-                    }
-
-                    if clear_vertical_movement_col_preference {
-                        vertical_movement_col_preference.set(None);
-                    }
+                    Some(code)
                 }
                 TerminalEvent::BracketedPaste(data) if !data.is_empty() => {
                     let data = if multiline {
@@ -605,12 +756,122 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     } else {
                         normalize_single_line_paste(data)
                     };
-                    value.insert_str(temp_cursor_offset, &data);
-                    temp_cursor_offset += data.len();
-                    on_change(value.clone());
-                    vertical_movement_col_preference.set(None);
+                    let mut value = prev_value.write();
+                    text_edit = Some(TextEdit::Insert {
+                        offset: position,
+                        len: data.len(),
+                    });
+                    value.insert_str(position, &data);
+                    position += data.len();
+                    changed_value = Some(value.clone());
+                    buffer_dirty = true;
+                    clear_vertical_preference = true;
+                    None
                 }
-                _ => {}
+                _ => None,
+            };
+
+            if let Some(code) = code {
+                clear_vertical_preference = true;
+                match code {
+                    KeyCode::Char(c) => {
+                        let mut value = prev_value.write();
+                        text_edit = Some(TextEdit::Insert {
+                            offset: position,
+                            len: c.len_utf8(),
+                        });
+                        value.insert(position, c);
+                        position += c.len_utf8();
+                        changed_value = Some(value.clone());
+                        buffer_dirty = true;
+                    }
+                    KeyCode::Backspace => {
+                        let mut value = prev_value.write();
+                        if position > 0 {
+                            position -= value[..position].chars().last().unwrap().len_utf8();
+                            let character = value.remove(position);
+                            text_edit = Some(TextEdit::Remove {
+                                offset: position,
+                                character,
+                            });
+                            buffer_dirty = true;
+                        }
+                        changed_value = Some(value.clone());
+                    }
+                    KeyCode::Delete => {
+                        let mut value = prev_value.write();
+                        if position < value.len() {
+                            let character = value.remove(position);
+                            text_edit = Some(TextEdit::Remove {
+                                offset: position,
+                                character,
+                            });
+                            buffer_dirty = true;
+                        }
+                        changed_value = Some(value.clone());
+                    }
+                    KeyCode::Enter if multiline => {
+                        let mut value = prev_value.write();
+                        text_edit = Some(TextEdit::Insert {
+                            offset: position,
+                            len: 1,
+                        });
+                        value.insert(position, '\n');
+                        position += 1;
+                        changed_value = Some(value.clone());
+                        buffer_dirty = true;
+                    }
+                    KeyCode::Left => movement = Some(CursorMovement::Left),
+                    KeyCode::Right => movement = Some(CursorMovement::Right),
+                    KeyCode::Home => movement = Some(CursorMovement::Home),
+                    KeyCode::End => movement = Some(CursorMovement::End),
+                    KeyCode::Up if multiline => {
+                        movement = Some(CursorMovement::Up);
+                        clear_vertical_preference = false;
+                    }
+                    KeyCode::Down if multiline => {
+                        movement = Some(CursorMovement::Down);
+                        clear_vertical_preference = false;
+                    }
+                    _ => clear_vertical_preference = false,
+                }
+            }
+
+            if let Some(movement) = movement {
+                let current_width = if multiline {
+                    size.read().0.max(1) - 1
+                } else {
+                    max_text_width
+                };
+                if buffer_dirty || buffer_width != current_width {
+                    buffer = Arc::new(TextBuffer::new(
+                        prev_value.read().clone(),
+                        current_width as _,
+                    ));
+                    buffer_width = current_width;
+                    buffer_dirty = false;
+                }
+                let mut preference = vertical_movement_col_preference.get();
+                position = cursor_after_movement(&buffer, position, movement, &mut preference);
+                if vertical_movement_col_preference.get() != preference {
+                    vertical_movement_col_preference.set(preference);
+                }
+                edit_state.write().record_movement(movement);
+            }
+            if clear_vertical_preference {
+                vertical_movement_col_preference.set(None);
+                edit_state.write().clear_preference();
+            }
+            if old_position != position {
+                cursor_offset.set(position);
+            }
+            if let Some(value) = changed_value {
+                if let Some(edit) = text_edit {
+                    edit_state
+                        .write()
+                        .record_edit(edit, old_position, position, value.len());
+                }
+                on_change(value);
             }
         }
     });
@@ -639,12 +900,39 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-enum NewCursorOffsetHint {
-    #[default]
-    None,
-    Backspace,
-    Deletion,
+#[derive(Clone, Copy)]
+enum CursorMovement {
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+}
+
+fn cursor_after_movement(
+    buffer: &TextBuffer,
+    position: usize,
+    movement: CursorMovement,
+    col_preference: &mut Option<u16>,
+) -> usize {
+    match movement {
+        CursorMovement::Left => buffer.left_of_offset(position),
+        CursorMovement::Right => buffer.right_of_offset(position),
+        CursorMovement::Home | CursorMovement::End if buffer.text.is_empty() => 0,
+        CursorMovement::Home => buffer.row_start_offset(position),
+        CursorMovement::End => buffer.row_end_offset(position),
+        CursorMovement::Up | CursorMovement::Down => {
+            if col_preference.is_none() {
+                *col_preference = Some(buffer.row_column_for_offset(position).1);
+            }
+            if matches!(movement, CursorMovement::Up) {
+                buffer.above_offset(position, *col_preference)
+            } else {
+                buffer.below_offset(position, *col_preference)
+            }
+        }
+    }
 }
 
 fn normalize_single_line_paste(data: String) -> String {
@@ -687,12 +975,25 @@ fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
         && matches!(code, KeyCode::Char(c) if !c.is_control() && !c.is_ascii_alphanumeric())
 }
 
-fn new_cursor_offset(
-    prev_value: &str,
-    cursor_offset: usize,
-    value: &str,
-    hint: NewCursorOffsetHint,
-) -> usize {
+fn changed_byte_range(before: &str, after: &str) -> Option<(usize, usize)> {
+    let head = before
+        .bytes()
+        .zip(after.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    if head == before.len() && head == after.len() {
+        return None;
+    }
+    let tail = before.as_bytes()[head..]
+        .iter()
+        .rev()
+        .zip(after.as_bytes()[head..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    Some((head, before.len() - tail))
+}
+
+fn new_cursor_offset(prev_value: &str, cursor_offset: usize, value: &str) -> usize {
     let has_same_head = value.len() >= cursor_offset
         && value.as_bytes()[..cursor_offset] == prev_value.as_bytes()[..cursor_offset];
 
@@ -700,17 +1001,9 @@ fn new_cursor_offset(
     let has_same_tail = value.len() >= tail_len
         && value.as_bytes()[value.len() - tail_len..] == prev_value.as_bytes()[cursor_offset..];
 
-    if value.len() >= prev_value.len() && has_same_head && has_same_tail {
-        // insertion (or no change)
+    if value.len() >= prev_value.len() && has_same_tail {
+        // Keep the cursor anchored to the suffix when a parent normalizes the edited prefix.
         cursor_offset + (value.len() - prev_value.len())
-    } else if value.len() < prev_value.len() && has_same_tail && has_same_head {
-        // ambiguous case, could be backspace or deletion
-        if hint == NewCursorOffsetHint::Deletion {
-            cursor_offset
-        } else {
-            // bias towards backspace
-            cursor_offset - (prev_value.len() - value.len())
-        }
     } else if value.len() < prev_value.len() && has_same_tail {
         // backspace
         cursor_offset - (prev_value.len() - value.len())
@@ -777,6 +1070,11 @@ mod tests {
     struct MyComponentProps {
         initial_value: String,
         requested_cursor_offset: Option<usize>,
+        uppercase: bool,
+        reject_shrinking_changes: bool,
+        reject_character: Option<char>,
+        minimum_length: usize,
+        multiline: bool,
     }
 
     #[component]
@@ -785,6 +1083,10 @@ mod tests {
         let mut value = hooks.use_state(|| props.initial_value.clone());
         let mut handle = hooks.use_ref_default::<TextInputHandle>();
         let requested_cursor_offset = props.requested_cursor_offset;
+        let uppercase = props.uppercase;
+        let reject_shrinking_changes = props.reject_shrinking_changes;
+        let reject_character = props.reject_character;
+        let minimum_length = props.minimum_length;
         hooks.use_effect(
             move || {
                 if let Some(offset) = requested_cursor_offset {
@@ -799,12 +1101,20 @@ mod tests {
         }
 
         element! {
-            View(height: 1, width: 11, padding_left: 1) {
+            View(height: if props.multiline { 3 } else { 1 }, width: 11, padding_left: 1) {
                 TextInput(
                     has_focus: true,
                     value: value.to_string(),
-                    on_change: move |new_value| value.set(new_value),
+                    on_change: move |new_value: String| {
+                        let accept = new_value.len() >= minimum_length
+                            && (!reject_shrinking_changes || new_value.len() >= value.read().len())
+                            && reject_character.is_none_or(|c| !new_value.contains(c));
+                        if accept {
+                            value.set(if uppercase { new_value.to_uppercase() } else { new_value });
+                        }
+                    },
                     handle,
+                    multiline: props.multiline,
                 )
             }
         }
@@ -1064,62 +1374,492 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_new_cursor_offset() {
-        let mixed_text = "你好世界，Hello World";
-        let cursor_offset = mixed_text.find('W').unwrap();
-        assert_eq!(
-            new_cursor_offset(
-                mixed_text,
-                cursor_offset,
-                "你好世界，Hello aWorld",
-                NewCursorOffsetHint::None
-            ),
-            cursor_offset + 1
-        );
+    #[apply(test!)]
+    async fn test_batched_cursor_movement_and_editing() {
+        let frames: Vec<_> = element!(MyComponent(initial_value: "abc"))
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter([
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Left)),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('x'))),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
+            ])))
+            .collect()
+            .await;
+        assert_eq!(frames.last().unwrap().to_string().trim(), "abx!c");
+    }
 
-        assert_eq!(
-            new_cursor_offset("", 0, "foo", NewCursorOffsetHint::None),
-            3
-        );
-        assert_eq!(
-            new_cursor_offset("foo", 3, "foobar", NewCursorOffsetHint::None),
-            6
-        );
-        assert_eq!(
-            new_cursor_offset("foobar", 3, "foobar", NewCursorOffsetHint::None),
-            3
-        );
-        assert_eq!(
-            new_cursor_offset("foobar", 3, "fooar", NewCursorOffsetHint::None),
-            3
-        );
-        assert_eq!(
-            new_cursor_offset("foobar", 3, "fooasdbar", NewCursorOffsetHint::None),
-            6
-        );
-        assert_eq!(
-            new_cursor_offset("a\n", 0, "\n", NewCursorOffsetHint::None),
-            0
-        );
-        assert_eq!(
-            new_cursor_offset(
-                "asddasd\nasdasd",
-                3,
-                "asdasd\nasdasd",
-                NewCursorOffsetHint::Backspace
-            ),
-            2
-        );
-        assert_eq!(
-            new_cursor_offset(
-                "asddasd\nasdasd",
-                3,
-                "asdasd\nasdasd",
-                NewCursorOffsetHint::Deletion
-            ),
-            3
-        );
+    #[apply(test!)]
+    async fn test_batched_deletions_at_text_boundaries() {
+        for (movement, deletion, expected) in [
+            (KeyCode::Home, KeyCode::Backspace, "!abc"),
+            (KeyCode::End, KeyCode::Delete, "abc!"),
+        ] {
+            let events = [movement, deletion, KeyCode::Char('!')]
+                .into_iter()
+                .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
+            let frames: Vec<_> = element!(MyComponent(initial_value: "abc"))
+                .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                    events,
+                )))
+                .collect()
+                .await;
+            assert_eq!(frames.last().unwrap().to_string().trim(), expected);
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_batched_navigation_uses_edited_utf8() {
+        let frames: Vec<_> = element!(MyComponent(initial_value: "界a"))
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter([
+                TerminalEvent::BracketedPaste("é".to_string()),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Left)),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('!'))),
+            ])))
+            .collect()
+            .await;
+        assert_eq!(frames.last().unwrap().to_string().trim(), "界a!é");
+    }
+
+    #[apply(test!)]
+    async fn test_delete_keeps_cursor_after_parent_redraw() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent(initial_value: "aaa"));
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        frames.next().await.unwrap();
+        for code in [KeyCode::Home, KeyCode::Right, KeyCode::Delete] {
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                .unwrap();
+        }
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "aa");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "a!a");
+    }
+
+    #[apply(test!)]
+    async fn test_rejected_delete_preserves_cursor_after_redraw() {
+        smol::future::or(
+            async {
+                let (sender, events) = futures::channel::mpsc::unbounded();
+                let mut app = element!(MyComponent(
+                    initial_value: "aaa",
+                    reject_shrinking_changes: true,
+                ));
+                let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                futures::pin_mut!(frames);
+                frames.next().await.unwrap();
+                for code in [KeyCode::Home, KeyCode::Right, KeyCode::Delete] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                assert_eq!(frames.next().await.unwrap().to_string().trim(), "aaa");
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Char('!'),
+                    )))
+                    .unwrap();
+                assert_eq!(frames.next().await.unwrap().to_string().trim(), "a!aa");
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("controlled TextInput did not redraw");
+            },
+        )
+        .await;
+    }
+
+    #[component]
+    fn NavigationRejectionApp(
+        mut hooks: Hooks,
+        props: &MyComponentProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let mut event_count = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |_| event_count += 1);
+        // A rejected update must yield a frame even when the input looks unchanged.
+        element! {
+            View(flex_direction: FlexDirection::Column) {
+                MyComponent(
+                    initial_value: props.initial_value.clone(),
+                    reject_shrinking_changes: props.reject_shrinking_changes,
+                    reject_character: props.reject_character,
+                    multiline: props.multiline,
+                )
+                Text(content: event_count.to_string())
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_navigation_after_rejected_edit_survives_redraw() {
+        smol::future::or(
+            async {
+                for (initial, edit, movement, multiline, next_movement, expected) in [
+                    (
+                        "abc",
+                        KeyCode::Backspace,
+                        KeyCode::Home,
+                        false,
+                        None,
+                        "!abc",
+                    ),
+                    (
+                        "abc",
+                        KeyCode::Char('x'),
+                        KeyCode::Home,
+                        false,
+                        None,
+                        "!abc",
+                    ),
+                    ("", KeyCode::Char('x'), KeyCode::Home, false, None, "!"),
+                    (
+                        "abc",
+                        KeyCode::Backspace,
+                        KeyCode::Left,
+                        false,
+                        None,
+                        "ab!c",
+                    ),
+                    (
+                        "ab\ncdef",
+                        KeyCode::Backspace,
+                        KeyCode::Up,
+                        true,
+                        Some(KeyCode::Down),
+                        "ab\ncdef!",
+                    ),
+                ] {
+                    let (sender, events) = futures::channel::mpsc::unbounded();
+                    let mut app = element!(NavigationRejectionApp(
+                        initial_value: initial,
+                        reject_shrinking_changes: true,
+                        reject_character: Some('x'),
+                        multiline,
+                    ));
+                    let frames =
+                        app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                    futures::pin_mut!(frames);
+                    frames.next().await.unwrap();
+                    for code in [edit, movement] {
+                        sender
+                            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                                KeyEventKind::Press,
+                                code,
+                            )))
+                            .unwrap();
+                    }
+                    let height = if multiline { 3 } else { 1 };
+                    let frame = frames.next().await.unwrap();
+                    assert_eq!(frame.get_text(1, 0, 10, height).trim_end(), initial);
+                    if let Some(code) = next_movement {
+                        sender
+                            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                                KeyEventKind::Press,
+                                code,
+                            )))
+                            .unwrap();
+                        frames.next().await.unwrap();
+                    }
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            KeyCode::Char('!'),
+                        )))
+                        .unwrap();
+                    let frame = frames.next().await.unwrap();
+                    assert_eq!(
+                        frame.get_text(1, 0, 10, height).trim_end(),
+                        expected,
+                        "{edit:?} then {movement:?}"
+                    );
+                }
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("controlled TextInput did not redraw");
+            },
+        )
+        .await;
+    }
+
+    #[apply(test!)]
+    async fn test_rejected_edit_clears_vertical_preference_after_redraw() {
+        smol::future::or(
+            async {
+                let (sender, events) = futures::channel::mpsc::unbounded();
+                let mut app = element!(NavigationRejectionApp(
+                    initial_value: "abcde\nx\nvwxyz",
+                    reject_character: Some('q'),
+                    multiline: true,
+                ));
+                let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                futures::pin_mut!(frames);
+                frames.next().await.unwrap();
+                for code in [KeyCode::Char('q'), KeyCode::Up, KeyCode::Delete] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                loop {
+                    let frame = frames.next().await.unwrap();
+                    if frame.get_text(0, 3, 10, 1).trim() == "3" {
+                        assert_eq!(frame.get_text(1, 0, 10, 3).trim_end(), "abcde\nx\nvwxyz");
+                        break;
+                    }
+                }
+                for code in [KeyCode::Down, KeyCode::Char('!')] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                let mut last_frame = None;
+                while let Some(frame) = frames.next().await {
+                    last_frame = Some(frame);
+                }
+                assert_eq!(
+                    last_frame.unwrap().get_text(1, 0, 10, 3).trim_end(),
+                    "abcde\nx\nv!wxyz"
+                );
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("controlled TextInput did not finish the event batch");
+            },
+        )
+        .await;
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_batched_normalization_before_navigation() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent(initial_value: "AB", uppercase: true));
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        frames.next().await.unwrap();
+        for code in [KeyCode::Left, KeyCode::Char('x'), KeyCode::Home] {
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                .unwrap();
+        }
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "AXB");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "!AXB");
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_batched_partial_deletion() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent(initial_value: "aaa", minimum_length: 2usize));
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        frames.next().await.unwrap();
+        for code in [
+            KeyCode::Home,
+            KeyCode::Right,
+            KeyCode::Delete,
+            KeyCode::Delete,
+        ] {
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                .unwrap();
+        }
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "aa");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "a!a");
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_batched_partial_insertion_and_navigation() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent(initial_value: "abc", reject_character: Some('x')));
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        frames.next().await.unwrap();
+        for code in [KeyCode::Char('d'), KeyCode::Char('x'), KeyCode::Left] {
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                .unwrap();
+        }
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "abcd");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "abc!d");
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_normalized_edit_before_rejected_edit() {
+        for (character, deletion, accepted, expected) in [
+            ('x', KeyCode::Delete, "AXB", "AX!B"),
+            ('ǰ', KeyCode::Delete, "AJ\u{030c}B", "AJ\u{030c}!B"),
+            ('é', KeyCode::Backspace, "AÉB", "AÉ!B"),
+        ] {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let mut app = element!(MyComponent(
+                initial_value: "AB",
+                uppercase: true,
+                reject_shrinking_changes: true,
+            ));
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            for code in [KeyCode::Left, KeyCode::Char(character), deletion] {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                    .unwrap();
+            }
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), accepted);
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                )))
+                .unwrap();
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), expected);
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_normalized_edit_before_rejected_insertion() {
+        for (character, rejections, accepted, expected) in
+            [('x', 1, "AXB", "A!XB"), ('é', 2, "AÉB", "A!ÉB")]
+        {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let mut app = element!(MyComponent(
+                initial_value: "AB",
+                uppercase: true,
+                reject_character: Some('y'),
+            ));
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            for code in [KeyCode::Left, KeyCode::Char(character), KeyCode::Left]
+                .into_iter()
+                .chain(std::iter::repeat_n(KeyCode::Char('y'), rejections))
+            {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                    .unwrap();
+            }
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), accepted);
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                )))
+                .unwrap();
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), expected);
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_parent_normalization_keeps_caret_before_unchanged_suffix() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent(initial_value: "AB", uppercase: true));
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        frames.next().await.unwrap();
+        for code in [KeyCode::Left, KeyCode::Char('x')] {
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                .unwrap();
+            frames.next().await.unwrap();
+        }
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "AX!B");
+    }
+
+    #[apply(test!)]
+    async fn test_batched_multiline_navigation_after_edits() {
+        let events = [
+            KeyCode::Char('a'),
+            KeyCode::Char('b'),
+            KeyCode::Enter,
+            KeyCode::Char('c'),
+            KeyCode::Char('d'),
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Home,
+            KeyCode::Right,
+            KeyCode::Delete,
+            KeyCode::Backspace,
+            KeyCode::End,
+            KeyCode::Char('!'),
+        ]
+        .into_iter()
+        .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
+        let frames: Vec<_> = element!(MyMultilineComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                events,
+            )))
+            .collect()
+            .await;
+        let canvas = frames.last().unwrap();
+        assert_eq!(canvas.get_text(1, 0, 2, 1), "ab");
+        assert_eq!(canvas.get_text(1, 1, 1, 1), "!");
+    }
+
+    #[apply(test!)]
+    async fn test_batched_shortcuts_ignore_releases_and_unhandled_modifiers() {
+        let event = |kind, code, modifiers| {
+            let mut key = KeyEvent::new(kind, code);
+            key.modifiers = modifiers;
+            TerminalEvent::Key(key)
+        };
+        let press = KeyEventKind::Press;
+        let none = KeyModifiers::NONE;
+        let control = KeyModifiers::CONTROL;
+        let events = [
+            event(press, KeyCode::Char('a'), control),
+            event(press, KeyCode::Char('x'), none),
+            event(KeyEventKind::Release, KeyCode::Char('a'), control),
+            event(press, KeyCode::Char('y'), none),
+            event(press, KeyCode::Char('z'), control),
+            event(press, KeyCode::Char('e'), control),
+            event(press, KeyCode::Char('q'), KeyModifiers::ALT),
+            event(press, KeyCode::Esc, none),
+            event(press, KeyCode::Char('!'), none),
+        ];
+        let frames: Vec<_> = element!(MyComponent(initial_value: "abc"))
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                events,
+            )))
+            .collect()
+            .await;
+        assert_eq!(frames.last().unwrap().to_string().trim(), "xyabc!");
     }
 
     #[cfg(windows)]
