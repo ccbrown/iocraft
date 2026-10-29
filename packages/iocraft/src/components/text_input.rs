@@ -101,6 +101,7 @@ pub struct TextInputProps {
     pub has_focus: bool,
 
     /// The handler to invoke when the value changes.
+    /// The parent controls `value` and may normalize or reject each change.
     pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
@@ -349,9 +350,37 @@ struct CursorAnchor {
     action_index: usize,
 }
 
+#[derive(Clone, Copy)]
+enum TextEdit {
+    Insert { offset: usize, len: usize },
+    Remove { offset: usize, character: char },
+}
+
+impl TextEdit {
+    fn undo(self, value: &mut String) {
+        match self {
+            Self::Insert { offset, len } => value.replace_range(offset..offset + len, ""),
+            Self::Remove { offset, character } => value.insert(offset, character),
+        }
+    }
+}
+
 struct CursorCheckpoint {
-    value: String,
+    edit: TextEdit,
     anchor: CursorAnchor,
+    unchanged_head: usize,
+    unchanged_tail: usize,
+}
+
+impl CursorCheckpoint {
+    fn changed_range(&self, initial: &str, value: &str) -> Option<(usize, usize)> {
+        // The untouched edges do not need to be compared again.
+        changed_byte_range(
+            &initial[self.unchanged_head..initial.len() - self.unchanged_tail],
+            &value[self.unchanged_head..value.len() - self.unchanged_tail],
+        )
+        .map(|(start, end)| (self.unchanged_head + start, self.unchanged_head + end))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -364,29 +393,41 @@ enum CursorAction {
 struct TextInputEditState {
     last_prop_value: String,
     cursor_on_rejection: Option<(usize, Option<u16>)>,
-    latest_edit: Option<CursorAnchor>,
+    latest_edit: Option<CursorCheckpoint>,
     checkpoints: Vec<CursorCheckpoint>,
     actions: Vec<CursorAction>,
 }
 
 impl TextInputEditState {
-    fn before_edit(&mut self, value: &str, position: usize) {
-        if let Some(anchor) = self.latest_edit {
-            // Only multiple edits before a redraw need intermediate value copies.
-            self.checkpoints.push(CursorCheckpoint {
-                value: value.to_owned(),
-                anchor,
-            });
+    fn record_edit(
+        &mut self,
+        edit: TextEdit,
+        before_position: usize,
+        position: usize,
+        value_len: usize,
+    ) {
+        let (head, tail) = if let Some(previous) = &self.latest_edit {
+            (previous.unchanged_head, previous.unchanged_tail)
         } else {
-            self.cursor_on_rejection = Some((position, None));
+            self.cursor_on_rejection = Some((before_position, None));
+            (self.last_prop_value.len(), self.last_prop_value.len())
+        };
+        let (offset, end) = match edit {
+            TextEdit::Insert { offset, len } => (offset, offset + len),
+            TextEdit::Remove { offset, .. } => (offset, offset),
+        };
+        let checkpoint = CursorCheckpoint {
+            edit,
+            anchor: CursorAnchor {
+                position,
+                action_index: self.actions.len(),
+            },
+            unchanged_head: head.min(offset),
+            unchanged_tail: tail.min(value_len - end),
+        };
+        if let Some(previous) = self.latest_edit.replace(checkpoint) {
+            self.checkpoints.push(previous);
         }
-    }
-
-    fn record_edit(&mut self, position: usize) {
-        self.latest_edit = Some(CursorAnchor {
-            position,
-            action_index: self.actions.len(),
-        });
     }
 
     fn record_movement(&mut self, movement: CursorMovement) {
@@ -406,6 +447,42 @@ impl TextInputEditState {
         }
     }
 
+    fn accepted_anchor(
+        &self,
+        pending_value: &str,
+        accepted_value: &str,
+        prop_changed: bool,
+    ) -> Option<CursorAnchor> {
+        if self.checkpoints.is_empty() {
+            return None;
+        }
+        let latest = self.latest_edit.as_ref()?;
+        let mut value = pending_value.to_owned();
+        let accepted_range = if prop_changed {
+            changed_byte_range(&self.last_prop_value, accepted_value)
+        } else {
+            None
+        };
+        let mut normalized = None;
+        for checkpoint in std::iter::once(latest).chain(self.checkpoints.iter().rev()) {
+            if value == accepted_value {
+                return Some(checkpoint.anchor);
+            }
+            if normalized.is_none()
+                && accepted_range.is_some_and(|range| {
+                    checkpoint.changed_range(&self.last_prop_value, &value) == Some(range)
+                })
+            {
+                normalized = Some(CursorAnchor {
+                    position: new_cursor_offset(&value, checkpoint.anchor.position, accepted_value),
+                    action_index: checkpoint.anchor.action_index,
+                });
+            }
+            checkpoint.edit.undo(&mut value);
+        }
+        normalized
+    }
+
     fn reconciled_cursor(
         &self,
         pending_value: &str,
@@ -414,38 +491,30 @@ impl TextInputEditState {
         buffer: &TextBuffer,
         prop_changed: bool,
     ) -> (usize, Option<u16>) {
-        let (mut position, mut preference, action_index) = if let Some(checkpoint) = self
-            .checkpoints
-            .iter()
-            .rev()
-            .find(|checkpoint| checkpoint.value == buffer.text)
-        {
-            (
-                checkpoint.anchor.position,
-                None,
-                checkpoint.anchor.action_index,
-            )
-        } else if let Some((position, preference)) =
-            self.cursor_on_rejection.filter(|_| !prop_changed)
-        {
-            (position, preference, 0)
-        } else if let Some(anchor) = self.latest_edit {
-            (
-                new_cursor_offset(pending_value, anchor.position, &buffer.text),
-                None,
-                anchor.action_index,
-            )
-        } else {
-            (
-                if prop_changed {
-                    new_cursor_offset(pending_value, position, &buffer.text)
-                } else {
-                    position
-                },
-                preference,
-                self.actions.len(),
-            )
-        };
+        let (mut position, mut preference, action_index) =
+            if let Some(anchor) = self.accepted_anchor(pending_value, &buffer.text, prop_changed) {
+                (anchor.position, None, anchor.action_index)
+            } else if let Some((position, preference)) =
+                self.cursor_on_rejection.filter(|_| !prop_changed)
+            {
+                (position, preference, 0)
+            } else if let Some(checkpoint) = &self.latest_edit {
+                (
+                    new_cursor_offset(pending_value, checkpoint.anchor.position, &buffer.text),
+                    None,
+                    checkpoint.anchor.action_index,
+                )
+            } else {
+                (
+                    if prop_changed {
+                        new_cursor_offset(pending_value, position, &buffer.text)
+                    } else {
+                        position
+                    },
+                    preference,
+                    self.actions.len(),
+                )
+            };
         for &action in &self.actions[action_index..] {
             match action {
                 CursorAction::Move(movement) => {
@@ -641,7 +710,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
             let mut changed_value = None;
             let mut movement = None;
             let mut clear_vertical_preference = false;
-            let mut edited = false;
+            let mut text_edit = None;
 
             let code = match event {
                 TerminalEvent::Key(KeyEvent {
@@ -677,8 +746,10 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                         normalize_single_line_paste(data)
                     };
                     let mut value = prev_value.write();
-                    edit_state.write().before_edit(&value, position);
-                    edited = true;
+                    text_edit = Some(TextEdit::Insert {
+                        offset: position,
+                        len: data.len(),
+                    });
                     value.insert_str(position, &data);
                     position += data.len();
                     changed_value = Some(value.clone());
@@ -694,8 +765,10 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 match code {
                     KeyCode::Char(c) => {
                         let mut value = prev_value.write();
-                        edit_state.write().before_edit(&value, position);
-                        edited = true;
+                        text_edit = Some(TextEdit::Insert {
+                            offset: position,
+                            len: c.len_utf8(),
+                        });
                         value.insert(position, c);
                         position += c.len_utf8();
                         changed_value = Some(value.clone());
@@ -704,10 +777,12 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     KeyCode::Backspace => {
                         let mut value = prev_value.write();
                         if position > 0 {
-                            edit_state.write().before_edit(&value, position);
-                            edited = true;
                             position -= value[..position].chars().last().unwrap().len_utf8();
-                            value.remove(position);
+                            let character = value.remove(position);
+                            text_edit = Some(TextEdit::Remove {
+                                offset: position,
+                                character,
+                            });
                             buffer_dirty = true;
                         }
                         changed_value = Some(value.clone());
@@ -715,17 +790,21 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     KeyCode::Delete => {
                         let mut value = prev_value.write();
                         if position < value.len() {
-                            edit_state.write().before_edit(&value, position);
-                            edited = true;
-                            value.remove(position);
+                            let character = value.remove(position);
+                            text_edit = Some(TextEdit::Remove {
+                                offset: position,
+                                character,
+                            });
                             buffer_dirty = true;
                         }
                         changed_value = Some(value.clone());
                     }
                     KeyCode::Enter if multiline => {
                         let mut value = prev_value.write();
-                        edit_state.write().before_edit(&value, position);
-                        edited = true;
+                        text_edit = Some(TextEdit::Insert {
+                            offset: position,
+                            len: 1,
+                        });
                         value.insert(position, '\n');
                         position += 1;
                         changed_value = Some(value.clone());
@@ -776,8 +855,10 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 cursor_offset.set(position);
             }
             if let Some(value) = changed_value {
-                if edited {
-                    edit_state.write().record_edit(position);
+                if let Some(edit) = text_edit {
+                    edit_state
+                        .write()
+                        .record_edit(edit, old_position, position, value.len());
                 }
                 on_change(value);
             }
@@ -881,6 +962,24 @@ fn is_altgr_char(code: KeyCode, modifiers: KeyModifiers) -> bool {
     cfg!(windows)
         && modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
         && matches!(code, KeyCode::Char(c) if !c.is_control() && !c.is_ascii_alphanumeric())
+}
+
+fn changed_byte_range(before: &str, after: &str) -> Option<(usize, usize)> {
+    let head = before
+        .bytes()
+        .zip(after.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    if head == before.len() && head == after.len() {
+        return None;
+    }
+    let tail = before.as_bytes()[head..]
+        .iter()
+        .rev()
+        .zip(after.as_bytes()[head..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    Some((head, before.len() - tail))
 }
 
 fn new_cursor_offset(prev_value: &str, cursor_offset: usize, value: &str) -> usize {
@@ -1508,6 +1607,38 @@ mod tests {
             )))
             .unwrap();
         assert_eq!(frames.next().await.unwrap().to_string().trim(), "abc!d");
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_normalized_edit_before_rejected_edit() {
+        for (character, deletion, accepted, expected) in [
+            ('x', KeyCode::Delete, "AXB", "AX!B"),
+            ('ǰ', KeyCode::Delete, "AJ\u{030c}B", "AJ\u{030c}!B"),
+            ('é', KeyCode::Backspace, "AÉB", "AÉ!B"),
+        ] {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let mut app = element!(MyComponent(
+                initial_value: "AB",
+                uppercase: true,
+                reject_shrinking_changes: true,
+            ));
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            for code in [KeyCode::Left, KeyCode::Char(character), deletion] {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                    .unwrap();
+            }
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), accepted);
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                )))
+                .unwrap();
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), expected);
+        }
     }
 
     #[apply(test!)]
