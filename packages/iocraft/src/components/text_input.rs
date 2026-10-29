@@ -1707,7 +1707,9 @@ mod tests {
 
     #[apply(test!)]
     async fn test_reconcile_normalized_edit_before_rejected_insertion() {
-        for (character, accepted, expected) in [('x', "AXB", "A!XB"), ('é', "AÉB", "A!ÉB")] {
+        for (character, rejections, accepted, expected) in
+            [('x', 1, "AXB", "A!XB"), ('é', 2, "AÉB", "A!ÉB")]
+        {
             let (sender, events) = futures::channel::mpsc::unbounded();
             let mut app = element!(MyComponent(
                 initial_value: "AB",
@@ -1717,12 +1719,10 @@ mod tests {
             let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
             futures::pin_mut!(frames);
             frames.next().await.unwrap();
-            for code in [
-                KeyCode::Left,
-                KeyCode::Char(character),
-                KeyCode::Left,
-                KeyCode::Char('y'),
-            ] {
+            for code in [KeyCode::Left, KeyCode::Char(character), KeyCode::Left]
+                .into_iter()
+                .chain(std::iter::repeat_n(KeyCode::Char('y'), rejections))
+            {
                 sender
                     .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
                     .unwrap();
