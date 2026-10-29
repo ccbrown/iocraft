@@ -1539,6 +1539,59 @@ mod tests {
     }
 
     #[apply(test!)]
+    async fn test_rejected_edit_clears_vertical_preference_after_redraw() {
+        smol::future::or(
+            async {
+                let (sender, events) = futures::channel::mpsc::unbounded();
+                let mut app = element!(NavigationRejectionApp(
+                    initial_value: "abcde\nx\nvwxyz",
+                    reject_character: Some('q'),
+                    multiline: true,
+                ));
+                let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                futures::pin_mut!(frames);
+                frames.next().await.unwrap();
+                for code in [KeyCode::Char('q'), KeyCode::Up, KeyCode::Delete] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                loop {
+                    let frame = frames.next().await.unwrap();
+                    if frame.get_text(0, 3, 10, 1).trim() == "3" {
+                        assert_eq!(frame.get_text(1, 0, 10, 3).trim_end(), "abcde\nx\nvwxyz");
+                        break;
+                    }
+                }
+                for code in [KeyCode::Down, KeyCode::Char('!')] {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                }
+                let mut last_frame = None;
+                while let Some(frame) = frames.next().await {
+                    last_frame = Some(frame);
+                }
+                assert_eq!(
+                    last_frame.unwrap().get_text(1, 0, 10, 3).trim_end(),
+                    "abcde\nx\nv!wxyz"
+                );
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("controlled TextInput did not finish the event batch");
+            },
+        )
+        .await;
+    }
+
+    #[apply(test!)]
     async fn test_reconcile_batched_normalization_before_navigation() {
         let (sender, events) = futures::channel::mpsc::unbounded();
         let mut app = element!(MyComponent(initial_value: "AB", uppercase: true));
