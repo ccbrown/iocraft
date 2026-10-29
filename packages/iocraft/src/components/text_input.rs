@@ -464,19 +464,30 @@ impl TextInputEditState {
             None
         };
         let mut normalized = None;
+        let mut normalized_suffix = false;
         for checkpoint in std::iter::once(latest).chain(self.checkpoints.iter().rev()) {
             if value == accepted_value {
                 return Some(checkpoint.anchor);
             }
-            if normalized.is_none()
+            if !normalized_suffix
                 && accepted_range.is_some_and(|range| {
                     checkpoint.changed_range(&self.last_prop_value, &value) == Some(range)
                 })
             {
-                normalized = Some(CursorAnchor {
-                    position: new_cursor_offset(&value, checkpoint.anchor.position, accepted_value),
-                    action_index: checkpoint.anchor.action_index,
-                });
+                // Rejected insertions can share the accepted edit's changed range.
+                // Prefer a checkpoint whose caret suffix survives normalization.
+                let suffix_matches = accepted_value.ends_with(&value[checkpoint.anchor.position..]);
+                if normalized.is_none() || suffix_matches {
+                    normalized = Some(CursorAnchor {
+                        position: new_cursor_offset(
+                            &value,
+                            checkpoint.anchor.position,
+                            accepted_value,
+                        ),
+                        action_index: checkpoint.anchor.action_index,
+                    });
+                    normalized_suffix = suffix_matches;
+                }
             }
             checkpoint.edit.undo(&mut value);
         }
@@ -1679,6 +1690,39 @@ mod tests {
             futures::pin_mut!(frames);
             frames.next().await.unwrap();
             for code in [KeyCode::Left, KeyCode::Char(character), deletion] {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                    .unwrap();
+            }
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), accepted);
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                )))
+                .unwrap();
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), expected);
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_normalized_edit_before_rejected_insertion() {
+        for (character, accepted, expected) in [('x', "AXB", "A!XB"), ('é', "AÉB", "A!ÉB")] {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let mut app = element!(MyComponent(
+                initial_value: "AB",
+                uppercase: true,
+                reject_character: Some('y'),
+            ));
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            for code in [
+                KeyCode::Left,
+                KeyCode::Char(character),
+                KeyCode::Left,
+                KeyCode::Char('y'),
+            ] {
                 sender
                     .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
                     .unwrap();
