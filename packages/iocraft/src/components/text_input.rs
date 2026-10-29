@@ -267,8 +267,7 @@ impl TextBuffer {
 
     fn row_end_offset(&self, offset: usize) -> usize {
         let (row, _) = self.row_column_for_offset(offset);
-        let r = &self.rows[row as usize];
-        r.offset + r.len
+        self.offset_for_closest_column_in_row(row, u16::MAX)
     }
 }
 
@@ -1274,9 +1273,17 @@ mod tests {
         let buffer = TextBuffer::new("abcdefgh", 3);
         assert_eq!(buffer.row_column_for_offset(3), (1, 0));
         assert_eq!(buffer.row_start_offset(3), 3);
-        assert_eq!(buffer.row_end_offset(3), 6);
         assert_eq!(buffer.above_offset(3, None), 0);
         assert_eq!(buffer.below_offset(0, None), 3);
+    }
+
+    #[test]
+    fn test_row_end_stays_on_soft_wrapped_row() {
+        for text in ["abcdef", "abc def"] {
+            let buffer = TextBuffer::new(text, 3);
+            let end = buffer.row_end_offset(0);
+            assert_eq!(buffer.row_column_for_offset(end).0, 0, "{text:?}");
+        }
     }
 
     #[test]
