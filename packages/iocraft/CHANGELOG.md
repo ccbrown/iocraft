@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - preserve whole grapheme clusters when painting and wrapping text, including zero-width suffixes at canvas clip edges ([#264](https://github.com/ccbrown/iocraft/pull/264))
-- *(text_input)* preserve cursor navigation when an accepted, normalized edit is followed by a rejected insertion in the same event batch ([#283](https://github.com/ccbrown/iocraft/pull/283))
 
 ## [0.9.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.2...iocraft-v0.9.3) - 2026-10-14
 
