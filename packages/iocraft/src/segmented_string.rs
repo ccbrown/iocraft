@@ -196,9 +196,10 @@ impl<'a> SegmentedString<'a> {
         for (offset, opportunity) in linebreaks_iter(text.char_indices(), text.len()) {
             let chunk_graphemes_end = chunk_graphemes_start
                 + graphemes[chunk_graphemes_start..].partition_point(|g| g.start < offset);
-            let on_grapheme_boundary = graphemes
-                .get(chunk_graphemes_end)
-                .is_none_or(|g| g.start == offset);
+            let on_grapheme_boundary = offset == text.len()
+                || graphemes
+                    .get(chunk_graphemes_end)
+                    .is_some_and(|g| g.start == offset);
             if opportunity == BreakOpportunity::Allowed && !on_grapheme_boundary {
                 continue;
             }
@@ -340,6 +341,23 @@ mod tests {
         line.trim_end(&mut String::new());
         assert_eq!(line.to_string(), "\u{600}");
         assert_eq!(line.width, "\u{600}".width());
+    }
+
+    #[test]
+    fn test_break_inside_final_grapheme_keeps_it_whole() {
+        let cases: [&[&str]; 2] = [&["a \u{301}"], &["a ", "\u{301}"]];
+        for segments in cases {
+            let value: SegmentedString = segments.iter().copied().collect();
+            for width in [1, 10] {
+                let rows: Vec<_> = value.wrap(width).iter().map(ToString::to_string).collect();
+                let expected: &[&str] = if width == 1 {
+                    &["a", " \u{301}"]
+                } else {
+                    &["a \u{301}"]
+                };
+                assert_eq!(rows, expected, "{segments:?} at width {width}");
+            }
+        }
     }
 
     #[test]
