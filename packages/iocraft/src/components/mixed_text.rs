@@ -263,6 +263,22 @@ mod tests {
     }
 
     #[test]
+    fn test_aligned_wrapping_keeps_leading_space_graphemes_whole() {
+        for align in [TextAlign::Left, TextAlign::Center, TextAlign::Right] {
+            let canvas = element! {
+                View(width: 1) {
+                    MixedText(align: align, contents: vec![
+                        MixedTextContent::new("a "),
+                        MixedTextContent::new("\u{301}b"),
+                    ])
+                }
+            }
+            .render(None);
+            assert_eq!(canvas.to_string(), "a\n \u{301}\nb\n", "{align:?}");
+        }
+    }
+
+    #[test]
     fn test_split_zwj_preserves_following_text_and_styles() {
         for wrap in [TextWrap::Wrap, TextWrap::NoWrap] {
             let canvas = element! {

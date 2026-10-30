@@ -238,31 +238,11 @@ impl Canvas {
         style: CanvasTextStyle,
         clip: std::ops::Range<isize>,
     ) {
-        if x > clip.end {
+        if x >= clip.end {
             return;
         }
         let row = &mut self.cells[y];
         let mut paint_character = |value: &str, width: usize| {
-            // A separately styled suffix can extend the glyph at the row's right edge.
-            if width == 0 && x > clip.start {
-                if let Some((start, character)) = row[..x as usize]
-                    .iter_mut()
-                    .enumerate()
-                    .rev()
-                    .find_map(|(i, cell)| cell.character.as_mut().map(|character| (i, character)))
-                {
-                    if start as isize >= clip.start
-                        && start + character.value.width().max(1) == x as usize
-                    {
-                        let previous_len = character.value.len();
-                        character.value.push_str(value);
-                        if character.value.width().max(1) == x as usize - start {
-                            return true;
-                        }
-                        character.value.truncate(previous_len);
-                    }
-                }
-            }
             if x >= clip.end {
                 return false;
             }
@@ -631,8 +611,6 @@ impl CanvasSubviewMut<'_> {
     /// Writes text to the region.
     ///
     /// Characters that don't fully fit within the region are not written.
-    /// A zero-width prefix can extend the preceding glyph inside the clip, retaining its style
-    /// without widening its occupied cell span.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         let Ok(x) = isize::try_from(self.x as i128 + x as i128) else {
             return;
@@ -694,6 +672,22 @@ mod tests {
             );
             assert_eq!(canvas.to_string(), expected, "width {width}, text {text:?}");
         }
+    }
+
+    #[test]
+    fn test_leading_combining_mark_does_not_join_sibling_text() {
+        let canvas = element! {
+            View {
+                Text(color: Color::Red, content: "e")
+                Text(color: Color::Blue, content: "\u{301}x")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.cell(0, 0).unwrap().text(), Some("e"));
+        assert_eq!(
+            canvas.cell(0, 0).unwrap().text_style().unwrap().color,
+            Some(Color::Red),
+        );
     }
 
     #[test]
@@ -1061,35 +1055,6 @@ mod tests {
         );
 
         assert_eq!(canvas.to_string(), "e\u{301}\n");
-    }
-
-    #[test]
-    fn test_styled_suffix_keeps_wide_glyph_and_clipped_sibling() {
-        let mut canvas = Canvas::new(3, 1);
-        canvas
-            .subview_mut(0, 0, 0, 0, 3, 1)
-            .set_text(0, 0, "界x", CanvasTextStyle::default());
-        canvas
-            .subview_mut(0, 0, 0, 0, 2, 1)
-            .set_text(2, 0, "\u{301}y", CanvasTextStyle::default());
-        assert_eq!(canvas.to_string(), "界\u{301}x\n");
-
-        canvas
-            .subview_mut(2, 0, 2, 0, 1, 1)
-            .set_text(0, 0, "\u{301}", CanvasTextStyle::default());
-        assert_eq!(canvas.cell(0, 0).unwrap().text(), Some("界\u{301}"));
-    }
-
-    #[test]
-    fn test_styled_variation_cannot_widen_a_glyph_across_the_clip() {
-        let mut canvas = Canvas::new(2, 1);
-        canvas
-            .subview_mut(0, 0, 0, 0, 2, 1)
-            .set_text(0, 0, "❤x", CanvasTextStyle::default());
-        canvas
-            .subview_mut(0, 0, 0, 0, 1, 1)
-            .set_text(1, 0, "\u{fe0f}", CanvasTextStyle::default());
-        assert_eq!(canvas.to_string(), "❤x\n");
     }
 
     #[test]

@@ -3,7 +3,7 @@ use crate::{
     components::{TextDecoration, TextDrawer, TextWrap, View},
     element,
     hooks::{Ref, State, UseMemo, UseState, UseTerminalEvents},
-    segmented_string::SegmentedString,
+    segmented_string::{grapheme_width, SegmentedString, HARD_LINE_BREAKS},
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, HandlerMut,
     Hook, Hooks, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, LayoutStyle, Overflow, Position,
     Props, Size, TerminalEvent, Weight,
@@ -50,7 +50,7 @@ pub struct TextInputHandle {
 }
 
 struct TextInputHandleInner {
-    cursor_offset: State<usize>,
+    cursor: State<CursorPosition>,
     requested_cursor_offset: State<Option<usize>>,
 }
 
@@ -72,7 +72,7 @@ impl TextInputHandle {
     pub fn cursor_offset(&self) -> usize {
         self.inner
             .as_ref()
-            .map_or(0, |inner| inner.cursor_offset.get())
+            .map_or(0, |inner| inner.cursor.get().offset)
     }
 }
 
@@ -105,10 +105,7 @@ pub struct TextInputProps {
     pub on_change: HandlerMut<'static, String>,
 
     /// If true, the input will fill 100% of the height of its container and handle multiline input.
-    /// When false, bracketed paste replaces LF, CR, and CRLF line breaks with spaces.
-    /// Multiline paste preserves the original text.
-    /// After insertion, the cursor advances past any newly joined grapheme.
-    /// At a soft wrap, the boundary offset belongs to the start of the following row.
+    /// If false, line breaks in pasted text are replaced with spaces.
     pub multiline: bool,
 
     /// If true (requires `multiline`), the input auto-grows its height to
@@ -150,6 +147,23 @@ struct TextBufferRow {
     width: usize,
 }
 
+// At a soft wrap, the end of one row and the start of the next share the same offset.
+// `at_row_end` says which of the two the cursor is displayed at.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct CursorPosition {
+    offset: usize,
+    at_row_end: bool,
+}
+
+impl CursorPosition {
+    fn new(offset: usize) -> Self {
+        Self {
+            offset,
+            at_row_end: false,
+        }
+    }
+}
+
 #[derive(Default)]
 struct TextBuffer {
     text: String,
@@ -164,35 +178,50 @@ impl TextBuffer {
     fn new<S: Into<String>>(text: S, width: usize) -> Self {
         let text = text.into();
         let s = SegmentedString::from(text.as_str());
-        let lines = s.wrap(width);
-        let mut rows: Vec<TextBufferRow> = Vec::with_capacity(lines.len());
-        for line in lines {
-            rows.push(TextBufferRow {
-                offset: line
-                    .segments
-                    .first()
-                    .map(|s| s.offset)
-                    .unwrap_or_else(|| rows.last().map_or(0, |r| r.offset)),
-                len: line.segments.first().map_or(0, |s| s.text.len()),
-                width: line.width,
-            });
-        }
+        let rows = s
+            .wrap(width)
+            .into_iter()
+            .map(|line| {
+                let segment = &line.segments[0];
+                TextBufferRow {
+                    offset: segment.offset,
+                    len: segment.text.len(),
+                    width: line.width,
+                }
+            })
+            .collect();
         Self { rows, text }
     }
 
-    fn row_column_for_offset(&self, offset: usize) -> (u16, u16) {
+    fn is_soft_wrapped(&self, row: usize) -> bool {
+        let r = &self.rows[row];
+        self.rows
+            .get(row + 1)
+            .is_some_and(|next| next.offset == r.offset + r.len)
+    }
+
+    // The row end position only exists at a soft wrap, which can move when the text is re-wrapped.
+    fn normalize(&self, cursor: CursorPosition) -> CursorPosition {
+        let at_soft_wrap = (0..self.rows.len()).any(|i| {
+            let row = &self.rows[i];
+            row.offset + row.len == cursor.offset && self.is_soft_wrapped(i)
+        });
+        if cursor.at_row_end && !at_soft_wrap {
+            CursorPosition::new(cursor.offset)
+        } else {
+            cursor
+        }
+    }
+
+    fn row_column_for_cursor(&self, cursor: CursorPosition) -> (u16, u16) {
+        let offset = cursor.offset;
         for (i, row) in self.rows.iter().enumerate() {
-            if offset >= row.offset {
-                let offset_in_row = offset - row.offset;
-                if offset_in_row <= row.len
-                    && self
-                        .rows
-                        .get(i + 1)
-                        .is_none_or(|next| next.offset != offset)
-                {
-                    let col = self.text[row.offset..offset].width() as u16;
-                    return (i as _, col);
-                }
+            if offset >= row.offset
+                && offset - row.offset <= row.len
+                && (cursor.at_row_end || offset != row.offset + row.len || !self.is_soft_wrapped(i))
+            {
+                let col = grapheme_width(&self.text[row.offset..offset]) as u16;
+                return (i as _, col);
             }
         }
         (
@@ -209,65 +238,58 @@ impl TextBuffer {
         })
     }
 
-    fn left_of_offset(&self, offset: usize) -> usize {
-        previous_grapheme_offset(&self.text, offset)
+    fn left_of(&self, cursor: CursorPosition) -> CursorPosition {
+        CursorPosition::new(previous_grapheme_offset(&self.text, cursor.offset))
     }
 
-    fn right_of_offset(&self, offset: usize) -> usize {
-        next_grapheme_offset(&self.text, offset.min(self.text.len()))
+    fn right_of(&self, cursor: CursorPosition) -> CursorPosition {
+        CursorPosition::new(next_grapheme_offset(
+            &self.text,
+            cursor.offset.min(self.text.len()),
+        ))
     }
 
-    fn offset_for_closest_column_in_row(&self, row: u16, col: u16) -> usize {
+    fn cursor_for_closest_column_in_row(&self, row: u16, col: u16) -> CursorPosition {
         let row_idx = row as usize;
         let row = &self.rows[row_idx];
         let col = col as usize;
-        if col < row.width {
-            let mut width = 0;
-            for (idx, grapheme) in
-                self.text[row.offset..row.offset + row.len].grapheme_indices(true)
-            {
-                if width >= col {
-                    return row.offset + idx;
-                }
-                width += grapheme.width();
+        let mut width = 0;
+        for (idx, grapheme) in self.text[row.offset..row.offset + row.len].grapheme_indices(true) {
+            if width >= col {
+                return CursorPosition::new(row.offset + idx);
             }
+            width += grapheme.width();
         }
-        let end = row.offset + row.len;
-        if self
-            .rows
-            .get(row_idx + 1)
-            .is_some_and(|next| next.offset == end)
-        {
-            previous_grapheme_offset(&self.text, end)
-        } else {
-            end
+        CursorPosition {
+            offset: row.offset + row.len,
+            at_row_end: self.is_soft_wrapped(row_idx),
         }
     }
 
-    fn above_offset(&self, offset: usize, col_preference: Option<u16>) -> usize {
-        let (row, col) = self.row_column_for_offset(offset);
+    fn above(&self, cursor: CursorPosition, col_preference: Option<u16>) -> CursorPosition {
+        let (row, col) = self.row_column_for_cursor(cursor);
         if row == 0 {
-            return offset;
+            return cursor;
         }
-        self.offset_for_closest_column_in_row(row - 1, col_preference.unwrap_or(col))
+        self.cursor_for_closest_column_in_row(row - 1, col_preference.unwrap_or(col))
     }
 
-    fn below_offset(&self, offset: usize, col_preference: Option<u16>) -> usize {
-        let (row, col) = self.row_column_for_offset(offset);
+    fn below(&self, cursor: CursorPosition, col_preference: Option<u16>) -> CursorPosition {
+        let (row, col) = self.row_column_for_cursor(cursor);
         if row as usize + 1 >= self.rows.len() {
-            return offset;
+            return cursor;
         }
-        self.offset_for_closest_column_in_row(row + 1, col_preference.unwrap_or(col))
+        self.cursor_for_closest_column_in_row(row + 1, col_preference.unwrap_or(col))
     }
 
-    fn row_start_offset(&self, offset: usize) -> usize {
-        let (row, _) = self.row_column_for_offset(offset);
-        self.rows[row as usize].offset
+    fn row_start(&self, cursor: CursorPosition) -> CursorPosition {
+        let (row, _) = self.row_column_for_cursor(cursor);
+        CursorPosition::new(self.rows[row as usize].offset)
     }
 
-    fn row_end_offset(&self, offset: usize) -> usize {
-        let (row, _) = self.row_column_for_offset(offset);
-        self.offset_for_closest_column_in_row(row, u16::MAX)
+    fn row_end(&self, cursor: CursorPosition) -> CursorPosition {
+        let (row, _) = self.row_column_for_cursor(cursor);
+        self.cursor_for_closest_column_in_row(row, u16::MAX)
     }
 }
 
@@ -393,7 +415,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     };
 
     let mut prev_value = hooks.use_state(|| "".to_string());
-    let mut cursor_offset = hooks.use_state(|| 0usize);
+    let mut cursor = hooks.use_state(CursorPosition::default);
     let mut requested_cursor_offset = hooks.use_state(|| None);
     let mut new_cursor_offset_hint = hooks.use_state(|| NewCursorOffsetHint::None);
     let mut scroll_offset_row = hooks.use_state(|| 0u16);
@@ -404,7 +426,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     if let Some(handle_ref) = props.handle.as_mut() {
         handle_ref.set(TextInputHandle {
             inner: Some(TextInputHandleInner {
-                cursor_offset,
+                cursor,
                 requested_cursor_offset,
             }),
         });
@@ -412,46 +434,53 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 
     let max_text_width = if wrap == TextWrap::Wrap {
         // Reserve the last column for the cursor.
-        width.max(1) - 1
+        width.max(1) as usize - 1
     } else {
-        usize::MAX as _
+        usize::MAX
     };
 
     let buffer = hooks.use_memo(
         {
             let text = props.value.clone();
-            move || Arc::new(TextBuffer::new(text, max_text_width as _))
+            move || Arc::new(TextBuffer::new(text, max_text_width))
         },
         (&props.value, max_text_width),
     );
 
     // Update the cursor position if the value has changed.
     if props.value.as_str() != prev_value.read().as_str() {
-        let new_cursor_offset = new_cursor_offset(
+        let new_cursor = CursorPosition::new(new_cursor_offset(
             &prev_value.read(),
-            cursor_offset.get(),
+            cursor.get().offset,
             &props.value,
             new_cursor_offset_hint.get(),
-        );
-        if cursor_offset != new_cursor_offset {
-            cursor_offset.set(new_cursor_offset);
+        ));
+        if cursor != new_cursor {
+            cursor.set(new_cursor);
         }
         prev_value.set(props.value.clone());
-    }
-    if new_cursor_offset_hint.get() != NewCursorOffsetHint::None {
-        new_cursor_offset_hint.set(NewCursorOffsetHint::None);
+        // XXX: Only reset the hint once the value changes. The parent may apply `on_change` in a
+        // later render than the one triggered by the keypress.
+        if new_cursor_offset_hint.get() != NewCursorOffsetHint::None {
+            new_cursor_offset_hint.set(NewCursorOffsetHint::None);
+        }
     }
 
     // Update the cursor position if the user requested it.
     if let Some(requested) = requested_cursor_offset.get() {
-        let requested = clamp_cursor_offset(&props.value, requested);
-        if cursor_offset != requested {
-            cursor_offset.set(requested);
+        let requested = CursorPosition::new(clamp_cursor_offset(&props.value, requested));
+        if cursor != requested {
+            cursor.set(requested);
         }
         requested_cursor_offset.set(None);
     }
 
-    let (cursor_row, mut cursor_col) = buffer.row_column_for_offset(cursor_offset.get());
+    let normalized_cursor = buffer.normalize(cursor.get());
+    if cursor != normalized_cursor {
+        cursor.set(normalized_cursor);
+    }
+
+    let (cursor_row, mut cursor_col) = buffer.row_column_for_cursor(cursor.get());
 
     // If we're wrapping, don't let the cursor go past the visible area. No non-whitespace
     // characters will extend that far.
@@ -477,7 +506,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
         }
 
         // Scroll back when the content shrinks so it isn't cut off.
-        let content_width = props.value.width() as u16;
+        let content_width = grapheme_width(&props.value) as u16;
         let max_scroll_offset_col = (content_width + 1).saturating_sub(width);
         if scroll_offset_col.get() > max_scroll_offset_col {
             scroll_offset_col.set(max_scroll_offset_col);
@@ -487,7 +516,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     hooks.use_terminal_events({
         let buffer = buffer.clone();
         let mut value = props.value.clone();
-        let mut temp_cursor_offset = cursor_offset.get();
+        let mut temp_cursor_offset = cursor.get().offset;
         let mut on_change = props.on_change.take();
         move |event| {
             if !has_focus {
@@ -506,11 +535,11 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                 {
                     match code {
                         KeyCode::Char('a') => {
-                            cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
+                            cursor.set(buffer.row_start(cursor.get()));
                             vertical_movement_col_preference.set(None);
                         }
                         KeyCode::Char('e') => {
-                            cursor_offset.set(buffer.row_end_offset(cursor_offset.get()));
+                            cursor.set(buffer.row_end(cursor.get()));
                             vertical_movement_col_preference.set(None);
                         }
                         _ => {}
@@ -532,14 +561,14 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                             value.insert(temp_cursor_offset, c);
                             temp_cursor_offset += c.len_utf8();
                             temp_cursor_offset =
-                                cursor_offset_after_insertion(&value, temp_cursor_offset);
+                                round_up_to_grapheme_boundary(&value, temp_cursor_offset);
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                             on_change(value.clone());
                         }
                         KeyCode::Backspace => {
                             if temp_cursor_offset > 0 {
                                 let end = temp_cursor_offset;
-                                temp_cursor_offset = previous_grapheme_offset(&value, end);
+                                temp_cursor_offset = backspace_offset(&value, end);
                                 value.replace_range(temp_cursor_offset..end, "");
                                 temp_cursor_offset =
                                     clamp_cursor_offset(&value, temp_cursor_offset);
@@ -552,49 +581,49 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                                 let end = next_grapheme_offset(&value, temp_cursor_offset);
                                 value.replace_range(temp_cursor_offset..end, "");
                                 temp_cursor_offset =
-                                    clamp_cursor_offset(&value, temp_cursor_offset);
+                                    round_up_to_grapheme_boundary(&value, temp_cursor_offset);
                             }
                             on_change(value.clone());
                             new_cursor_offset_hint.set(NewCursorOffsetHint::Deletion);
                         }
                         KeyCode::Enter if multiline => {
                             value.insert(temp_cursor_offset, '\n');
-                            temp_cursor_offset += 1;
+                            temp_cursor_offset =
+                                round_up_to_grapheme_boundary(&value, temp_cursor_offset + 1);
+                            new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                             on_change(value.clone());
                         }
                         KeyCode::Left => {
-                            cursor_offset.set(buffer.left_of_offset(cursor_offset.get()));
+                            cursor.set(buffer.left_of(cursor.get()));
                         }
                         KeyCode::Right => {
-                            cursor_offset.set(buffer.right_of_offset(cursor_offset.get()));
+                            cursor.set(buffer.right_of(cursor.get()));
                         }
                         KeyCode::Up if multiline => {
                             clear_vertical_movement_col_preference = false;
                             if vertical_movement_col_preference.get().is_none() {
-                                let (_, col) = buffer.row_column_for_offset(cursor_offset.get());
+                                let (_, col) = buffer.row_column_for_cursor(cursor.get());
                                 vertical_movement_col_preference.set(Some(col));
                             }
-                            cursor_offset.set(buffer.above_offset(
-                                cursor_offset.get(),
-                                vertical_movement_col_preference.get(),
-                            ));
+                            cursor.set(
+                                buffer.above(cursor.get(), vertical_movement_col_preference.get()),
+                            );
                         }
                         KeyCode::Down if multiline => {
                             clear_vertical_movement_col_preference = false;
                             if vertical_movement_col_preference.get().is_none() {
-                                let (_, col) = buffer.row_column_for_offset(cursor_offset.get());
+                                let (_, col) = buffer.row_column_for_cursor(cursor.get());
                                 vertical_movement_col_preference.set(Some(col));
                             }
-                            cursor_offset.set(buffer.below_offset(
-                                cursor_offset.get(),
-                                vertical_movement_col_preference.get(),
-                            ));
+                            cursor.set(
+                                buffer.below(cursor.get(), vertical_movement_col_preference.get()),
+                            );
                         }
                         KeyCode::Home => {
-                            cursor_offset.set(buffer.row_start_offset(cursor_offset.get()));
+                            cursor.set(buffer.row_start(cursor.get()));
                         }
                         KeyCode::End => {
-                            cursor_offset.set(buffer.row_end_offset(cursor_offset.get()));
+                            cursor.set(buffer.row_end(cursor.get()));
                         }
                         _ => {
                             clear_vertical_movement_col_preference = false;
@@ -613,7 +642,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
                     };
                     value.insert_str(temp_cursor_offset, &data);
                     temp_cursor_offset += data.len();
-                    temp_cursor_offset = cursor_offset_after_insertion(&value, temp_cursor_offset);
+                    temp_cursor_offset = round_up_to_grapheme_boundary(&value, temp_cursor_offset);
                     new_cursor_offset_hint.set(NewCursorOffsetHint::Insertion);
                     on_change(value.clone());
                     vertical_movement_col_preference.set(None);
@@ -657,33 +686,22 @@ enum NewCursorOffsetHint {
 }
 
 fn normalize_single_line_paste(data: String) -> String {
-    let Some(first_break) = data
-        .as_bytes()
-        .iter()
-        .position(|byte| matches!(*byte, b'\r' | b'\n'))
-    else {
+    if !data.contains(HARD_LINE_BREAKS) {
         return data;
-    };
-
-    let mut bytes = data.into_bytes();
-    let mut read = first_break;
-    let mut write = first_break;
-    while read < bytes.len() {
-        let byte = bytes[read];
-        bytes[write] = if matches!(byte, b'\r' | b'\n') {
-            b' '
-        } else {
-            byte
-        };
-        read += 1;
-        if byte == b'\r' && bytes.get(read) == Some(&b'\n') {
-            read += 1;
-        }
-        write += 1;
     }
-    bytes.truncate(write);
-    // ASCII replacements/removals cannot invalidate the original UTF-8.
-    String::from_utf8(bytes).expect("line break normalization preserves UTF-8")
+    let mut normalized = String::with_capacity(data.len());
+    let mut chars = data.chars().peekable();
+    while let Some(c) = chars.next() {
+        if HARD_LINE_BREAKS.contains(&c) {
+            if c == '\r' {
+                chars.next_if_eq(&'\n');
+            }
+            normalized.push(' ');
+        } else {
+            normalized.push(c);
+        }
+    }
+    normalized
 }
 
 /// Returns whether a keypress is using AltGr, always false for platforms other than Windows.
@@ -710,15 +728,50 @@ fn next_grapheme_offset(value: &str, offset: usize) -> usize {
         .unwrap_or(value.len())
 }
 
-fn cursor_offset_after_insertion(value: &str, offset: usize) -> usize {
-    let mut cursor = GraphemeCursor::new(offset, value.len(), true);
-    if cursor.is_boundary(value, 0).unwrap() {
+// Backspace removes a single code point so that, for example, a combining mark can be corrected
+// without retyping its base character. Emoji sequences and CRLF are removed whole, since their
+// parts aren't meaningful on their own.
+fn backspace_offset(value: &str, offset: usize) -> usize {
+    let start = previous_grapheme_offset(value, offset);
+    let grapheme = &value[start..offset];
+    if grapheme == "\r\n" || grapheme.chars().any(is_emoji_sequence_component) {
+        start
+    } else {
+        value[..offset]
+            .char_indices()
+            .next_back()
+            .map_or(0, |(i, _)| i)
+    }
+}
+
+// Every multi-code point emoji sequence contains at least one of these.
+fn is_emoji_sequence_component(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200d}' // zero width joiner
+            | '\u{fe0f}' // emoji presentation selector
+            | '\u{20e3}' // combining enclosing keycap
+            | '\u{1f1e6}'..='\u{1f1ff}' // regional indicators
+            | '\u{1f3fb}'..='\u{1f3ff}' // skin tone modifiers
+            | '\u{e0020}'..='\u{e007f}' // tags
+    )
+}
+
+fn is_grapheme_boundary(value: &str, offset: usize) -> bool {
+    GraphemeCursor::new(offset, value.len(), true)
+        .is_boundary(value, 0)
+        .unwrap()
+}
+
+fn round_up_to_grapheme_boundary(value: &str, offset: usize) -> usize {
+    let mut offset = offset.min(value.len());
+    while !value.is_char_boundary(offset) {
+        offset += 1;
+    }
+    if is_grapheme_boundary(value, offset) {
         offset
     } else {
-        cursor
-            .next_boundary(value, 0)
-            .unwrap()
-            .unwrap_or(value.len())
+        next_grapheme_offset(value, offset)
     }
 }
 
@@ -727,11 +780,10 @@ fn clamp_cursor_offset(value: &str, offset: usize) -> usize {
     while !value.is_char_boundary(offset) {
         offset -= 1;
     }
-    let mut cursor = GraphemeCursor::new(offset, value.len(), true);
-    if cursor.is_boundary(value, 0).unwrap() {
+    if is_grapheme_boundary(value, offset) {
         offset
     } else {
-        cursor.prev_boundary(value, 0).unwrap().unwrap_or(0)
+        previous_grapheme_offset(value, offset)
     }
 }
 
@@ -748,32 +800,37 @@ fn new_cursor_offset(
     let has_same_tail = value.len() >= tail_len
         && value.as_bytes()[value.len() - tail_len..] == prev_value.as_bytes()[cursor_offset..];
 
-    let offset = if value.len() >= prev_value.len() && has_same_head && has_same_tail {
+    // Offsets that land inside a grapheme are rounded forward after insertions and deletions, so
+    // text before the cursor stays before it, and rounded back otherwise.
+    let (offset, round_up) = if value.len() >= prev_value.len() && has_same_head && has_same_tail {
         // insertion (or no change)
-        let offset = cursor_offset + (value.len() - prev_value.len());
-        if hint == NewCursorOffsetHint::Insertion {
-            return cursor_offset_after_insertion(value, offset);
-        }
-        offset
+        (
+            cursor_offset + (value.len() - prev_value.len()),
+            hint == NewCursorOffsetHint::Insertion,
+        )
     } else if value.len() < prev_value.len() && has_same_tail && has_same_head {
         // ambiguous case, could be backspace or deletion
         if hint == NewCursorOffsetHint::Deletion {
-            cursor_offset
+            (cursor_offset, true)
         } else {
             // bias towards backspace
-            cursor_offset - (prev_value.len() - value.len())
+            (cursor_offset - (prev_value.len() - value.len()), false)
         }
     } else if value.len() < prev_value.len() && has_same_tail {
         // backspace
-        cursor_offset - (prev_value.len() - value.len())
+        (cursor_offset - (prev_value.len() - value.len()), false)
     } else if value.len() < prev_value.len() && has_same_head {
         // deletion
-        cursor_offset
+        (cursor_offset, true)
     } else {
         // unknown, put the cursor at the end
-        value.len()
+        (value.len(), false)
     };
-    clamp_cursor_offset(value, offset)
+    if round_up {
+        round_up_to_grapheme_boundary(value, offset)
+    } else {
+        clamp_cursor_offset(value, offset)
+    }
 }
 
 #[cfg(test)]
@@ -786,7 +843,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[derive(Props)]
-    struct CrlfInputProps {
+    struct TestInputProps {
         cursor: usize,
         #[iocraft(required)]
         width: u16,
@@ -797,7 +854,7 @@ mod tests {
     }
 
     #[component]
-    fn CrlfInput(mut hooks: Hooks, props: &CrlfInputProps) -> impl Into<AnyElement<'static>> {
+    fn TestInput(mut hooks: Hooks, props: &TestInputProps) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
         let mut value = hooks.use_state(|| props.initial_value.to_string());
         let mut handle = hooks.use_ref_default::<TextInputHandle>();
@@ -845,6 +902,144 @@ mod tests {
         }
     }
 
+    #[derive(Props)]
+    struct DeferredInputProps {
+        #[iocraft(required)]
+        initial_value: &'static str,
+        #[iocraft(required)]
+        observed: Arc<Mutex<String>>,
+    }
+
+    // Applies each change from `on_change` in a later render than the keypress.
+    #[component]
+    fn DeferredInput(
+        mut hooks: Hooks,
+        props: &DeferredInputProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let mut value = hooks.use_state(|| props.initial_value.to_string());
+        let mut pending = hooks.use_state(|| None::<String>);
+        let mut handle = hooks.use_ref_default::<TextInputHandle>();
+        hooks.use_effect(move || handle.write().set_cursor_offset(1), ());
+        hooks.use_future(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(50)).await;
+                let next = pending.write().take();
+                if let Some(next) = next {
+                    value.set(next);
+                }
+            }
+        });
+        if value.read().contains('!') {
+            system.exit();
+        }
+        let observed = props.observed.clone();
+        element! {
+            View(width: 11, height: 1) {
+                TextInput(
+                    has_focus: true,
+                    handle,
+                    value: value.to_string(),
+                    on_change: move |new_value: String| {
+                        *observed.lock().unwrap() = new_value.clone();
+                        pending.set(Some(new_value));
+                    },
+                )
+            }
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_delete_hint_survives_deferred_value_update() {
+        let observed = Arc::new(Mutex::new(String::new()));
+        let mut app = element!(DeferredInput(
+            initial_value: "aab",
+            observed: observed.clone(),
+        ));
+        let render = async {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            let _ = futures::poll!(frames.next());
+            let _ = futures::poll!(frames.next());
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Delete,
+                )))
+                .unwrap();
+            // Wait for the deferred value to arrive.
+            loop {
+                let frame = frames.next().await.unwrap();
+                if frame.get_text(0, 0, 11, 1).trim_end() == "ab" {
+                    break;
+                }
+            }
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                )))
+                .unwrap();
+            frames.for_each(|_| async {}).await;
+        };
+        smol::future::or(render, async {
+            smol::Timer::after(std::time::Duration::from_secs(5)).await;
+            panic!("deferred input did not finish");
+        })
+        .await;
+        // Delete keeps the cursor between the 'a's, so '!' lands there.
+        assert_eq!(*observed.lock().unwrap(), "a!b");
+    }
+
+    #[apply(test!)]
+    async fn test_soft_wrapped_row_end_editing() {
+        for (initial_value, keys, expected) in [
+            ("abcdef", &[KeyCode::End][..], "abc!def"),
+            ("界界x", &[KeyCode::End], "界!界x"),
+            ("abcdef", &[KeyCode::End, KeyCode::Home], "!abcdef"),
+            ("abcdefghi", &[KeyCode::End, KeyCode::Down], "abcdef!ghi"),
+            ("abcdef", &[KeyCode::End, KeyCode::Backspace], "ab!def"),
+        ] {
+            let observed = Arc::new(Mutex::new(String::new()));
+            let mut app = element!(TestInput(
+                cursor: 0_usize,
+                width: 4_u16,
+                initial_value: initial_value,
+                observed: observed.clone(),
+            ));
+            let render = async {
+                let (sender, events) = futures::channel::mpsc::unbounded();
+                let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+                futures::pin_mut!(frames);
+                frames.next().await.unwrap();
+                let _ = futures::poll!(frames.next());
+                let _ = futures::poll!(frames.next());
+                for &code in keys.iter().chain([&KeyCode::Char('!')]) {
+                    sender
+                        .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            code,
+                        )))
+                        .unwrap();
+                    frames.next().await;
+                }
+                frames.for_each(|_| async {}).await;
+            };
+            smol::future::or(render, async {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                panic!("wrapped input did not finish");
+            })
+            .await;
+            assert_eq!(
+                *observed.lock().unwrap(),
+                expected,
+                "{initial_value:?} {keys:?}"
+            );
+        }
+    }
+
     #[apply(test!)]
     async fn test_crlf_editing_and_requested_cursor_offsets() {
         for (initial_value, cursor, key, expected_value, expected_frame) in [
@@ -854,17 +1049,32 @@ mod tests {
             ("a\rb", 2, Some(KeyCode::Enter), "a\r\n!b", "a\n!b"),
             ("a界b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
             ("a界b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
-            ("ae\u{301}b", 4, Some(KeyCode::Backspace), "a!b", "a!b"),
+            ("ae\u{301}b", 4, Some(KeyCode::Backspace), "ae!b", "ae!b"),
+            ("a🇺🇸b", 9, Some(KeyCode::Backspace), "a!b", "a!b"),
+            (
+                "a1\u{fe0f}\u{20e3}b",
+                8,
+                Some(KeyCode::Backspace),
+                "a!b",
+                "a!b",
+            ),
             ("ae\u{301}b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
             ("a👩‍👩‍👧‍👦b", 26, Some(KeyCode::Backspace), "a!b", "a!b"),
             ("a🇺🇸b", 1, Some(KeyCode::Delete), "a!b", "a!b"),
+            (
+                "a\n\u{301}",
+                1,
+                Some(KeyCode::Delete),
+                "a\u{301}!",
+                "a\u{301}!",
+            ),
         ] {
             let observed = Arc::new(Mutex::new(String::new()));
             let events = key
                 .into_iter()
                 .chain(std::iter::once(KeyCode::Char('!')))
                 .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
-            let mut app = element!(CrlfInput(
+            let mut app = element!(TestInput(
                 cursor: cursor,
                 width: 11_u16,
                 initial_value: initial_value,
@@ -896,7 +1106,7 @@ mod tests {
                 )),
             ] {
                 let observed = Arc::new(Mutex::new(String::new()));
-                let mut app = element!(CrlfInput(
+                let mut app = element!(TestInput(
                     cursor: "👩".len(),
                     width: 11_u16,
                     initial_value: initial_value,
@@ -934,7 +1144,7 @@ mod tests {
     async fn test_wrapped_vertical_backspace_removes_whole_grapheme() {
         for (initial_value, expected) in [("👩‍👩x", "!x"), ("a \u{301}b", "! \u{301}b")] {
             let observed = Arc::new(Mutex::new(String::new()));
-            let mut app = element!(CrlfInput(
+            let mut app = element!(TestInput(
                 cursor: 0_usize,
                 width: 2_u16,
                 initial_value: initial_value,
@@ -977,12 +1187,12 @@ mod tests {
     fn test_crlf_rows_keep_raw_offsets_without_control_characters() {
         let buffer = TextBuffer::new("a\r\nb\r", usize::MAX);
         assert!(buffer.lines().eq(["a", "b", ""]));
-        assert_eq!(buffer.row_column_for_offset(1), (0, 1));
-        assert_eq!(buffer.row_column_for_offset(3), (1, 0));
-        assert_eq!(buffer.row_column_for_offset(5), (2, 0));
-        assert_eq!(buffer.row_end_offset(0), 1);
-        assert_eq!(buffer.left_of_offset(3), 1);
-        assert_eq!(buffer.right_of_offset(1), 3);
+        assert_eq!(buffer.row_column_for_cursor(at(1)), (0, 1));
+        assert_eq!(buffer.row_column_for_cursor(at(3)), (1, 0));
+        assert_eq!(buffer.row_column_for_cursor(at(5)), (2, 0));
+        assert_eq!(buffer.row_end(at(0)), at(1));
+        assert_eq!(buffer.left_of(at(3)), at(1));
+        assert_eq!(buffer.right_of(at(1)), at(3));
     }
 
     #[apply(test!)]
@@ -1103,6 +1313,7 @@ mod tests {
             ("é\r界", " é 界! \n"),
             ("é\r\n界", " é 界! \n"),
             ("é\r\n界\r🙂\n", " é 界 🙂 ! \n"),
+            ("é\u{2028}界\u{b}🙂\u{85}", " é 界 🙂 ! \n"),
         ] {
             let actual = element!(MyComponent)
                 .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
@@ -1244,101 +1455,182 @@ mod tests {
         assert_eq!(actual, vec!["  \n\n\n", " red\n blue! \n\n"]);
     }
 
+    fn at(offset: usize) -> CursorPosition {
+        CursorPosition::new(offset)
+    }
+
+    fn at_row_end(offset: usize) -> CursorPosition {
+        CursorPosition {
+            offset,
+            at_row_end: true,
+        }
+    }
+
     #[test]
     fn test_text_buffer_cursor_movement() {
         let buffer = TextBuffer::new("foo\nbar baz", 10);
-        assert_eq!(buffer.left_of_offset(2), 1);
-        assert_eq!(buffer.right_of_offset(2), 3);
-        assert_eq!(buffer.above_offset(2, None), 2);
-        assert_eq!(buffer.below_offset(2, None), 6);
-        assert_eq!(buffer.below_offset(2, Some(5)), 9);
-        assert_eq!(buffer.above_offset(5, None), 1);
-        assert_eq!(buffer.below_offset(5, None), 5);
-        assert_eq!(buffer.above_offset(5, Some(6)), 3);
+        assert_eq!(buffer.left_of(at(2)), at(1));
+        assert_eq!(buffer.right_of(at(2)), at(3));
+        assert_eq!(buffer.above(at(2), None), at(2));
+        assert_eq!(buffer.below(at(2), None), at(6));
+        assert_eq!(buffer.below(at(2), Some(5)), at(9));
+        assert_eq!(buffer.above(at(5), None), at(1));
+        assert_eq!(buffer.below(at(5), None), at(5));
+        assert_eq!(buffer.above(at(5), Some(6)), at(3));
     }
 
     #[test]
     fn test_grapheme_cursor_boundaries() {
         let buffer = TextBuffer::new("e\u{301}x\n👩‍👩‍👧‍👦x", 40);
-        assert_eq!(buffer.right_of_offset(0), 3);
-        assert_eq!(buffer.left_of_offset(3), 0);
+        assert_eq!(buffer.right_of(at(0)), at(3));
+        assert_eq!(buffer.left_of(at(3)), at(0));
         assert_eq!(clamp_cursor_offset(&buffer.text, 1), 0);
         assert_eq!(clamp_cursor_offset(&buffer.text, 2), 0);
-        assert_eq!(buffer.below_offset(3, None), 30);
-        assert_eq!(buffer.above_offset(30, Some(1)), 3);
+        assert_eq!(buffer.below(at(3), None), at(30));
+        assert_eq!(buffer.above(at(30), Some(1)), at(3));
     }
 
     #[test]
     fn test_soft_wrap_cursor_uses_next_row() {
         let buffer = TextBuffer::new("abcdefgh", 3);
-        assert_eq!(buffer.row_column_for_offset(3), (1, 0));
-        assert_eq!(buffer.row_start_offset(3), 3);
-        assert_eq!(buffer.above_offset(3, None), 0);
-        assert_eq!(buffer.below_offset(0, None), 3);
+        assert_eq!(buffer.row_column_for_cursor(at(3)), (1, 0));
+        assert_eq!(buffer.row_start(at(3)), at(3));
+        assert_eq!(buffer.above(at(3), None), at(0));
+        assert_eq!(buffer.below(at(0), None), at(3));
     }
 
     #[test]
-    fn test_row_end_stays_on_soft_wrapped_row() {
-        for text in ["abcdef", "abc def"] {
+    fn test_soft_wrap_row_end() {
+        for (text, end) in [("abcdef", 3), ("abc def", 4)] {
             let buffer = TextBuffer::new(text, 3);
-            let end = buffer.row_end_offset(0);
-            assert_eq!(buffer.row_column_for_offset(end).0, 0, "{text:?}");
+            assert_eq!(buffer.row_end(at(1)), at_row_end(end), "{text:?}");
+            assert_eq!(
+                buffer.row_column_for_cursor(at_row_end(end)),
+                (0, end as u16),
+                "{text:?}"
+            );
+            assert_eq!(buffer.row_start(at_row_end(end)), at(0), "{text:?}");
+            assert_eq!(buffer.row_end(at(end)), at(text.len()), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn test_soft_wrap_row_end_moves_vertically() {
+        let buffer = TextBuffer::new("abcdefghi", 3);
+        assert_eq!(buffer.below(at_row_end(3), None), at_row_end(6));
+        assert_eq!(buffer.above(at_row_end(6), None), at_row_end(3));
+        assert_eq!(buffer.below(at_row_end(6), None), at(9));
+        assert_eq!(buffer.above(at(9), None), at_row_end(6));
+        assert_eq!(buffer.left_of(at_row_end(3)), at(2));
+        assert_eq!(buffer.right_of(at_row_end(3)), at(4));
+    }
+
+    #[test]
+    fn test_hard_line_end_does_not_use_row_end_position() {
+        for separator in ["\n", "\u{2028}"] {
+            let buffer = TextBuffer::new(format!("abc{separator}def"), 10);
+            let next = 3 + separator.len();
+            assert_eq!(buffer.row_end(at(0)), at(3), "{separator:?}");
+            assert_eq!(buffer.above(at(next + 3), None), at(3), "{separator:?}");
+            assert_eq!(
+                buffer.row_column_for_cursor(at(next)),
+                (1, 0),
+                "{separator:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_row_end_position_is_dropped_when_no_longer_at_a_soft_wrap() {
+        let narrow = TextBuffer::new("abcdef", 3);
+        let wide = TextBuffer::new("abcdef", 10);
+        assert_eq!(narrow.normalize(at_row_end(3)), at_row_end(3));
+        assert_eq!(wide.normalize(at_row_end(3)), at(3));
+        assert_eq!(narrow.normalize(at_row_end(6)), at(6));
+    }
+
+    #[apply(test!)]
+    async fn test_empty_input_navigation() {
+        for code in [
+            KeyCode::Home,
+            KeyCode::End,
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Left,
+            KeyCode::Right,
+        ] {
+            let observed = Arc::new(Mutex::new(String::new()));
+            let mut app = element!(TestInput(
+                width: 10_u16,
+                initial_value: "",
+                observed: observed.clone(),
+            ));
+            let events = [code, KeyCode::Char('!')]
+                .into_iter()
+                .map(|code| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)));
+            app.mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                events,
+            )))
+            .collect::<Vec<_>>()
+            .await;
+            assert_eq!(*observed.lock().unwrap(), "!", "{code:?}");
         }
     }
 
     #[test]
     fn test_up_stays_in_previous_wrapped_row() {
         let buffer = TextBuffer::new("abcdef", 3);
-        assert_eq!(buffer.above_offset(6, Some(3)), 2);
+        assert_eq!(buffer.above(at(6), Some(3)), at_row_end(3));
     }
 
     #[test]
     fn test_down_does_not_skip_wrapped_row() {
         let buffer = TextBuffer::new("abcd\nabcdefgh", 4);
-        assert_eq!(buffer.below_offset(4, Some(4)), 8);
-        assert_eq!(buffer.below_offset(8, Some(4)), 13);
+        assert_eq!(buffer.below(at(4), Some(4)), at_row_end(9));
+        assert_eq!(buffer.below(at_row_end(9), Some(4)), at(13));
     }
 
     #[test]
     fn test_up_into_wide_grapheme_stays_in_previous_row() {
         let buffer = TextBuffer::new("👩‍👩x", 1);
-        assert_eq!(buffer.above_offset(buffer.text.len(), None), 0);
+        let (row, _) = buffer.row_column_for_cursor(buffer.above(at(buffer.text.len()), None));
+        assert_eq!(row, 0);
     }
 
     #[test]
     fn test_test_buffer_row_column_for_offset() {
         assert_eq!(
-            TextBuffer::new("一二!", 10).row_column_for_offset(7),
+            TextBuffer::new("一二!", 10).row_column_for_cursor(at(7)),
             (0, 5)
         );
 
         assert_eq!(
-            TextBuffer::new("foo bar bazqux", 10).row_column_for_offset(9),
+            TextBuffer::new("foo bar bazqux", 10).row_column_for_cursor(at(9)),
             (1, 1)
         );
 
         assert_eq!(
-            TextBuffer::new("1234512345", 10).row_column_for_offset(10),
+            TextBuffer::new("1234512345", 10).row_column_for_cursor(at(10)),
             (0, 10)
         );
 
         assert_eq!(
-            TextBuffer::new("12345123451", 10).row_column_for_offset(11),
+            TextBuffer::new("12345123451", 10).row_column_for_cursor(at(11)),
             (1, 1)
         );
 
         assert_eq!(
-            TextBuffer::new("asd asd asd", 10).row_column_for_offset(11),
+            TextBuffer::new("asd asd asd", 10).row_column_for_cursor(at(11)),
             (1, 3)
         );
 
         assert_eq!(
-            TextBuffer::new("12345123 5 ", 10).row_column_for_offset(11),
+            TextBuffer::new("12345123 5 ", 10).row_column_for_cursor(at(11)),
             (0, 11)
         );
 
         assert_eq!(
-            TextBuffer::new("asd\n", 10).row_column_for_offset(4),
+            TextBuffer::new("asd\n", 10).row_column_for_cursor(at(4)),
             (1, 0)
         );
     }
