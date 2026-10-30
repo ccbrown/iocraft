@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.3...iocraft-v0.9.4) - 2026-10-30
+
+### Added
+
+- allow non-Clone handler payloads ([#297](https://github.com/ccbrown/iocraft/pull/297))
+
+### Fixed
+
+- *(text-input)* preserve graphemes and wrapped-row boundaries ([#267](https://github.com/ccbrown/iocraft/pull/267))
+- keep fullscreen diffs from writing below a shrunken terminal ([#310](https://github.com/ccbrown/iocraft/pull/310))
+- keep Canvas clipping, extracted text and link targets safe ([#293](https://github.com/ccbrown/iocraft/pull/293))
+- keep large layout dimensions intact when clipping children ([#277](https://github.com/ccbrown/iocraft/pull/277))
+- *(scroll-view)* clamp extreme relative scrolls ([#308](https://github.com/ccbrown/iocraft/pull/308))
+- keep local mouse coordinates out of i16 arithmetic ([#275](https://github.com/ccbrown/iocraft/pull/275))
+- *(text-input)* restore auto-grow layout after toggling it back on ([#266](https://github.com/ccbrown/iocraft/pull/266))
+- *(hooks)* poll async handlers outside the queue lock ([#263](https://github.com/ccbrown/iocraft/pull/263))
+- release setter locks before dropping replaced values ([#299](https://github.com/ccbrown/iocraft/pull/299))
+- let output callbacks log without deadlocking ([#279](https://github.com/ccbrown/iocraft/pull/279))
+- Ignore local mouse events outside ancestor clipping ([#276](https://github.com/ccbrown/iocraft/pull/276))
+- *(canvas)* clear bold and faint when switching text weight ([#259](https://github.com/ccbrown/iocraft/pull/259))
+- keep leading blank rows when wrapping Text ([#271](https://github.com/ccbrown/iocraft/pull/271))
+- keep secondary clicks from activating buttons ([#295](https://github.com/ccbrown/iocraft/pull/295))
+- *(text)* keep grapheme clusters intact when painting and wrapping ([#264](https://github.com/ccbrown/iocraft/pull/264))
+- report errors when a frame fails to finish ([#281](https://github.com/ccbrown/iocraft/pull/281))
+- alignment with leading Unicode whitespace ([#270](https://github.com/ccbrown/iocraft/pull/270))
+- *(hooks)* cancel async tasks even when their handler is retained ([#256](https://github.com/ccbrown/iocraft/pull/256))
+- *(text-input)* clamp requested cursors to UTF-8 boundaries ([#252](https://github.com/ccbrown/iocraft/pull/252))
+- *(canvas)* skip continuation cells when extracting wide text ([#249](https://github.com/ccbrown/iocraft/pull/249))
+
+### Other
+
+- clean up ai comments and add guidance ([#306](https://github.com/ccbrown/iocraft/pull/306))
+- reuse Text measurement across style-only redraws ([#287](https://github.com/ccbrown/iocraft/pull/287))
+- Release the state write borrow before waking its consumer ([#294](https://github.com/ccbrown/iocraft/pull/294))
+
 ## [0.9.3](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.2...iocraft-v0.9.3) - 2026-10-14
 
 ### Fixed
