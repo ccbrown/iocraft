@@ -598,6 +598,7 @@ impl ToTokens for ParsedProps {
                         .expect("named fields checked while parsing");
                     let ty = &field.ty;
                     Some(quote! {
+                        #[allow(clippy::impl_trait_in_params)]
                         #vis fn #name(mut self, value: impl Into<#ty>) -> Self {
                             self.#name = value.into();
                             self
@@ -636,6 +637,7 @@ impl ToTokens for ParsedProps {
                     }
                 });
                 quote! {
+                    #[allow(clippy::impl_trait_in_params)]
                     #vis fn #field_name(
                         self,
                         value: impl Into<#field_ty>,
