@@ -520,6 +520,10 @@ impl<'a> Tree<'a> {
             {
                 result?;
             }
+            // poll input again to prevent a busy component from starving it
+            if let Some(result) = term.wait().now_or_never() {
+                result?;
+            }
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
@@ -661,6 +665,42 @@ mod tests {
 
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert_eq!(error.to_string(), "input failed");
+    }
+
+    #[component]
+    fn AlwaysDirty(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let mut renders = hooks.use_state(|| 0_i32);
+        let mut saw_key = hooks.use_state(|| false);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(_)) {
+                saw_key.set(true);
+            }
+        });
+        renders += 1;
+        if saw_key.get() || renders.get() > 10 {
+            system.exit();
+        }
+        element!(Text(content: if saw_key.get() { "key" } else { "idle" }))
+    }
+
+    #[apply(test!)]
+    async fn test_terminal_input_is_polled_while_root_stays_dirty() {
+        let events = futures::stream::iter([TerminalEvent::Key(KeyEvent::new(
+            KeyEventKind::Press,
+            KeyCode::Char('x'),
+        ))]);
+        let mut app = element!(AlwaysDirty);
+        let frames: Vec<_> =
+            mock_terminal_render_loop(&mut app, MockTerminalConfig::with_events(events))
+                .collect()
+                .await;
+        let last = frames.last().expect("the render loop produced a frame");
+        assert_eq!(
+            last.to_string().trim(),
+            "key",
+            "terminal input was never polled while the root stayed dirty"
+        );
     }
 
     #[component]
