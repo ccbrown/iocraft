@@ -76,7 +76,9 @@ impl<T: Sync + Send + 'static> Ref<T> {
     /// Sets the value of the ref.
     pub fn set(&mut self, value: T) {
         if let Some(mut v) = self.try_write() {
-            *v = value;
+            let old = std::mem::replace(&mut *v, value);
+            drop(v);
+            drop(old);
         }
     }
 
@@ -415,5 +417,43 @@ mod tests {
         value -= 1;
         value *= 2;
         value /= 2;
+    }
+
+    #[test]
+    fn test_replaced_value_drop_can_read_replacement() {
+        use std::sync::{Arc, Mutex};
+
+        struct Value {
+            number: u32,
+            on_drop: Option<Box<dyn FnOnce() + Send + Sync>>,
+        }
+
+        impl Drop for Value {
+            fn drop(&mut self) {
+                if let Some(on_drop) = self.on_drop.take() {
+                    on_drop();
+                }
+            }
+        }
+
+        let observed = Arc::new(Mutex::new(None));
+        let hook = UseRefImpl::new(Value {
+            number: 1,
+            on_drop: None,
+        });
+        let mut reference = hook.value;
+        let reader = reference;
+        let on_drop_observed = observed.clone();
+        reference.write().on_drop = Some(Box::new(move || {
+            *on_drop_observed.lock().unwrap() =
+                Some(reader.inner.try_read().ok().map(|value| value.number));
+        }));
+
+        reference.set(Value {
+            number: 2,
+            on_drop: None,
+        });
+
+        assert_eq!(*observed.lock().unwrap(), Some(Some(2)));
     }
 }

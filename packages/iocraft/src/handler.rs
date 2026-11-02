@@ -53,8 +53,6 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
 /// For component properties consider using [`HandlerMut`] over this, as [`Handler`] is more restrictive.
 /// Just as [`Fn`] can be used where an [`FnMut`] is expected, [`Handler`] can be used where a [`HandlerMut`]
 /// is expected via [`From`] or [`Handler::bind`].
-/// Cloning shares the callback rather than cloning inputs. Inputs need not implement
-/// `Clone`, `Send`, or `Sync` for cloning or conversion to [`HandlerMut`].
 ///
 /// # Example
 ///

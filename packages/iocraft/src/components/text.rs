@@ -1,10 +1,12 @@
 use crate::{
-    render::MeasureFunc, segmented_string::SegmentedString, strip_ansi::strip_ansi,
+    render::MeasureFunc,
+    segmented_string::{grapheme_width, is_whitespace_grapheme, SegmentedString},
+    strip_ansi::strip_ansi,
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
 use std::sync::Arc;
 use taffy::{AvailableSpace, Size};
-use unicode_width::UnicodeWidthStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// The text wrapping behavior of a [`Text`] component.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
@@ -55,7 +57,6 @@ pub struct TextProps {
     pub wrap: TextWrap,
 
     /// The text alignment.
-    /// Leading Unicode whitespace contributes to the aligned display width.
     pub align: TextAlign,
 
     /// The text decoration.
@@ -100,7 +101,7 @@ impl Text {
             let mut max_width = 0;
             let mut num_lines = 0;
             for line in content.lines() {
-                max_width = max_width.max(line.width());
+                max_width = max_width.max(grapheme_width(line));
                 num_lines += 1;
             }
             Size {
@@ -156,7 +157,7 @@ impl Text {
             _ => {
                 let paddings = content
                     .lines()
-                    .map(|line| Self::alignment_padding(line.width(), align, width))
+                    .map(|line| Self::alignment_padding(grapheme_width(line), align, width))
                     .collect::<Vec<_>>();
 
                 let x_offset = paddings.iter().copied().min().unwrap_or(0);
@@ -215,11 +216,11 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
         while let Some(mut line) = lines.next() {
             if self.skip_leading_whitespace && !self.line_encountered_non_whitespace {
                 let to_skip = line
-                    .char_indices()
-                    .find(|(_, c)| !c.is_whitespace())
+                    .grapheme_indices(true)
+                    .find(|(_, grapheme)| !is_whitespace_grapheme(grapheme))
                     .map_or(line.len(), |(offset, _)| offset);
                 let (whitespace, remaining) = line.split_at(to_skip);
-                self.x += whitespace.width() as isize;
+                self.x += grapheme_width(whitespace) as isize;
                 line = remaining;
                 if !line.is_empty() {
                     self.line_encountered_non_whitespace = true;
@@ -227,7 +228,7 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
             }
             let placed_x = self.x;
             self.drawer.canvas().set_text(placed_x, self.y, line, style);
-            let w = line.width();
+            let w = grapheme_width(line);
             if w > 0 {
                 self.drawer.canvas().set_hyperlink(
                     placed_x,
@@ -242,7 +243,7 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
                 self.x = self.x_offset;
                 self.line_encountered_non_whitespace = false;
             } else {
-                self.x += line.width() as isize;
+                self.x += w as isize;
             }
         }
     }
