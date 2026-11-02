@@ -520,6 +520,9 @@ impl<'a> Tree<'a> {
             {
                 result?;
             }
+            if self.system_context.should_exit() || term.received_ctrl_c() {
+                break;
+            }
             // poll input again to prevent a busy component from starving it
             if let Some(result) = term.wait().now_or_never() {
                 result?;
