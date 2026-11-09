@@ -101,6 +101,25 @@ impl Component for ManualDefaultComponent {
     }
 }
 
+#[derive(Default, Props)]
+struct DropComponentProps {
+    name: String,
+}
+
+impl Drop for DropComponentProps {
+    fn drop(&mut self) {}
+}
+
+struct DropComponent;
+
+impl Component for DropComponent {
+    type Props<'a> = DropComponentProps;
+
+    fn new(_props: &Self::Props<'_>) -> Self {
+        Self
+    }
+}
+
 #[test]
 fn minimal() {
     let _: Element<MyComponent> = element!(MyComponent);
@@ -259,4 +278,10 @@ fn deterministic_keys() {
         a1.key, b1.key,
         "different call sites should produce different keys"
     );
+}
+
+#[test]
+fn drop_props() {
+    let e = element!(DropComponent(name: "foo"));
+    assert_eq!(e.props.name, "foo");
 }

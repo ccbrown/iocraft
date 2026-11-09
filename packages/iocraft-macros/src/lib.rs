@@ -528,25 +528,38 @@ impl ToTokens for ParsedProps {
         let (builder_impl_generics, builder_ty_generics, builder_where_clause) =
             builder_generics.split_for_impl();
 
-        let builder_fields = fields
-            .iter()
-            .zip(&self.required_fields)
-            .scan(0, |required_index, (field, required)| {
-                let name = field
-                    .ident
-                    .as_ref()
-                    .expect("named fields checked while parsing");
-                let ty = &field.ty;
-                let field_ty = if *required {
-                    let state_name = &required_state_names[*required_index];
-                    *required_index += 1;
-                    quote!(#state_name)
-                } else {
-                    quote!(#ty)
-                };
-                Some(quote!(#name: #field_ty))
-            })
-            .collect::<Vec<_>>();
+        // Props without required fields are seeded from the struct's own `Default` implementation
+        // so that manual implementations are respected. Props with required fields can't
+        // meaningfully implement `Default`, so each optional field uses its type's default instead.
+        //
+        // XXX: When seeding, the builder must hold the props struct itself and assign to its
+        // fields rather than moving them out, since that is not allowed for types implementing
+        // `Drop`.
+        let seed_from_struct_default = required_fields.is_empty();
+
+        let builder_fields = if seed_from_struct_default {
+            vec![quote!(_iocraft_props: #name #bracketed_generic_names)]
+        } else {
+            fields
+                .iter()
+                .zip(&self.required_fields)
+                .scan(0, |required_index, (field, required)| {
+                    let name = field
+                        .ident
+                        .as_ref()
+                        .expect("named fields checked while parsing");
+                    let ty = &field.ty;
+                    let field_ty = if *required {
+                        let state_name = &required_state_names[*required_index];
+                        *required_index += 1;
+                        quote!(#state_name)
+                    } else {
+                        quote!(#ty)
+                    };
+                    Some(quote!(#name: #field_ty))
+                })
+                .collect::<Vec<_>>()
+        };
 
         let initial_builder_args = original_generic_args
             .iter()
@@ -558,39 +571,42 @@ impl ToTokens for ParsedProps {
         } else {
             quote!(#builder_name<#(#initial_builder_args),*>)
         };
-        // Props without required fields are seeded from the struct's own `Default` implementation
-        // so that manual implementations are respected. Props with required fields can't
-        // meaningfully implement `Default`, so each optional field uses its type's default instead.
-        let seed_from_struct_default = required_fields.is_empty();
-        let initial_field_values = field_names.iter().zip(&self.required_fields).scan(
-            0,
-            |required_index, (name, required)| {
-                if *required {
-                    let missing_state_name = &missing_state_names[*required_index];
-                    *required_index += 1;
-                    Some(quote!(#name: #missing_state_name))
-                } else if seed_from_struct_default {
-                    Some(quote!(#name))
-                } else {
-                    Some(quote!(#name: Default::default()))
-                }
-            },
-        );
-        let seed_statement = seed_from_struct_default.then(|| {
-            quote! {
-                let Self { #(#field_names),* } = <Self as Default>::default();
-            }
-        });
+        let initial_field_values = if seed_from_struct_default {
+            vec![quote!(_iocraft_props: <Self as Default>::default())]
+        } else {
+            field_names
+                .iter()
+                .zip(&self.required_fields)
+                .scan(0, |required_index, (name, required)| {
+                    if *required {
+                        let missing_state_name = &missing_state_names[*required_index];
+                        *required_index += 1;
+                        Some(quote!(#name: #missing_state_name))
+                    } else {
+                        Some(quote!(#name: Default::default()))
+                    }
+                })
+                .collect()
+        };
 
         let mut constructor_generics = def.generics.clone();
         if seed_from_struct_default {
             // XXX: The higher-ranked bound defers the check to callers. A plain `Self: Default`
             // would be a trivially false bound for non-generic props without a `Default`
             // implementation, which fails to compile even if `element!` is never used with them.
+            let mut binder = "'__iocraft".to_string();
+            while def
+                .generics
+                .lifetimes()
+                .any(|param| param.lifetime.ident == binder[1..])
+            {
+                binder.push('_');
+            }
+            let binder = syn::Lifetime::new(&binder, Span::call_site());
             constructor_generics
                 .make_where_clause()
                 .predicates
-                .push(parse_quote!(for<'__iocraft> Self: Default));
+                .push(parse_quote!(for<#binder> Self: Default));
         } else {
             for (field, required) in fields.iter().zip(&self.required_fields) {
                 if !required {
@@ -618,10 +634,15 @@ impl ToTokens for ParsedProps {
                         .as_ref()
                         .expect("named fields checked while parsing");
                     let ty = &field.ty;
+                    let target = if seed_from_struct_default {
+                        quote!(self._iocraft_props.#name)
+                    } else {
+                        quote!(self.#name)
+                    };
                     Some(quote! {
                         #[allow(clippy::impl_trait_in_params)]
                         #vis fn #name(mut self, value: impl Into<#ty>) -> Self {
-                            self.#name = value.into();
+                            #target = value.into();
                             self
                         }
                     })
@@ -703,6 +724,7 @@ impl ToTokens for ParsedProps {
             }
         });
         let props_value = match &def.fields {
+            _ if seed_from_struct_default => quote!(self._iocraft_props),
             Fields::Unit => quote!(#name),
             Fields::Named(_) => quote!(#name {
                 #(#completed_field_values,)*
@@ -726,7 +748,6 @@ impl ToTokens for ParsedProps {
             {
                 #[doc(hidden)]
                 #vis fn __iocraft_builder() -> #initial_builder_type {
-                    #seed_statement
                     #builder_name {
                         #(#initial_field_values,)*
                         _iocraft_marker: std::marker::PhantomData,
