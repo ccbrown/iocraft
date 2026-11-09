@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.6...iocraft-macros-v0.2.7) - 2026-11-09
+
+### Fixed
+
+- restore pre-0.2.5 prop initialization behavior ([#314](https://github.com/ccbrown/iocraft/pull/314))
+
 ## [0.2.6](https://github.com/ccbrown/iocraft/compare/iocraft-macros-v0.2.5...iocraft-macros-v0.2.6) - 2026-11-02
 
 ### Fixed
