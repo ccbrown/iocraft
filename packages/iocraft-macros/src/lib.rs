@@ -558,6 +558,10 @@ impl ToTokens for ParsedProps {
         } else {
             quote!(#builder_name<#(#initial_builder_args),*>)
         };
+        // Props without required fields are seeded from the struct's own `Default` implementation
+        // so that manual implementations are respected. Props with required fields can't
+        // meaningfully implement `Default`, so each optional field uses its type's default instead.
+        let seed_from_struct_default = required_fields.is_empty();
         let initial_field_values = field_names.iter().zip(&self.required_fields).scan(
             0,
             |required_index, (name, required)| {
@@ -565,20 +569,37 @@ impl ToTokens for ParsedProps {
                     let missing_state_name = &missing_state_names[*required_index];
                     *required_index += 1;
                     Some(quote!(#name: #missing_state_name))
+                } else if seed_from_struct_default {
+                    Some(quote!(#name))
                 } else {
                     Some(quote!(#name: Default::default()))
                 }
             },
         );
+        let seed_statement = seed_from_struct_default.then(|| {
+            quote! {
+                let Self { #(#field_names),* } = <Self as Default>::default();
+            }
+        });
 
         let mut constructor_generics = def.generics.clone();
-        for (field, required) in fields.iter().zip(&self.required_fields) {
-            if !required {
-                let ty = &field.ty;
-                constructor_generics
-                    .make_where_clause()
-                    .predicates
-                    .push(parse_quote!(#ty: Default));
+        if seed_from_struct_default {
+            // XXX: The higher-ranked bound defers the check to callers. A plain `Self: Default`
+            // would be a trivially false bound for non-generic props without a `Default`
+            // implementation, which fails to compile even if `element!` is never used with them.
+            constructor_generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote!(for<'__iocraft> Self: Default));
+        } else {
+            for (field, required) in fields.iter().zip(&self.required_fields) {
+                if !required {
+                    let ty = &field.ty;
+                    constructor_generics
+                        .make_where_clause()
+                        .predicates
+                        .push(parse_quote!(#ty: Default));
+                }
             }
         }
         let (constructor_impl_generics, constructor_ty_generics, constructor_where_clause) =
@@ -705,6 +726,7 @@ impl ToTokens for ParsedProps {
             {
                 #[doc(hidden)]
                 #vis fn __iocraft_builder() -> #initial_builder_type {
+                    #seed_statement
                     #builder_name {
                         #(#initial_field_values,)*
                         _iocraft_marker: std::marker::PhantomData,
@@ -739,7 +761,12 @@ impl ToTokens for ParsedProps {
 /// [covariant](https://doc.rust-lang.org/nomicon/subtyping.html). If the struct is not actually
 /// covariant, compilation will fail.
 ///
-/// Fields are initialized with their [`Default`] value unless they are marked as required:
+/// When no fields are marked as required, unspecified properties are taken from the struct's
+/// [`Default`] implementation, which must exist for the props to be used with
+/// [`element!`](crate::element!).
+///
+/// Otherwise, unspecified fields are initialized with their type's [`Default`] value, and fields
+/// marked as required must be specified:
 ///
 /// ```
 /// # use iocraft::prelude::*;

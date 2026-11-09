@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Other
+
+- This release resolves a breaking change that was unintentionally introduced in 0.2.5 ([#313](https://github.com/ccbrown/iocraft/issues/313)). Prop structs that have no required fields now once again require `Default` to be implemented, and will see field values using that implementation. If you encounter a compile error due to this change, simply derive `Default` on your struct to fix it.
+
 ## [0.9.4](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.3...iocraft-v0.9.4) - 2026-11-02
 
 ### Added
