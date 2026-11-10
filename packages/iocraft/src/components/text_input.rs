@@ -525,20 +525,40 @@ impl TextInputEditState {
                 // An empty suffix cannot distinguish a rejected deletion. Without a
                 // surviving suffix, keep the earlier checkpoint and replay navigation.
                 let suffix = &value[checkpoint.anchor.position..];
-                normalized = Some(CursorAnchor {
-                    position: new_cursor_offset(
+                normalized = Some((
+                    checkpoint.anchor,
+                    new_cursor_offset(
                         &value,
                         checkpoint.anchor.position,
                         accepted_value,
                         checkpoint.hint,
                     ),
-                    action_index: checkpoint.anchor.action_index,
-                });
+                    suffix.chars().next(),
+                    value[..checkpoint.anchor.position].chars().next_back(),
+                ));
                 normalized_suffix = !suffix.is_empty() && accepted_value.ends_with(suffix);
             }
             checkpoint.edit.undo(&mut value);
         }
-        normalized
+        normalized.map(|(mut anchor, mapped, after, before)| {
+            anchor.position = mapped.unwrap_or_else(|| {
+                // Keep the caret beside surviving text when both edited edges were normalized.
+                let offset = accepted_value
+                    .char_indices()
+                    .flat_map(|(offset, character)| {
+                        [
+                            (after == Some(character)).then_some(offset),
+                            (before == Some(character)).then_some(offset + character.len_utf8()),
+                        ]
+                        .into_iter()
+                        .flatten()
+                    })
+                    .min_by_key(|offset| offset.abs_diff(anchor.position))
+                    .unwrap_or(anchor.position);
+                round_up_to_grapheme_boundary(accepted_value, offset)
+            });
+            anchor
+        })
     }
 
     fn reconciled_cursor(
@@ -562,24 +582,30 @@ impl TextInputEditState {
                 (position, preference, 0)
             } else if let Some(checkpoint) = &self.latest_edit {
                 (
-                    CursorPosition::new(new_cursor_offset(
-                        pending_value,
-                        checkpoint.anchor.position,
-                        &buffer.text,
-                        checkpoint.hint,
-                    )),
+                    CursorPosition::new(
+                        new_cursor_offset(
+                            pending_value,
+                            checkpoint.anchor.position,
+                            &buffer.text,
+                            checkpoint.hint,
+                        )
+                        .unwrap_or(buffer.text.len()),
+                    ),
                     None,
                     checkpoint.anchor.action_index,
                 )
             } else {
                 (
                     if prop_changed {
-                        CursorPosition::new(new_cursor_offset(
-                            pending_value,
-                            position.offset,
-                            &buffer.text,
-                            self.cursor_offset_hint,
-                        ))
+                        CursorPosition::new(
+                            new_cursor_offset(
+                                pending_value,
+                                position.offset,
+                                &buffer.text,
+                                self.cursor_offset_hint,
+                            )
+                            .unwrap_or(buffer.text.len()),
+                        )
                     } else {
                         position
                     },
@@ -613,7 +639,6 @@ impl TextInputEditState {
 ///
 /// It will fill the available width and display the current value. Typically, you will want to
 /// render it in a [`View`](crate::components::View) component of the desired text field size.
-/// Events received before the next redraw share the updated text and cursor position.
 ///
 /// # Example
 ///
@@ -1152,7 +1177,7 @@ fn new_cursor_offset(
     cursor_offset: usize,
     value: &str,
     hint: NewCursorOffsetHint,
-) -> usize {
+) -> Option<usize> {
     let has_same_head = value.len() >= cursor_offset
         && value.as_bytes()[..cursor_offset] == prev_value.as_bytes()[..cursor_offset];
 
@@ -1183,14 +1208,13 @@ fn new_cursor_offset(
         // deletion
         (cursor_offset, true)
     } else {
-        // unknown, put the cursor at the end
-        (value.len(), false)
+        return None;
     };
-    if round_up {
+    Some(if round_up {
         round_up_to_grapheme_boundary(value, offset)
     } else {
         clamp_cursor_offset(value, offset)
-    }
+    })
 }
 
 #[cfg(test)]
@@ -1205,7 +1229,7 @@ mod tests {
     #[test]
     fn test_new_cursor_offset() {
         assert_eq!(
-            new_cursor_offset("a\nb", 1, "a\r\nb", NewCursorOffsetHint::None),
+            new_cursor_offset("a\nb", 1, "a\r\nb", NewCursorOffsetHint::None).unwrap(),
             1
         );
         let mixed_text = "你好世界，Hello World";
@@ -1215,8 +1239,9 @@ mod tests {
                 mixed_text,
                 cursor_offset,
                 "你好世界，Hello aWorld",
-                NewCursorOffsetHint::None
-            ),
+                NewCursorOffsetHint::None,
+            )
+            .unwrap(),
             cursor_offset + 1
         );
     }
@@ -2484,6 +2509,51 @@ mod tests {
                 .into_iter()
                 .chain(std::iter::repeat_n(KeyCode::Char('y'), rejections))
             {
+                sender
+                    .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
+                    .unwrap();
+            }
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), accepted);
+            sender
+                .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    KeyCode::Char('!'),
+                )))
+                .unwrap();
+            assert_eq!(frames.next().await.unwrap().to_string().trim(), expected);
+        }
+    }
+
+    #[apply(test!)]
+    async fn test_reconcile_batched_normalization_on_both_sides_of_caret() {
+        for (keys, accepted, expected) in [
+            (
+                [KeyCode::Char('x'), KeyCode::Home, KeyCode::Char('y')],
+                "YABX",
+                "Y!ABX",
+            ),
+            (
+                [KeyCode::Char('x'), KeyCode::Left, KeyCode::Backspace],
+                "AX",
+                "A!X",
+            ),
+            (
+                [KeyCode::Char('x'), KeyCode::Home, KeyCode::Char('ı')],
+                "IABX",
+                "I!ABX",
+            ),
+            (
+                [KeyCode::Char('ǰ'), KeyCode::Home, KeyCode::Char('ß')],
+                "SSABJ\u{030c}",
+                "SS!ABJ\u{030c}",
+            ),
+        ] {
+            let (sender, events) = futures::channel::mpsc::unbounded();
+            let mut app = element!(MyComponent(initial_value: "AB", uppercase: true));
+            let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+            futures::pin_mut!(frames);
+            frames.next().await.unwrap();
+            for code in keys {
                 sender
                     .unbounded_send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code)))
                     .unwrap();
