@@ -3,46 +3,59 @@ use std::{ops::DerefMut, sync::Arc};
 
 /// `HandlerMut` is a type representing an optional event handler, commonly used for component properties.
 ///
-/// Any function that takes a single argument and returns `()` can be converted into a `HandlerMut`,
-/// and it can be invoked using function call syntax.
-pub struct HandlerMut<'a, T>(bool, Box<dyn FnMut(T) + Send + Sync + 'a>);
+/// Any function that takes a single argument and returns `R` can be converted into a `HandlerMut`,
+/// and it can be invoked using function call syntax. `R` defaults to `()`.
+/// A default-initialized handler returns `R::default()`.
+///
+/// ```
+/// # use iocraft::prelude::*;
+/// let mut validate: HandlerMut<'_, &str, Option<String>> = HandlerMut::from(|value: &str| {
+///     value.trim().is_empty().then(|| "A name is required".to_owned())
+/// });
+/// assert_eq!(validate(""), Some("A name is required".to_owned()));
+/// assert_eq!(validate("Ada"), None);
+/// ```
+pub struct HandlerMut<'a, T, R = ()>(bool, Box<dyn FnMut(T) -> R + Send + Sync + 'a>);
 
-impl<T> HandlerMut<'_, T> {
+impl<T, R> HandlerMut<'_, T, R> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
     }
 
     /// Takes the handler, leaving a default-initialized handler in its place.
-    pub fn take(&mut self) -> Self {
+    pub fn take(&mut self) -> Self
+    where
+        R: Default,
+    {
         mem::take(self)
     }
 }
 
-impl<T> Default for HandlerMut<'_, T> {
+impl<T, R: Default> Default for HandlerMut<'_, T, R> {
     fn default() -> Self {
-        Self(false, Box::new(|_| {}))
+        Self(false, Box::new(|_| R::default()))
     }
 }
 
-impl<'a, T, F> From<F> for HandlerMut<'a, T>
+impl<'a, T, R, F> From<F> for HandlerMut<'a, T, R>
 where
-    F: FnMut(T) + Send + Sync + 'a,
+    F: FnMut(T) -> R + Send + Sync + 'a,
 {
     fn from(f: F) -> Self {
         Self(true, Box::new(f))
     }
 }
 
-impl<'a, T: 'a> Deref for HandlerMut<'a, T> {
-    type Target = dyn FnMut(T) + Send + Sync + 'a;
+impl<'a, T: 'a, R> Deref for HandlerMut<'a, T, R> {
+    type Target = dyn FnMut(T) -> R + Send + Sync + 'a;
 
     fn deref(&self) -> &Self::Target {
         self.1.as_ref()
     }
 }
 
-impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
+impl<'a, T: 'a, R> DerefMut for HandlerMut<'a, T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.1.as_mut()
     }
@@ -77,54 +90,54 @@ impl<'a, T: 'a> DerefMut for HandlerMut<'a, T> {
 /// }
 /// # }
 /// ```
-pub struct Handler<T>(bool, Arc<dyn Fn(T) + Send + Sync + 'static>);
+pub struct Handler<T, R = ()>(bool, Arc<dyn Fn(T) -> R + Send + Sync + 'static>);
 
-impl<T> Clone for Handler<T> {
+impl<T, R> Clone for Handler<T, R> {
     fn clone(&self) -> Self {
         Self(self.0, Arc::clone(&self.1))
     }
 }
 
-impl<T> Handler<T> {
+impl<T, R> Handler<T, R> {
     /// Returns `true` if the handler was default-initialized.
     pub fn is_default(&self) -> bool {
         !self.0
     }
 }
 
-impl<T> Deref for Handler<T> {
-    type Target = dyn Fn(T) + Send + Sync + 'static;
+impl<T, R> Deref for Handler<T, R> {
+    type Target = dyn Fn(T) -> R + Send + Sync + 'static;
 
     fn deref(&self) -> &Self::Target {
         self.1.as_ref()
     }
 }
 
-impl<T> Default for Handler<T> {
+impl<T, R: Default> Default for Handler<T, R> {
     fn default() -> Self {
-        Self(false, Arc::new(|_| {}))
+        Self(false, Arc::new(|_| R::default()))
     }
 }
 
-impl<T, F> From<F> for Handler<T>
+impl<T, R, F> From<F> for Handler<T, R>
 where
-    F: Fn(T) + Send + Sync + 'static,
+    F: Fn(T) -> R + Send + Sync + 'static,
 {
     fn from(f: F) -> Self {
         Self(true, Arc::new(f))
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> Handler<T> {
+impl<T: Clone + Send + Sync + 'static, R: 'static> Handler<T, R> {
     /// Creates a new `Handler` that uses a constant value for it's input.
-    pub fn bind(&self, value: T) -> Handler<()> {
+    pub fn bind(&self, value: T) -> Handler<(), R> {
         let handler = self.clone();
         Handler::from(move |_| handler(value.clone()))
     }
 }
 
-impl<T: 'static> From<Handler<T>> for HandlerMut<'static, T> {
-    fn from(handler: Handler<T>) -> Self {
+impl<T: 'static, R: 'static> From<Handler<T, R>> for HandlerMut<'static, T, R> {
+    fn from(handler: Handler<T, R>) -> Self {
         Self::from(move |value| handler.1(value))
     }
 }
@@ -146,6 +159,22 @@ mod tests {
         handler(42);
         handler(42);
         assert!(!handler.is_default());
+    }
+
+    #[test]
+    fn test_take_preserves_returning_handler_state() {
+        let mut next = 0;
+        let mut handler = HandlerMut::from(move |()| {
+            next += 1;
+            Some(next)
+        });
+
+        assert_eq!(handler(()), Some(1));
+        let mut taken = handler.take();
+        assert!(handler.is_default());
+        assert!(!taken.is_default());
+        assert_eq!(handler(()), None);
+        assert_eq!(taken(()), Some(2));
     }
 
     #[test]
