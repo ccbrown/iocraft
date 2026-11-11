@@ -3,9 +3,8 @@ use std::{ops::DerefMut, sync::Arc};
 
 /// `HandlerMut` is a type representing an optional event handler, commonly used for component properties.
 ///
-/// Any function that takes a single argument and returns `R` can be converted into a `HandlerMut`,
-/// and it can be invoked using function call syntax. `R` defaults to `()`.
-/// A default-initialized handler returns `R::default()`.
+/// Use a handler to validate input or respond to a component's actions.
+/// A default-initialized handler returns the result type's default value.
 ///
 /// ```
 /// # use iocraft::prelude::*;
@@ -175,6 +174,28 @@ mod tests {
         assert!(!taken.is_default());
         assert_eq!(handler(()), None);
         assert_eq!(taken(()), Some(2));
+    }
+
+    #[test]
+    fn test_returning_handler_clones_share_state_without_result_bounds() {
+        use std::{
+            rc::Rc,
+            sync::atomic::{AtomicUsize, Ordering},
+        };
+
+        struct ResultValue(Rc<usize>);
+
+        let next = AtomicUsize::new(0);
+        let handler =
+            Handler::from(move |()| ResultValue(Rc::new(next.fetch_add(1, Ordering::Relaxed))));
+
+        assert_eq!(*handler(()).0, 0);
+        let cloned = handler.clone();
+        assert_eq!(*cloned(()).0, 1);
+        let bound = cloned.bind(());
+        assert_eq!(*bound(()).0, 2);
+        let mut converted: HandlerMut<'static, (), ResultValue> = handler.into();
+        assert_eq!(*converted(()).0, 3);
     }
 
     #[test]
