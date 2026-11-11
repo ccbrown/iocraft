@@ -8,7 +8,10 @@ use core::{
 use futures::task::AtomicWaker;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex, OnceLock, Weak},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock, Weak,
+    },
 };
 
 mod private {
@@ -59,6 +62,9 @@ impl<T: Send + 'static> EventDispatcher<T> {
     /// and subscribers for other payload types do not receive it.
     pub fn dispatch(&self, data: T) {
         if let Some(target) = self.target.upgrade() {
+            if !target.mounted.load(Ordering::Acquire) {
+                return;
+            }
             target.deliver(
                 TypeId::of::<T>(),
                 0,
@@ -145,6 +151,14 @@ impl UseEvents for Hooks<'_, '_> {
 #[derive(Default)]
 pub(crate) struct EventScope(OnceLock<Arc<EventTarget>>);
 
+impl Drop for EventScope {
+    fn drop(&mut self) {
+        if let Some(target) = self.0.get() {
+            target.mounted.store(false, Ordering::Release);
+        }
+    }
+}
+
 pub(crate) struct EventPath<'a> {
     scope: &'a EventScope,
     parent: Option<&'a EventPath<'a>>,
@@ -158,6 +172,7 @@ impl<'a> EventPath<'a> {
     fn target(&self) -> &Arc<EventTarget> {
         self.scope.0.get_or_init(|| {
             Arc::new(EventTarget {
+                mounted: AtomicBool::new(true),
                 parent: self
                     .parent
                     .map(|parent| Arc::downgrade(parent.target()))
@@ -169,6 +184,7 @@ impl<'a> EventPath<'a> {
 }
 
 struct EventTarget {
+    mounted: AtomicBool,
     parent: Weak<EventTarget>,
     subscribers: Mutex<HashMap<TypeId, Vec<Weak<EventInbox>>>>,
 }
@@ -177,6 +193,9 @@ impl EventTarget {
     fn deliver(self: Arc<Self>, kind: TypeId, mut next: usize, payload: Box<dyn Any + Send>) {
         let mut target = self;
         loop {
+            if !target.mounted.load(Ordering::Acquire) {
+                return;
+            }
             let subscriber = {
                 let subscribers = target.subscribers.lock().unwrap();
                 subscribers.get(&kind).and_then(|subscribers| {
@@ -323,6 +342,9 @@ mod tests {
 
     #[component]
     fn Parent(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let controls = hooks.use_context::<Arc<Controls>>().clone();
+        let shown = hooks.use_state(|| true);
+        *controls.shown.lock().unwrap() = Some(shown);
         let mut total = hooks.use_state(|| 0);
         hooks.use_events::<Change>(move |event| {
             total += event.data.amount.get();
@@ -330,7 +352,11 @@ mod tests {
         element! {
             View(flex_direction: FlexDirection::Column) {
                 Text(content: total.to_string())
-                Origin
+                #(if shown.get() {
+                    Some(element!(Origin))
+                } else {
+                    None
+                })
             }
         }
     }
@@ -347,10 +373,8 @@ mod tests {
     #[component]
     fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let controls = hooks.use_context::<Arc<Controls>>().clone();
-        let shown = hooks.use_state(|| true);
         let mut total = hooks.use_state(|| 0);
         let mut other = hooks.use_state(|| 0);
-        *controls.shown.lock().unwrap() = Some(shown);
         *controls.root.lock().unwrap() = Some(hooks.use_event_dispatcher::<Change>());
         hooks.use_events::<Change>(move |event| {
             total += event.data.amount.get();
@@ -361,11 +385,7 @@ mod tests {
         element! {
             View(flex_direction: FlexDirection::Column) {
                 Text(content: total.to_string())
-                #(if shown.get() {
-                    Some(element!(Parent))
-                } else {
-                    None
-                })
+                Parent
                 Sibling
                 Text(content: other.to_string())
             }
@@ -408,7 +428,7 @@ mod tests {
     }
 
     #[apply(test!)]
-    async fn test_unmounted_dispatcher_does_not_reach_former_ancestors() {
+    async fn test_unmounted_dispatcher_with_retained_target_does_not_reach_former_ancestors() {
         let controls = Arc::new(Controls::default());
         let mut app = element! {
             ContextProvider(value: Context::owned(controls.clone())) {
@@ -419,9 +439,11 @@ mod tests {
             app.mock_terminal_render_loop(MockTerminalConfig::with_events(stream::pending()));
         assert_eq!(values(frames.next().await.unwrap()), [0, 0, 0, 0, 0, 0]);
         let old_dispatcher = controls.origin.lock().unwrap().clone().unwrap();
+        // A concurrent dispatch has already upgraded the target.
+        let in_flight_target = old_dispatcher.target.upgrade().unwrap();
 
         controls.shown.lock().unwrap().as_mut().unwrap().set(false);
-        assert_eq!(values(frames.next().await.unwrap()), [0, 0, 0]);
+        assert_eq!(values(frames.next().await.unwrap()), [0, 0, 0, 0]);
 
         old_dispatcher.dispatch(Change::new(100, false));
         controls
@@ -431,6 +453,7 @@ mod tests {
             .as_ref()
             .unwrap()
             .dispatch(Change::new(7, false));
-        assert_eq!(values(frames.next().await.unwrap()), [7, 0, 0]);
+        assert_eq!(values(frames.next().await.unwrap()), [7, 0, 0, 0]);
+        drop(in_flight_target);
     }
 }
