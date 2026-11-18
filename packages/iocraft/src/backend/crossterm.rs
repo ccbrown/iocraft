@@ -617,21 +617,52 @@ impl TerminalBackend for CrosstermBackend<'_> {
         let new_height = canvas.height();
         let max_height = prev_height.max(new_height);
         let mut current_y = prev_height.saturating_sub(1);
+        // Rows above `visible_start` have scrolled off the top of the visible
+        // area, and growing scrolls the rows above `scrolled_start` off too.
+        let (visible_start, scrolled_start) = self.size.map_or((0, 0), |(_cols, term_h)| {
+            (
+                prev_height.saturating_sub(term_h as usize),
+                new_height.saturating_sub(term_h as usize),
+            )
+        });
 
-        for y in 0..max_height {
+        // A changed row that has scrolled off can't be reached with cursor
+        // movement — fall back to full rewrite.
+        if (0..visible_start).any(|y| !prev.row_eq(canvas, y)) {
+            self.clear_canvas()?;
+            self.prev_canvas_height = canvas.height() as _;
+            canvas.write_ansi_without_final_newline(&mut *self.dest)?;
+            return Ok(());
+        }
+
+        // Create the new rows before rewriting any row that stays on screen:
+        // terminals that show the screen while it scrolls, like the Windows
+        // console host, would otherwise show the rewritten rows a line too low
+        // until the scroll. Rows that growing scrolls off are created and
+        // written one at a time, while still in reach. New rows need \r\n,
+        // since CSI E won't extend the scrollback at the bottom of the screen.
+        let mut existing_height = prev_height.max(1);
+        for y in visible_start..max_height {
+            let needed_height = if y < scrolled_start {
+                y + 1
+            } else {
+                new_height
+            };
+            if needed_height > existing_height {
+                let last_existing_line = existing_height - 1;
+                if current_y < last_existing_line {
+                    self.dest.queue(cursor::MoveToNextLine(
+                        (last_existing_line - current_y) as u16,
+                    ))?;
+                }
+                for _ in existing_height..needed_height {
+                    self.dest.write_all(b"\r\n")?;
+                }
+                existing_height = needed_height;
+                current_y = needed_height - 1;
+            }
             if prev.row_eq(canvas, y) {
                 continue;
-            }
-            // If a changed row has scrolled off the top of the visible area,
-            // we can't reach it with cursor movement — fall back to full rewrite.
-            if let Some((_cols, term_h)) = self.size {
-                let visible_start = prev_height.saturating_sub(term_h as usize);
-                if y < visible_start {
-                    self.clear_canvas()?;
-                    self.prev_canvas_height = canvas.height() as _;
-                    canvas.write_ansi_without_final_newline(&mut *self.dest)?;
-                    return Ok(());
-                }
             }
             match y.cmp(&current_y) {
                 std::cmp::Ordering::Less => {
@@ -639,26 +670,8 @@ impl TerminalBackend for CrosstermBackend<'_> {
                         .queue(cursor::MoveToPreviousLine((current_y - y) as u16))?;
                 }
                 std::cmp::Ordering::Greater => {
-                    // Lines within the previous canvas already exist in the
-                    // terminal and can be reached with MoveToNextLine (CSI E).
-                    // Lines beyond prev_height don't exist yet — we must emit
-                    // \r\n to create them, since CSI E won't extend the
-                    // scrollback when the cursor is at the bottom of the screen.
-                    let last_existing_line = prev_height.saturating_sub(1).max(current_y);
-                    if y <= last_existing_line {
-                        self.dest
-                            .queue(cursor::MoveToNextLine((y - current_y) as u16))?;
-                    } else {
-                        let move_to_last = last_existing_line.saturating_sub(current_y);
-                        if move_to_last > 0 {
-                            self.dest
-                                .queue(cursor::MoveToNextLine(move_to_last as u16))?;
-                        }
-                        let new_lines = y - last_existing_line;
-                        for _ in 0..new_lines {
-                            self.dest.write_all(b"\r\n")?;
-                        }
-                    }
+                    self.dest
+                        .queue(cursor::MoveToNextLine((y - current_y) as u16))?;
                 }
                 std::cmp::Ordering::Equal => {
                     self.dest.queue(cursor::MoveToColumn(0))?;
@@ -1661,6 +1674,92 @@ mod tests {
             vt_rows - 1,
             "cursor on last row of new canvas"
         );
+    }
+
+    #[test]
+    fn test_inline_diff_growing_scrolls_before_rewriting() {
+        // A line inserted above the footer: the new row must exist before the
+        // shifted rows are rewritten, so no terminal ever shows them a line
+        // too low.
+        let style = CanvasTextStyle::default();
+        let mut prev = Canvas::new(10, 2);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 0, "text", style);
+        prev.subview_mut(0, 0, 0, 0, 10, 2)
+            .set_text(0, 1, "footer", style);
+        let mut next = Canvas::new(10, 3);
+        next.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 0, "text", style);
+        next.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 1, "more", style);
+        next.subview_mut(0, 0, 0, 0, 10, 3)
+            .set_text(0, 2, "footer", style);
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, prev.height() as _);
+        term.write_canvas(Some(&prev), &next).unwrap();
+        let diff = String::from_utf8(diff_buf.lock().unwrap().clone()).unwrap();
+        let scroll = diff.find("\r\n").expect("growing must create a row");
+        assert!(
+            !diff[..scroll].contains("more") && !diff[..scroll].contains("footer"),
+            "rows were rewritten before the new row existed: {diff:?}"
+        );
+
+        // Replay with the canvas on the last row of a 5-row terminal.
+        let mut setup = Vec::new();
+        for i in 0..4 {
+            write!(setup, "line{i}\r\n").unwrap();
+        }
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(diff.as_bytes());
+
+        let mut vt = avt::Vt::new(10, 5);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        assert_eq!(vt.line(2).text(), "text      ");
+        assert_eq!(vt.line(3).text(), "more      ");
+        assert_eq!(vt.line(4).text(), "footer    ");
+    }
+
+    #[test]
+    fn test_inline_diff_growing_past_the_screen_keeps_scrolled_rows() {
+        // Growing by more than the terminal height scrolls some new rows off
+        // the top in the same frame; they must still reach the scrollback.
+        let style = CanvasTextStyle::default();
+        let mut prev = Canvas::new(10, 1);
+        prev.subview_mut(0, 0, 0, 0, 10, 1)
+            .set_text(0, 0, "row0", style);
+        let mut next = Canvas::new(10, 7);
+        for y in 0..7 {
+            next.subview_mut(0, 0, 0, 0, 10, 7)
+                .set_text(0, y, &format!("row{y}"), style);
+        }
+
+        let (dest, diff_buf) = new_test_writer();
+        let mut term = new_inline_term_with_size(dest, prev.height() as _, (10, 4));
+        term.write_canvas(Some(&prev), &next).unwrap();
+
+        let mut setup = Vec::new();
+        for i in 0..3 {
+            write!(setup, "line{i}\r\n").unwrap();
+        }
+        prev.write_ansi_without_final_newline(&mut setup).unwrap();
+        setup.extend_from_slice(&diff_buf.lock().unwrap());
+
+        let mut vt = avt::Vt::new(10, 4);
+        vt.feed_str(&String::from_utf8(setup).unwrap());
+
+        let text: Vec<String> = vt
+            .text()
+            .iter()
+            .map(|line| line.trim_end().to_string())
+            .collect();
+        let expected: Vec<String> = (0..3)
+            .map(|i| format!("line{i}"))
+            .chain((0..7).map(|y| format!("row{y}")))
+            .collect();
+        assert_eq!(text, expected);
+        assert_eq!(vt.cursor().row, 3, "cursor on last row of new canvas");
     }
 
     #[test]
