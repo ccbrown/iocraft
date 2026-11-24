@@ -95,3 +95,8 @@ struct StructWithLifetimeAndDefaultedType<'lt, T: Sync = i32> {
 struct StructWithLifetimeAndDefaultedConst<'lt, const N: usize = 4> {
     foo: &'lt [i32; N],
 }
+
+#[derive(Default, Props)]
+struct StructWithReservedLookingLifetime<'__iocraft> {
+    foo: &'__iocraft str,
+}
