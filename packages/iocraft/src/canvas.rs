@@ -184,9 +184,12 @@ impl Canvas {
     // cleared, any earlier character extending into it must be removed as well.
     fn clear_overlapping_character(row: &mut [CanvasCell], x: usize) {
         if let Some(prev) = row[..x].iter().rposition(|cell| cell.character.is_some()) {
-            let prev_width = row[prev].character.as_ref().unwrap().value.width();
-            if prev + prev_width > x {
+            let end = (prev + row[prev].character.as_ref().unwrap().value.width()).min(row.len());
+            if end > x {
                 row[prev].character = None;
+                for cell in &mut row[prev..end] {
+                    cell.hyperlink = None;
+                }
             }
         }
     }
@@ -194,13 +197,17 @@ impl Canvas {
     fn clear_text(&mut self, x: usize, y: usize, w: usize, h: usize) {
         for y in y..y + h {
             if let Some(row) = self.cells.get_mut(y) {
-                if w > 0 && x < row.len() {
-                    Self::clear_overlapping_character(row, x);
+                let end = (x + w).min(row.len());
+                if x >= end {
+                    continue;
                 }
-                for x in x..x + w {
-                    if x < row.len() {
-                        row[x].character = None;
-                    }
+                Self::clear_overlapping_character(row, x);
+                if end < row.len() {
+                    Self::clear_overlapping_character(&mut row[x..], end - x);
+                }
+                for cell in &mut row[x..end] {
+                    cell.character = None;
+                    cell.hyperlink = None;
                 }
             }
         }
@@ -602,7 +609,7 @@ impl CanvasSubviewMut<'_> {
         self.canvas.set_hyperlink(x, y, w, h, url);
     }
 
-    /// Removes text from the region.
+    /// Removes text and hyperlinks from the region, leaving its background intact.
     pub fn clear_text(&mut self, x: isize, y: isize, w: usize, h: usize) {
         let (x, y, w, h) = self.clipped_rect(x, y, w, h);
         self.canvas.clear_text(x, y, w, h);
