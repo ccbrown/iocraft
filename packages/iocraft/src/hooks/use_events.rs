@@ -243,6 +243,10 @@ impl EventInbox {
         self.waker.wake();
     }
 
+    fn len(&self) -> usize {
+        self.events.lock().unwrap().len()
+    }
+
     fn pop(&self) -> Option<PendingEvent> {
         self.events.lock().unwrap().pop_front()
     }
@@ -259,7 +263,10 @@ impl<T: Send + 'static> Hook for UseEventsImpl<T> {
     fn poll_change(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let this = self.get_mut();
         this.inbox.waker.register(cx.waker());
-        while let Some(pending) = this.inbox.pop() {
+        // A callback can refill its own inbox. Let the other hooks poll before
+        // handling those events; push has already woken this task.
+        for _ in 0..this.inbox.len() {
+            let pending = this.inbox.pop().unwrap();
             let mut event = pending
                 .payload
                 .downcast::<Event<T>>()
@@ -309,6 +316,7 @@ mod tests {
         origin: Mutex<Option<EventDispatcher<Change>>>,
         root: Mutex<Option<EventDispatcher<Change>>>,
         shown: Mutex<Option<State<bool>>>,
+        order: Mutex<Vec<i32>>,
     }
 
     #[component]
@@ -318,7 +326,9 @@ mod tests {
         let mut total = hooks.use_state(|| 0);
         let dispatcher = hooks.use_event_dispatcher::<Change>();
         *controls.origin.lock().unwrap() = Some(dispatcher.clone());
+        let first = controls.clone();
         hooks.use_events::<Change>(move |event| {
+            first.order.lock().unwrap().push(event.data.amount.get());
             handled += 1;
             if event.data.amount.get() == 1 {
                 dispatcher.dispatch(Change::new(2, false));
@@ -329,6 +339,11 @@ mod tests {
             }
         });
         hooks.use_events::<Change>(move |event| {
+            controls
+                .order
+                .lock()
+                .unwrap()
+                .push(-event.data.amount.get());
             total += event.data.amount.get();
             event.data.amount.set(event.data.amount.get() + 3);
         });
@@ -415,6 +430,7 @@ mod tests {
         let dispatcher = controls.origin.lock().unwrap().clone().unwrap();
         dispatcher.dispatch(Change::new(1, false));
         assert_eq!(values(frames.next().await.unwrap()), [12, 12, 2, 6, 0, 0]);
+        assert_eq!(*controls.order.lock().unwrap(), [1, -2, 2, -4]);
 
         // Change is neither Clone nor Sync, but it can be dispatched from a worker.
         let worker_dispatcher = dispatcher.clone();
