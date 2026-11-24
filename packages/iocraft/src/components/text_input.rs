@@ -213,15 +213,15 @@ impl TextBuffer {
         }
     }
 
-    fn row_column_for_cursor(&self, cursor: CursorPosition) -> (u16, u16) {
+    fn row_column_for_cursor(&self, cursor: CursorPosition) -> (usize, usize) {
         let offset = cursor.offset;
         for (i, row) in self.rows.iter().enumerate() {
             if offset >= row.offset
                 && offset - row.offset <= row.len
                 && (cursor.at_row_end || offset != row.offset + row.len || !self.is_soft_wrapped(i))
             {
-                let col = grapheme_width(&self.text[row.offset..offset]) as u16;
-                return (i as _, col);
+                let col = grapheme_width(&self.text[row.offset..offset]);
+                return (i, col);
             }
         }
         (self.rows.len(), self.rows.last().map_or(0, |r| r.width))
@@ -246,10 +246,8 @@ impl TextBuffer {
         ))
     }
 
-    fn cursor_for_closest_column_in_row(&self, row: u16, col: u16) -> CursorPosition {
-        let row_idx = row as usize;
+    fn cursor_for_closest_column_in_row(&self, row_idx: usize, col: usize) -> CursorPosition {
         let row = &self.rows[row_idx];
-        let col = col as usize;
         let mut width = 0;
         for (idx, grapheme) in self.text[row.offset..row.offset + row.len].grapheme_indices(true) {
             if width >= col {
@@ -263,7 +261,7 @@ impl TextBuffer {
         }
     }
 
-    fn above(&self, cursor: CursorPosition, col_preference: Option<u16>) -> CursorPosition {
+    fn above(&self, cursor: CursorPosition, col_preference: Option<usize>) -> CursorPosition {
         let (row, col) = self.row_column_for_cursor(cursor);
         if row == 0 {
             return cursor;
@@ -271,9 +269,9 @@ impl TextBuffer {
         self.cursor_for_closest_column_in_row(row - 1, col_preference.unwrap_or(col))
     }
 
-    fn below(&self, cursor: CursorPosition, col_preference: Option<u16>) -> CursorPosition {
+    fn below(&self, cursor: CursorPosition, col_preference: Option<usize>) -> CursorPosition {
         let (row, col) = self.row_column_for_cursor(cursor);
-        if row as usize + 1 >= self.rows.len() {
+        if row + 1 >= self.rows.len() {
             return cursor;
         }
         self.cursor_for_closest_column_in_row(row + 1, col_preference.unwrap_or(col))
@@ -281,12 +279,15 @@ impl TextBuffer {
 
     fn row_start(&self, cursor: CursorPosition) -> CursorPosition {
         let (row, _) = self.row_column_for_cursor(cursor);
-        CursorPosition::new(self.rows[row as usize].offset)
+        CursorPosition::new(self.rows[row].offset)
     }
 
     fn row_end(&self, cursor: CursorPosition) -> CursorPosition {
         let (row, _) = self.row_column_for_cursor(cursor);
-        self.cursor_for_closest_column_in_row(row, u16::MAX)
+        CursorPosition {
+            offset: self.rows[row].offset + self.rows[row].len,
+            at_row_end: self.is_soft_wrapped(row),
+        }
     }
 }
 
@@ -393,8 +394,10 @@ impl Component for TextBufferView {
         } else if cursor_col < self.scroll_offset_col {
             self.scroll_offset_col = cursor_col;
         }
-        let max_scroll_col = (self.buffer.text.width() + 1).saturating_sub(width);
-        self.scroll_offset_col = self.scroll_offset_col.min(max_scroll_col);
+        let content_width = self.buffer.rows.get(cursor_row).map_or(0, |row| row.width);
+        self.scroll_offset_col = self
+            .scroll_offset_col
+            .min((content_width + 1).saturating_sub(width));
 
         let mut canvas = drawer.canvas();
         if let Some(color) = self.cursor_color {
@@ -427,8 +430,6 @@ impl Component for TextBufferView {
 ///
 /// It will fill the available width and display the current value. Typically, you will want to
 /// render it in a [`View`](crate::components::View) component of the desired text field size.
-///
-/// Single-line values scroll horizontally to keep the cursor visible.
 ///
 /// # Example
 ///
@@ -490,7 +491,7 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
 
     let max_text_width = if wrap == TextWrap::Wrap {
         // Reserve the last column for the cursor.
-        width.max(1) as usize - 1
+        width.max(1) - 1
     } else {
         usize::MAX
     };
@@ -542,31 +543,6 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
     // characters will extend that far.
     if wrap == TextWrap::Wrap && cursor_col >= width && width > 0 {
         cursor_col = width - 1;
-    }
-
-    // Update the offset if the cursor is out of bounds.
-    if width > 0 && height > 0 {
-        if cursor_row >= scroll_offset_row.get() + height {
-            scroll_offset_row.set(cursor_row - height + 1);
-        } else if cursor_row < scroll_offset_row.get() {
-            scroll_offset_row.set(cursor_row as _);
-        }
-        if auto_grow {
-            if scroll_offset_col.get() != 0 {
-                scroll_offset_col.set(0);
-            }
-        } else if cursor_col >= scroll_offset_col.get() + width {
-            scroll_offset_col.set(cursor_col - width + 1);
-        } else if cursor_col < scroll_offset_col.get() {
-            scroll_offset_col.set(cursor_col as _);
-        }
-
-        // Scroll back when the content shrinks so it isn't cut off.
-        let content_width = grapheme_width(&props.value) as u16;
-        let max_scroll_offset_col = (content_width + 1).saturating_sub(width);
-        if scroll_offset_col.get() > max_scroll_offset_col {
-            scroll_offset_col.set(max_scroll_offset_col);
-        }
     }
 
     hooks.use_terminal_events({
@@ -1697,7 +1673,7 @@ mod tests {
             assert_eq!(buffer.row_end(at(1)), at_row_end(end), "{text:?}");
             assert_eq!(
                 buffer.row_column_for_cursor(at_row_end(end)),
-                (0, end as u16),
+                (0, end),
                 "{text:?}"
             );
             assert_eq!(buffer.row_start(at_row_end(end)), at(0), "{text:?}");
@@ -1832,11 +1808,11 @@ mod tests {
         let end = text.len();
         let buffer = TextBuffer::new(text, usize::MAX);
 
-        assert_eq!(buffer.row_column_for_offset(end), (65_536, 1));
-        assert_eq!(buffer.row_start_offset(end), end - 1);
-        assert_eq!(buffer.row_end_offset(end), end);
-        assert_eq!(buffer.above_offset(end, None), end - 2);
-        assert_eq!(buffer.below_offset(end - 2, None), end);
+        assert_eq!(buffer.row_column_for_cursor(at(end)), (65_536, 1));
+        assert_eq!(buffer.row_start(at(end)), at(end - 1));
+        assert_eq!(buffer.row_end(at(end)), at(end));
+        assert_eq!(buffer.above(at(end), None), at(end - 2));
+        assert_eq!(buffer.below(at(end - 2), None), at(end));
     }
 
     #[test]
