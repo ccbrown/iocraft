@@ -513,7 +513,8 @@ impl TextInputEditState {
         };
         let mut normalized = None;
         let mut normalized_suffix = false;
-        for checkpoint in std::iter::once(latest).chain(self.checkpoints.iter().rev()) {
+        let checkpoints = std::iter::once(latest).chain(self.checkpoints.iter().rev());
+        for checkpoint in checkpoints.clone() {
             if value == accepted_value {
                 return Some(checkpoint.anchor);
             }
@@ -525,40 +526,24 @@ impl TextInputEditState {
                 // An empty suffix cannot distinguish a rejected deletion. Without a
                 // surviving suffix, keep the earlier checkpoint and replay navigation.
                 let suffix = &value[checkpoint.anchor.position..];
-                normalized = Some((
-                    checkpoint.anchor,
-                    new_cursor_offset(
-                        &value,
-                        checkpoint.anchor.position,
-                        accepted_value,
-                        checkpoint.hint,
-                    ),
-                    suffix.chars().next(),
-                    value[..checkpoint.anchor.position].chars().next_back(),
-                ));
+                normalized = Some(checkpoint);
                 normalized_suffix = !suffix.is_empty() && accepted_value.ends_with(suffix);
             }
             checkpoint.edit.undo(&mut value);
         }
-        normalized.map(|(mut anchor, mapped, after, before)| {
-            anchor.position = mapped.unwrap_or_else(|| {
-                // Keep the caret beside surviving text when both edited edges were normalized.
-                let offset = accepted_value
-                    .char_indices()
-                    .flat_map(|(offset, character)| {
-                        [
-                            (after == Some(character)).then_some(offset),
-                            (before == Some(character)).then_some(offset + character.len_utf8()),
-                        ]
-                        .into_iter()
-                        .flatten()
-                    })
-                    .min_by_key(|offset| offset.abs_diff(anchor.position))
-                    .unwrap_or(anchor.position);
-                round_up_to_grapheme_boundary(accepted_value, offset)
-            });
-            anchor
-        })
+        let checkpoint = normalized?;
+        value.clear();
+        value.push_str(pending_value);
+        for prior in checkpoints.take_while(|prior| !std::ptr::eq(*prior, checkpoint)) {
+            prior.edit.undo(&mut value);
+        }
+        let mut anchor = checkpoint.anchor;
+        anchor.position =
+            new_cursor_offset(&value, anchor.position, accepted_value, checkpoint.hint)
+                .unwrap_or_else(|| {
+                    remap_normalized_cursor(&value, anchor.position, accepted_value)
+                });
+        Some(anchor)
     }
 
     fn reconciled_cursor(
@@ -1215,6 +1200,30 @@ fn new_cursor_offset(
     } else {
         clamp_cursor_offset(value, offset)
     })
+}
+
+fn remap_normalized_cursor(previous: &str, offset: usize, value: &str) -> usize {
+    use similar::{capture_diff_slices_deadline, Algorithm};
+    use std::time::{Duration, Instant};
+
+    let old: Vec<_> = previous.chars().collect();
+    let new: Vec<_> = value.chars().collect();
+    let cursor = previous[..offset].chars().count();
+    // A complete rewrite of a large input need not block the terminal event loop.
+    let limit = Instant::now() + Duration::from_millis(20);
+    let ops = capture_diff_slices_deadline(Algorithm::Myers, &old, &new, Some(limit));
+    let mapped = ops
+        .iter()
+        .find(|op| cursor < op.old_range().end)
+        .map_or(new.len(), |op| {
+            let new = op.new_range();
+            new.start + (cursor - op.old_range().start).min(new.len())
+        });
+    let offset = value
+        .char_indices()
+        .nth(mapped)
+        .map_or(value.len(), |(at, _)| at);
+    round_up_to_grapheme_boundary(value, offset)
 }
 
 #[cfg(test)]
@@ -2567,6 +2576,30 @@ mod tests {
                 .unwrap();
             assert_eq!(frames.next().await.unwrap().to_string().trim(), expected);
         }
+    }
+
+    #[apply(test!)]
+    async fn test_normalized_paste_keeps_caret_before_repeated_suffix() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent(initial_value: "ABAB", uppercase: true));
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        frames.next().await.unwrap();
+        for event in [
+            TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('x'))),
+            TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Home)),
+            TerminalEvent::BracketedPaste("ıı".into()),
+        ] {
+            sender.unbounded_send(event).unwrap();
+        }
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "IIABABX");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string().trim(), "II!ABABX");
     }
 
     #[apply(test!)]

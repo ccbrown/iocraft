@@ -25,6 +25,7 @@ unicode-segmentation = "1.13.3"
 generational-box = "0.5.6"
 regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
+similar = { version = "2.7", default-features = false }
 
 [dev-dependencies]
 avt = "0.17"
