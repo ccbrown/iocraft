@@ -280,7 +280,8 @@ impl Hook for MeasureHeightHook {
 /// `ScrollView` is a component that provides scrollable content with keyboard and mouse support.
 ///
 /// Place it inside a container with a fixed height. The scroll view will clip its children and
-/// allow scrolling through them using arrow keys, Page Up/Down, Home/End, and mouse wheel.
+/// allow scrolling through them using arrow keys, Page Up/Down, Home/End, and the mouse wheel
+/// while the pointer is over the view.
 ///
 /// # Example
 ///
@@ -351,7 +352,7 @@ pub fn ScrollView<'a>(
         }
     }
 
-    hooks.use_terminal_events({
+    hooks.use_local_terminal_events({
         let vh = viewport_height;
         move |event| {
             let delta = match &event {
@@ -683,6 +684,47 @@ mod tests {
 
         let output = canvases.last().unwrap().to_string();
         assert!(output.contains("Short"));
+    }
+
+    #[apply(test!)]
+    async fn test_wheel_scrolls_only_the_view_under_the_pointer() {
+        #[component]
+        fn TwoPanes() -> impl Into<AnyElement<'static>> {
+            element! {
+                View(flex_direction: FlexDirection::Row) {
+                    View(width: 8, height: 2) {
+                        ScrollView(scrollbar: Some(false), scroll_step: Some(1)) {
+                            Text(content: "L0\nL1\nL2\nL3")
+                        }
+                    }
+                    View(width: 8, height: 2) {
+                        ScrollView(scrollbar: Some(false), scroll_step: Some(1)) {
+                            Text(content: "R0\nR1\nR2\nR3")
+                        }
+                    }
+                }
+            }
+        }
+
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(TwoPanes);
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        assert_eq!(
+            frames.next().await.unwrap().to_string(),
+            "L0      R0\nL1      R1\n"
+        );
+        sender
+            .unbounded_send(TerminalEvent::FullscreenMouse(FullscreenMouseEvent::new(
+                MouseEventKind::ScrollDown,
+                1,
+                0,
+            )))
+            .unwrap();
+        assert_eq!(
+            frames.next().await.unwrap().to_string(),
+            "L1      R0\nL2      R1\n"
+        );
     }
 
     #[apply(test!)]
