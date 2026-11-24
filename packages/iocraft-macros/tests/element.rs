@@ -76,6 +76,50 @@ impl Component for RequiredComponent {
     }
 }
 
+#[derive(Props)]
+struct ManualDefaultComponentProps {
+    name: String,
+    width: u32,
+}
+
+impl Default for ManualDefaultComponentProps {
+    fn default() -> Self {
+        Self {
+            name: "world".into(),
+            width: 30,
+        }
+    }
+}
+
+struct ManualDefaultComponent;
+
+impl Component for ManualDefaultComponent {
+    type Props<'a> = ManualDefaultComponentProps;
+
+    fn new(_props: &Self::Props<'_>) -> Self {
+        Self
+    }
+}
+
+#[derive(Default, Props)]
+struct DropComponentProps {
+    name: String,
+}
+
+impl Drop for DropComponentProps {
+    fn drop(&mut self) {}
+}
+
+struct DropComponent;
+
+impl Component for DropComponent {
+    type Props<'a> = DropComponentProps;
+
+    fn new(_props: &Self::Props<'_>) -> Self {
+        Self
+    }
+}
+
 #[test]
 fn minimal() {
     let _: Element<MyComponent> = element!(MyComponent);
@@ -108,6 +152,17 @@ fn required_prop() {
     assert_eq!(e.props.optional, "");
     assert_eq!(e.props.required, RequiredValue(42));
     assert_eq!(e.props.second, RequiredValue(7));
+}
+
+#[test]
+fn manual_default_props() {
+    let e = element!(ManualDefaultComponent);
+    assert_eq!(e.props.name, "world");
+    assert_eq!(e.props.width, 30);
+
+    let e = element!(ManualDefaultComponent(width: 10u32));
+    assert_eq!(e.props.name, "world");
+    assert_eq!(e.props.width, 10);
 }
 
 #[test]
@@ -223,4 +278,10 @@ fn deterministic_keys() {
         a1.key, b1.key,
         "different call sites should produce different keys"
     );
+}
+
+#[test]
+fn drop_props() {
+    let e = element!(DropComponent(name: "foo"));
+    assert_eq!(e.props.name, "foo");
 }

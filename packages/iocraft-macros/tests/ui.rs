@@ -35,6 +35,7 @@ fn props_diagnostics() {
         "private_builder_fields",
         "complete_required_props",
         "explicit_hooks_lifetime",
+        "renamed_dependency",
     ] {
         fs::copy(
             manifest_dir.join(format!("tests/ui/{name}.rs")),
@@ -91,4 +92,13 @@ fn props_diagnostics() {
         assert_eq!(span["column_start"], 23);
         assert_eq!(span["column_end"], 28);
     }
+
+    fs::write(
+        project.path().join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"iocraft-props-ui\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[workspace]\n\n[dependencies]\nuiterm = {{ package = \"iocraft\", path = {} }}\n",
+            serde_json::to_string(&iocraft).unwrap()
+        ),
+    ).unwrap();
+    check_fixture(project.path(), "renamed_dependency", true);
 }

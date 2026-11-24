@@ -14,7 +14,7 @@ use core::{
     task::{self, Poll},
 };
 use futures::{
-    future::{select, Either, FutureExt, LocalBoxFuture},
+    future::{poll_fn, select, Either, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
 };
 use std::io;
@@ -257,6 +257,10 @@ impl ComponentDrawer<'_> {
         self.node_position
     }
 
+    pub(crate) fn clip_rect(&self) -> Rect<u16> {
+        self.clip_rect
+    }
+
     /// Gets the region of the canvas that the component should be drawn to.
     pub fn canvas(&mut self) -> CanvasSubviewMut<'_> {
         self.context.canvas.subview_mut(
@@ -295,6 +299,7 @@ impl ComponentDrawer<'_> {
     }
 
     /// Prepares to begin drawing a node's children by shrinking the clipping rectangle if necessary.
+    /// Clip arithmetic preserves the full unsigned layout size, even beyond i16::MAX.
     pub(crate) fn with_clip_rect_for_children<F>(&mut self, f: F)
     where
         F: FnOnce(&mut Self),
@@ -308,25 +313,26 @@ impl ComponentDrawer<'_> {
 
         let old_clip_rect = self.clip_rect;
         let layout = self.layout();
+        let boundary = |coordinate: i64| coordinate.clamp(0, i64::from(u16::MAX)) as u16;
         if overflow.x != Overflow::Visible {
+            let x = i64::from(self.node_position.x);
             self.clip_rect.left = self
                 .clip_rect
                 .left
-                .max((self.node_position.x + layout.border.left as i16).max(0) as u16);
-            self.clip_rect.right = self.clip_rect.right.min(
-                (self.node_position.x + self.node_size.width as i16 - layout.border.right as i16)
-                    .max(0) as u16,
-            );
+                .max(boundary(x + i64::from(layout.border.left as i32)));
+            self.clip_rect.right = self.clip_rect.right.min(boundary(
+                x + i64::from(self.node_size.width) - i64::from(layout.border.right as i32),
+            ));
         }
         if overflow.y != Overflow::Visible {
+            let y = i64::from(self.node_position.y);
             self.clip_rect.top = self
                 .clip_rect
                 .top
-                .max((self.node_position.y + layout.border.top as i16).max(0) as u16);
-            self.clip_rect.bottom = self.clip_rect.bottom.min(
-                (self.node_position.y + self.node_size.height as i16 - layout.border.bottom as i16)
-                    .max(0) as u16,
-            );
+                .max(boundary(y + i64::from(layout.border.top as i32)));
+            self.clip_rect.bottom = self.clip_rect.bottom.min(boundary(
+                y + i64::from(self.node_size.height) - i64::from(layout.border.bottom as i32),
+            ));
         }
         f(self);
         self.clip_rect = old_clip_rect;
@@ -517,6 +523,23 @@ impl<'a> Tree<'a> {
             if self.system_context.should_exit() || term.received_ctrl_c() {
                 break;
             }
+            // poll input again to prevent a busy component from starving it
+            // XXX: This must use the task's real waker, not `now_or_never`. crossterm's
+            // `EventStream` hands the first waker it sees to a background thread and ignores later
+            // ones until an event arrives, so polling it with a no-op waker can stall input forever.
+            let mut wait = term.wait().boxed();
+            let result = poll_fn(|cx| match wait.poll_unpin(cx) {
+                Poll::Ready(result) => Poll::Ready(Some(result)),
+                Poll::Pending => Poll::Ready(None),
+            })
+            .await;
+            drop(wait);
+            if let Some(result) = result {
+                result?;
+            }
+            if self.system_context.should_exit() || term.received_ctrl_c() {
+                break;
+            }
         }
         Ok(())
     }
@@ -658,6 +681,42 @@ mod tests {
     }
 
     #[component]
+    fn AlwaysDirty(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let mut renders = hooks.use_state(|| 0_i32);
+        let mut saw_key = hooks.use_state(|| false);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(_)) {
+                saw_key.set(true);
+            }
+        });
+        renders += 1;
+        if saw_key.get() || renders.get() > 10 {
+            system.exit();
+        }
+        element!(Text(content: if saw_key.get() { "key" } else { "idle" }))
+    }
+
+    #[apply(test!)]
+    async fn test_terminal_input_is_polled_while_root_stays_dirty() {
+        let events = futures::stream::iter([TerminalEvent::Key(KeyEvent::new(
+            KeyEventKind::Press,
+            KeyCode::Char('x'),
+        ))]);
+        let mut app = element!(AlwaysDirty);
+        let frames: Vec<_> =
+            mock_terminal_render_loop(&mut app, MockTerminalConfig::with_events(events))
+                .collect()
+                .await;
+        let last = frames.last().expect("the render loop produced a frame");
+        assert_eq!(
+            last.to_string().trim(),
+            "key",
+            "terminal input was never polled while the root stayed dirty"
+        );
+    }
+
+    #[component]
     fn FullWidthComponent() -> impl Into<AnyElement<'static>> {
         element! {
             View(height: 2, width: 100pct, border_style: BorderStyle::Classic)
@@ -771,5 +830,27 @@ mod tests {
         }
         .render(Some(10));
         assert_eq!(canvas.get_text(0, 1, 10, 1), "│short   │");
+    }
+
+    #[test]
+    fn test_large_horizontal_overflow_clip_keeps_visible_text() {
+        let canvas = element! {
+            View(width: 40000, height: 1, overflow: Overflow::Hidden) {
+                Text(content: "visible")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.get_text(0, 0, 7, 1), "visible");
+    }
+
+    #[test]
+    fn test_large_vertical_overflow_clip_keeps_visible_text() {
+        let canvas = element! {
+            View(width: 1, height: 40000, overflow: Overflow::Hidden) {
+                Text(content: "v")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.get_text(0, 0, 1, 1), "v");
     }
 }

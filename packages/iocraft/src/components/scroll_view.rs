@@ -85,7 +85,7 @@ impl ScrollViewHandle {
     pub fn scroll_by(&mut self, delta: i32) {
         if let Some(inner) = &mut self.inner {
             inner.scroll_offset.set(clamp_offset(
-                inner.scroll_offset.get() + delta,
+                inner.scroll_offset.get().saturating_add(delta),
                 inner.content_height.get(),
                 inner.viewport_height.get(),
             ));
@@ -553,15 +553,24 @@ mod tests {
     fn TestScrollView(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
         let mut done = hooks.use_state(|| false);
+        let mut handle = hooks.use_ref_default::<ScrollViewHandle>();
 
         hooks.use_terminal_events(move |event| {
             if let TerminalEvent::Key(KeyEvent {
-                code: KeyCode::Char('q'),
+                code,
                 kind: KeyEventKind::Press,
                 ..
             }) = event
             {
-                done.set(true);
+                match code {
+                    KeyCode::Char('q') => done.set(true),
+                    KeyCode::Char('m') => {
+                        let mut handle = handle.write();
+                        handle.scroll_to(1);
+                        handle.scroll_by(i32::MAX);
+                    }
+                    _ => {}
+                }
             }
         });
 
@@ -579,7 +588,7 @@ mod tests {
 
         element! {
             View(width: 20, height: 5) {
-                ScrollView {
+                ScrollView(handle) {
                     Text(content: lines)
                 }
             }
@@ -614,6 +623,22 @@ mod tests {
 
         let output = canvases.last().unwrap().to_string();
         assert!(output.contains("Line 2"));
+        assert!(!output.contains("Line 0"));
+    }
+
+    #[apply(test!)]
+    async fn test_scroll_view_handle_clamps_large_relative_scroll() {
+        let canvases: Vec<_> = element!(TestScrollView)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('m'))),
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
+            ])))
+            .collect()
+            .await;
+
+        let output = canvases.last().unwrap().to_string();
+        assert!(output.contains("Line 15"));
+        assert!(output.contains("Line 19"));
         assert!(!output.contains("Line 0"));
     }
 
