@@ -135,7 +135,10 @@ impl Component for MixedText {
         updater: &mut ComponentUpdater,
     ) {
         for content in props.contents.iter_mut() {
-            content.text = strip_ansi(&content.text).into_owned();
+            let stripped = strip_ansi(&content.text);
+            if stripped.len() != content.text.len() {
+                content.text = stripped.into_owned();
+            }
         }
         let plaintext = props
             .contents
