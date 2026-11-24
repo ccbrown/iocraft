@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.5...iocraft-v0.9.6) - 2026-11-24
+
+### Added
+
+- allow event handlers to return values ([#316](https://github.com/ccbrown/iocraft/pull/316))
+
+### Fixed
+
+- render loop input waker ([#328](https://github.com/ccbrown/iocraft/pull/328))
+- *(text-input)* leave system shortcut keys out of the value ([#325](https://github.com/ccbrown/iocraft/pull/325))
+
+### Other
+
+- *(mixed-text)* avoid copying spans without ANSI escapes ([#319](https://github.com/ccbrown/iocraft/pull/319))
+
 ## [0.9.5](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.4...iocraft-v0.9.5) - 2026-11-09
 
 ### Fixed
