@@ -38,12 +38,15 @@ impl UseAsyncHandler for Hooks<'_, '_> {
                 return;
             };
             let future = Box::pin(f(value));
-            let mut state = handler_impl_state
-                .lock()
-                .expect("we should be able to lock the mutex");
-            state.futures.push(future);
-            if let Some(waker) = &state.waker {
-                waker.wake_by_ref();
+            let waker = {
+                let mut state = handler_impl_state
+                    .lock()
+                    .expect("we should be able to lock the mutex");
+                state.futures.push(future);
+                state.waker.take()
+            };
+            if let Some(waker) = waker {
+                waker.wake();
             }
         })
     }
@@ -245,6 +248,7 @@ mod tests {
     struct CallbackCompletionProps {
         #[iocraft(required)]
         handler: Arc<Mutex<Option<Handler<()>>>>,
+        target: usize,
     }
 
     #[component]
@@ -253,21 +257,25 @@ mod tests {
         props: &CallbackCompletionProps,
     ) -> impl Into<AnyElement<'static>> {
         let mut system = hooks.use_context_mut::<SystemContext>();
-        let mut completed = hooks.use_state(|| false);
+        let mut completed = hooks.use_state(|| 0);
         let handler = hooks.use_async_handler(move |()| async move {
-            completed.set(true);
+            completed += 1;
         });
         *props.handler.lock().unwrap() = Some(handler);
-        if completed.get() {
+        if completed.get() == props.target {
             system.exit();
         }
-        element!(Text(content: if completed.get() { "completed" } else { "waiting" }))
+        element!(Text(content: if completed.get() == props.target {
+            "completed"
+        } else {
+            "waiting"
+        }))
     }
 
     #[apply(test!)]
     async fn test_async_handler_wakes_an_already_waiting_component() {
         let handler = Arc::new(Mutex::new(None));
-        let mut app = element!(CallbackCompletion(handler: handler.clone()));
+        let mut app = element!(CallbackCompletion(handler: handler.clone(), target: 1usize));
         let mut output = app.mock_terminal_render_loop(Default::default());
         assert_eq!(output.next().await.unwrap().to_string().trim(), "waiting");
 
@@ -275,5 +283,49 @@ mod tests {
         assert!(futures::poll!(next.as_mut()).is_pending());
         handler.lock().unwrap().as_ref().unwrap()(());
         assert_eq!(next.await.unwrap().to_string().trim(), "completed");
+    }
+
+    #[test]
+    fn test_async_handler_waker_can_enqueue_another_callback() {
+        struct EnqueueOnWake(Mutex<Option<Handler<()>>>);
+
+        impl std::task::Wake for EnqueueOnWake {
+            fn wake(self: Arc<Self>) {
+                let handler = self.0.lock().unwrap().take();
+                if let Some(handler) = handler {
+                    handler(());
+                }
+            }
+        }
+
+        let (finished, result) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let handler = Arc::new(Mutex::new(None));
+            let mut app = element!(CallbackCompletion(handler: handler.clone(), target: 2usize));
+            let mut output = app.mock_terminal_render_loop(Default::default());
+            assert_eq!(
+                smol::block_on(output.next()).unwrap().to_string(),
+                "waiting\n"
+            );
+            let enqueue = Arc::new(EnqueueOnWake(Mutex::new(None)));
+            let waker = enqueue.clone().into();
+            let mut next = std::pin::pin!(output.next());
+            assert!(std::future::Future::poll(
+                next.as_mut(),
+                &mut std::task::Context::from_waker(&waker),
+            )
+            .is_pending());
+            let handler = handler.lock().unwrap().as_ref().unwrap().clone();
+            *enqueue.0.lock().unwrap() = Some(handler.clone());
+            handler(());
+            finished
+                .send(smol::block_on(next).unwrap().to_string())
+                .unwrap();
+        });
+        assert_eq!(
+            result.recv_timeout(Duration::from_secs(5)).unwrap(),
+            "completed\n"
+        );
+        worker.join().unwrap();
     }
 }
