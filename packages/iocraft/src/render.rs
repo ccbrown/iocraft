@@ -14,7 +14,7 @@ use core::{
     task::{self, Poll},
 };
 use futures::{
-    future::{select, Either, FutureExt, LocalBoxFuture},
+    future::{poll_fn, select, Either, FutureExt, LocalBoxFuture},
     stream::{Stream, StreamExt},
 };
 use std::io;
@@ -524,7 +524,17 @@ impl<'a> Tree<'a> {
                 break;
             }
             // poll input again to prevent a busy component from starving it
-            if let Some(result) = term.wait().now_or_never() {
+            // XXX: This must use the task's real waker, not `now_or_never`. crossterm's
+            // `EventStream` hands the first waker it sees to a background thread and ignores later
+            // ones until an event arrives, so polling it with a no-op waker can stall input forever.
+            let mut wait = term.wait().boxed();
+            let result = poll_fn(|cx| match wait.poll_unpin(cx) {
+                Poll::Ready(result) => Poll::Ready(Some(result)),
+                Poll::Pending => Poll::Ready(None),
+            })
+            .await;
+            drop(wait);
+            if let Some(result) = result {
                 result?;
             }
             if self.system_context.should_exit() || term.received_ctrl_c() {
