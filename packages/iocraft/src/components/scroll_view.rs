@@ -46,6 +46,7 @@ struct ScrollViewHandleInner {
     content_height: State<u16>,
     viewport_height: State<u16>,
     user_scrolled_up: State<bool>,
+    auto_scroll: bool,
 }
 
 impl ScrollViewHandle {
@@ -84,8 +85,9 @@ impl ScrollViewHandle {
     /// is not at the bottom.
     pub fn scroll_by(&mut self, delta: i32) {
         if let Some(inner) = &mut self.inner {
+            let offset = Self::effective_offset(inner).saturating_add(delta);
             inner.scroll_offset.set(clamp_offset(
-                inner.scroll_offset.get().saturating_add(delta),
+                offset,
                 inner.content_height.get(),
                 inner.viewport_height.get(),
             ));
@@ -95,9 +97,7 @@ impl ScrollViewHandle {
 
     /// Returns the current scroll offset in lines from the top.
     pub fn scroll_offset(&self) -> i32 {
-        self.inner
-            .as_ref()
-            .map_or(0, |inner| inner.scroll_offset.get())
+        self.inner.as_ref().map_or(0, Self::effective_offset)
     }
 
     /// Returns the total height of the scrollable content in lines.
@@ -119,6 +119,14 @@ impl ScrollViewHandle {
         self.inner
             .as_ref()
             .is_none_or(|inner| !inner.user_scrolled_up.get())
+    }
+
+    fn effective_offset(inner: &ScrollViewHandleInner) -> i32 {
+        if inner.auto_scroll && !inner.user_scrolled_up.get() {
+            max_offset(inner.content_height.get(), inner.viewport_height.get())
+        } else {
+            inner.scroll_offset.get()
+        }
     }
 
     fn update_user_scrolled_up(inner: &mut ScrollViewHandleInner) {
@@ -332,6 +340,7 @@ pub fn ScrollView<'a>(
                 content_height,
                 viewport_height,
                 user_scrolled_up,
+                auto_scroll,
             }),
         });
     }
@@ -806,6 +815,53 @@ mod tests {
         let output = canvases.last().unwrap().to_string();
         // Scrollbar track character should be present when content exceeds viewport.
         assert!(output.contains('\u{2502}')); // │
+    }
+
+    #[apply(test!)]
+    async fn test_scroll_handle_moves_relative_to_the_visible_tail() {
+        #[component]
+        fn Log(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let mut handle = hooks.use_ref_default::<ScrollViewHandle>();
+            let mut before = hooks.use_state(|| None::<i32>);
+            hooks.use_terminal_events(move |event| {
+                if let TerminalEvent::Key(KeyEvent {
+                    code: KeyCode::Char('p'),
+                    kind: KeyEventKind::Press,
+                    ..
+                }) = event
+                {
+                    let mut handle = handle.write();
+                    before.set(Some(handle.scroll_offset()));
+                    handle.scroll_by(-1);
+                }
+            });
+            element! {
+                View(width: 13, flex_direction: FlexDirection::Column) {
+                    View(height: 2) {
+                        ScrollView(auto_scroll: true, handle, scrollbar: Some(false)) {
+                            Text(content: "A\nB\nC\nD\nE\nF")
+                        }
+                    }
+                    #(before.get().map(|offset| element!(Text(content: format!("Before: {offset}")))))
+                }
+            }
+        }
+
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut log = element!(Log);
+        let frames = log.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        assert_eq!(frames.next().await.unwrap().to_string(), "E\nF\n");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('p'),
+            )))
+            .unwrap();
+        assert_eq!(
+            frames.next().await.unwrap().to_string(),
+            "D\nE\nBefore: 4\n"
+        );
     }
 
     #[apply(test!)]
