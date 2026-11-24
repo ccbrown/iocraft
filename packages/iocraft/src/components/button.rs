@@ -16,7 +16,7 @@ pub struct ButtonProps<'a> {
     /// The button can be triggered two ways:
     ///
     /// - By clicking on it with the primary mouse button while in fullscreen mode.
-    /// - By pressing the Enter or Space key while [`has_focus`](Self::has_focus) is `true`.
+    /// - By pressing Enter or Space without modifiers while [`has_focus`](Self::has_focus) is `true`.
     pub handler: HandlerMut<'static, ()>,
 
     /// True if the button has focus and should process keyboard input.
@@ -61,10 +61,15 @@ pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<An
             }) => {
                 handler(());
             }
-            TerminalEvent::Key(KeyEvent { code, kind, .. })
-                if has_focus
-                    && kind != KeyEventKind::Release
-                    && (code == KeyCode::Enter || code == KeyCode::Char(' ')) =>
+            TerminalEvent::Key(KeyEvent {
+                code,
+                kind,
+                modifiers,
+                ..
+            }) if has_focus
+                && kind != KeyEventKind::Release
+                && modifiers.is_empty()
+                && (code == KeyCode::Enter || code == KeyCode::Char(' ')) =>
             {
                 handler(());
             }
@@ -165,6 +170,30 @@ mod tests {
         let expected = vec!["Exit\n"];
         assert_eq!(actual, expected);
     }
+
+    #[apply(test!)]
+    async fn test_modified_space_does_not_activate_the_button() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element!(MyComponent);
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        assert_eq!(frames.next().await.unwrap().to_string(), "Exit\n");
+
+        let mut shortcut = KeyEvent::new(KeyEventKind::Press, KeyCode::Char(' '));
+        shortcut.modifiers = crate::KeyModifiers::CONTROL;
+        sender.unbounded_send(TerminalEvent::Key(shortcut)).unwrap();
+        assert!(frames.next().now_or_never().is_none());
+        assert!(frames.next().now_or_never().is_none());
+
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char(' '),
+            )))
+            .unwrap();
+        assert!(frames.next().await.is_none());
+    }
+
     #[apply(test!)]
     async fn test_secondary_clicks_do_not_activate_the_button() {
         let (sender, events) = futures::channel::mpsc::unbounded();

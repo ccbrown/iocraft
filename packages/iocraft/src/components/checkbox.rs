@@ -17,7 +17,7 @@ pub struct CheckboxProps<'a> {
     /// The handler to invoke with the new checked state when the checkbox is triggered.
     ///
     /// The checkbox can be triggered by clicking it with the mouse while in fullscreen mode, or by
-    /// pressing Enter or Space while [`has_focus`](Self::has_focus) is `true`.
+    /// pressing Enter or Space without modifiers while [`has_focus`](Self::has_focus) is `true`.
     pub on_change: HandlerMut<'static, bool>,
 
     /// True if the checkbox has focus and should process keyboard input.
