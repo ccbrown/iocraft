@@ -1786,6 +1786,29 @@ mod tests {
     }
 
     #[apply(test!)]
+    async fn test_text_input_leaves_system_shortcuts_out_of_the_value() {
+        let shortcut_keys = [KeyModifiers::SUPER, KeyModifiers::HYPER, KeyModifiers::META]
+            .into_iter()
+            .map(|modifiers| {
+                let mut key = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('x'));
+                key.modifiers = modifiers;
+                TerminalEvent::Key(key)
+            })
+            .chain([TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('!'),
+            ))]);
+        let actual = element!(MyComponent)
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
+                shortcut_keys,
+            )))
+            .map(|canvas| canvas.to_string())
+            .collect::<Vec<_>>()
+            .await;
+        assert_eq!(actual.last().unwrap(), " ! \n");
+    }
+
+    #[apply(test!)]
     async fn test_text_input_paste() {
         let actual = element!(MyComponent)
             .mock_terminal_render_loop(MockTerminalConfig::with_events(futures::stream::iter(
