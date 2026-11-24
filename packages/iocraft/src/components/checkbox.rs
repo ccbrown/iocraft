@@ -53,8 +53,8 @@ pub fn Checkbox<'a>(_hooks: Hooks, props: &mut CheckboxProps<'a>) -> impl Into<A
     let checked = props.checked;
     let has_focus = props.has_focus;
     let mut on_change = props.on_change.take();
-    let children = std::mem::take(&mut props.children);
-    let separator = (!children.is_empty()).then(|| element!(Text(content: " ")));
+    let separator = (!props.children.is_empty()).then(|| element!(Text(content: " ")));
+    let children = props.children.iter_mut().map(AnyElement::from);
 
     element! {
         Button(
@@ -125,6 +125,17 @@ mod tests {
                 Text(content: "Enable feature")
             }
         }
+    }
+
+    #[test]
+    fn keeps_the_label_when_rendered_again() {
+        let mut checkbox = element! {
+            Checkbox {
+                Text(content: "Enable feature")
+            }
+        };
+        assert_eq!(checkbox.to_string(), "[ ] Enable feature\n");
+        assert_eq!(checkbox.to_string(), "[ ] Enable feature\n");
     }
 
     #[apply(test!)]
