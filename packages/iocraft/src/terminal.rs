@@ -275,12 +275,15 @@ impl<'a> Terminal<'a> {
 
     /// Wraps a series of terminal updates in a synchronized update block, making sure to end the
     /// synchronized update even if there is an error or panic.
+    /// If ending the synchronized update fails, its error is returned unless the update itself
+    /// already failed.
     pub fn synchronized_update<F>(&mut self, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut Self) -> io::Result<()>,
     {
-        let t = SynchronizedUpdate::begin(self)?;
-        f(t.inner)
+        let mut t = SynchronizedUpdate::begin(self)?;
+        let result = f(t.inner.as_deref_mut().unwrap());
+        result.and(t.finish())
     }
 
     pub async fn wait(&mut self) -> io::Result<()> {
@@ -353,18 +356,116 @@ impl Terminal<'static> {
 /// Synchronized update terminal guard.
 /// Begins a frame on creation, ends it when dropped (even on error or panic).
 pub(crate) struct SynchronizedUpdate<'a, 'b> {
-    inner: &'a mut Terminal<'b>,
+    inner: Option<&'a mut Terminal<'b>>,
 }
 
 impl<'a, 'b> SynchronizedUpdate<'a, 'b> {
     pub fn begin(terminal: &'a mut Terminal<'b>) -> io::Result<Self> {
         terminal.inner.begin_frame()?;
-        Ok(Self { inner: terminal })
+        Ok(Self {
+            inner: Some(terminal),
+        })
+    }
+
+    fn finish(mut self) -> io::Result<()> {
+        self.inner.take().unwrap().inner.end_frame()
     }
 }
 
 impl Drop for SynchronizedUpdate<'_, '_> {
     fn drop(&mut self) {
-        let _ = self.inner.inner.end_frame();
+        if let Some(inner) = self.inner.as_deref_mut() {
+            let _ = inner.inner.end_frame();
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+    use std::{
+        io::{BufWriter, Read, Write},
+        os::unix::net::UnixStream,
+    };
+
+    struct BufferedBackend(BufWriter<UnixStream>);
+
+    impl TerminalBackend for BufferedBackend {
+        fn clear_canvas(&mut self) -> io::Result<()> {
+            self.0.write_all(b"\r")
+        }
+
+        fn write_canvas(&mut self, _prev: Option<&Canvas>, canvas: &Canvas) -> io::Result<()> {
+            write!(self.0, "{canvas}")
+        }
+
+        fn print_above(&mut self, messages: &[Passthrough<'_>]) -> io::Result<()> {
+            for message in messages {
+                self.0.write_all(message.content.as_bytes())?;
+                if message.newline {
+                    self.0.write_all(b"\n")?;
+                }
+            }
+            Ok(())
+        }
+
+        fn event_stream(&mut self) -> io::Result<BoxStream<'static, io::Result<TerminalEvent>>> {
+            Ok(Box::pin(stream::pending()))
+        }
+
+        fn end_frame(&mut self) -> io::Result<()> {
+            self.0.flush()
+        }
+    }
+
+    fn buffered_terminal(writer: UnixStream) -> Terminal<'static> {
+        Terminal::with_backend(Box::new(BufferedBackend(BufWriter::with_capacity(
+            1024, writer,
+        ))))
+    }
+
+    #[test]
+    fn test_end_frame_reports_buffered_write_failure() {
+        let (writer, reader) = UnixStream::pair().unwrap();
+        drop(reader);
+        let mut terminal = buffered_terminal(writer);
+        let canvas = element!(Text(content: "frame")).render(None);
+        let result =
+            terminal.synchronized_update(|terminal| terminal.inner.write_canvas(None, &canvas));
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn test_update_error_takes_precedence_over_flush_failure() {
+        let (writer, reader) = UnixStream::pair().unwrap();
+        drop(reader);
+        let mut terminal = buffered_terminal(writer);
+        let canvas = element!(Text(content: "frame")).render(None);
+        let result = terminal.synchronized_update(|terminal| {
+            terminal.inner.write_canvas(None, &canvas)?;
+            Err(io::Error::from(io::ErrorKind::InvalidData))
+        });
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn test_panicking_update_still_flushes_before_terminal_drop() {
+        let (writer, mut reader) = UnixStream::pair().unwrap();
+        reader
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut terminal = buffered_terminal(writer);
+        let canvas = element!(Text(content: "frame")).render(None);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            terminal.synchronized_update(|terminal| {
+                terminal.inner.write_canvas(None, &canvas)?;
+                panic!("frame interrupted");
+            })
+        }));
+        assert!(result.is_err());
+        let mut bytes = [0; 6];
+        reader.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"frame\n");
     }
 }
