@@ -306,9 +306,12 @@ impl<'a> Terminal<'a> {
                     }
                     self.subscribers.retain(|subscriber| {
                         if let Some(subscriber) = subscriber.upgrade() {
-                            let mut subscriber = subscriber.lock().unwrap();
-                            subscriber.pending.push_back(event.clone());
-                            if let Some(waker) = subscriber.waker.take() {
+                            let waker = {
+                                let mut subscriber = subscriber.lock().unwrap();
+                                subscriber.pending.push_back(event.clone());
+                                subscriber.waker.take()
+                            };
+                            if let Some(waker) = waker {
                                 waker.wake();
                             }
                             true
@@ -378,6 +381,48 @@ impl Drop for SynchronizedUpdate<'_, '_> {
             let _ = inner.inner.end_frame();
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn subscriber_can_read_the_event_during_wake() {
+    use futures::FutureExt;
+    use std::task::Wake;
+
+    struct ReadOnWake {
+        subscriber: Arc<Mutex<TerminalEventsInner>>,
+        received: Mutex<Option<TerminalEvent>>,
+    }
+
+    impl Wake for ReadOnWake {
+        fn wake(self: Arc<Self>) {
+            *self.received.lock().unwrap() = self
+                .subscriber
+                .try_lock()
+                .ok()
+                .and_then(|mut subscriber| subscriber.pending.pop_front());
+        }
+    }
+
+    let event = TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Enter));
+    let (mut terminal, _) = Terminal::mock(MockTerminalConfig::with_events(stream::iter([event])));
+    let mut subscriber = terminal.events().unwrap();
+    let read = Arc::new(ReadOnWake {
+        subscriber: Arc::clone(&subscriber.inner),
+        received: Mutex::new(None),
+    });
+    let waker = Waker::from(Arc::clone(&read));
+    assert!(Pin::new(&mut subscriber)
+        .poll_next(&mut Context::from_waker(&waker))
+        .is_pending());
+    let _ = terminal.wait().now_or_never();
+    assert!(matches!(
+        read.received.lock().unwrap().as_ref(),
+        Some(TerminalEvent::Key(KeyEvent {
+            code: KeyCode::Enter,
+            ..
+        }))
+    ));
 }
 
 #[cfg(all(test, unix))]
