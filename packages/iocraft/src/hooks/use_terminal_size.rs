@@ -11,8 +11,6 @@ mod private {
 /// `UseTerminalSize` is a hook that returns the current terminal size.
 pub trait UseTerminalSize: private::Sealed {
     /// Returns the current terminal size as a tuple of `(width, height)`.
-    ///
-    /// Uses the backend's sampled size when available, or the latest resize event otherwise.
     fn use_terminal_size(&mut self) -> (u16, u16);
 }
 
