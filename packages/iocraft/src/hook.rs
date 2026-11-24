@@ -1,4 +1,4 @@
-use crate::{ComponentDrawer, ComponentUpdater, ContextStack};
+use crate::{hooks::EventPath, ComponentDrawer, ComponentUpdater, ContextStack};
 use core::{
     any::Any,
     pin::Pin,
@@ -90,6 +90,7 @@ pub struct Hooks<'a, 'b: 'a> {
     first_update: bool,
     hook_index: usize,
     terminal_size: Option<(u16, u16)>,
+    pub(crate) event_path: &'a EventPath<'a>,
     pub(crate) context_stack: Option<&'a ContextStack<'b>>,
 }
 
@@ -98,12 +99,14 @@ impl<'a> Hooks<'a, '_> {
         hooks: &'a mut Vec<Box<dyn AnyHook>>,
         first_update: bool,
         terminal_size: Option<(u16, u16)>,
+        event_path: &'a EventPath<'a>,
     ) -> Self {
         Self {
             hooks,
             first_update,
             hook_index: 0,
             terminal_size,
+            event_path,
             context_stack: None,
         }
     }
@@ -118,6 +121,7 @@ impl<'a> Hooks<'a, '_> {
             first_update: self.first_update,
             hook_index: self.hook_index,
             terminal_size: self.terminal_size,
+            event_path: self.event_path,
             context_stack: Some(context_stack),
         }
     }

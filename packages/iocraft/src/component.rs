@@ -2,6 +2,7 @@ use crate::{
     context::ContextStack,
     element::{ElementKey, ElementType},
     hook::{AnyHook, Hook, Hooks},
+    hooks::{EventPath, EventScope},
     multimap::RemoveOnlyMultimap,
     props::{AnyProps, Props},
     render::{ComponentDrawer, ComponentUpdater, UpdateContext},
@@ -134,6 +135,7 @@ pub(crate) struct InstantiatedComponent {
     children: Components,
     helper: Box<dyn ComponentHelperExt>,
     hooks: Vec<Box<dyn AnyHook>>,
+    event_scope: EventScope,
     first_update: bool,
     has_transparent_layout: bool,
 }
@@ -146,6 +148,7 @@ impl InstantiatedComponent {
             children: Components::default(),
             helper,
             hooks: Default::default(),
+            event_scope: Default::default(),
             first_update: true,
             has_transparent_layout: false,
         }
@@ -165,20 +168,28 @@ impl InstantiatedComponent {
         unattached_child_node_ids: &mut Vec<NodeId>,
         component_context_stack: &mut ContextStack<'_>,
         props: AnyProps,
+        parent_event_path: Option<&EventPath<'_>>,
     ) {
+        let event_path = EventPath::new(&self.event_scope, parent_event_path);
         let mut updater = ComponentUpdater::new(
             self.node_id,
             &mut self.children,
             unattached_child_node_ids,
             context,
             component_context_stack,
+            &event_path,
         );
         self.hooks.pre_component_update(&mut updater);
         let terminal_size = updater.terminal_size();
         self.helper.update_component(
             &mut self.component,
             props,
-            Hooks::new(&mut self.hooks, self.first_update, terminal_size),
+            Hooks::new(
+                &mut self.hooks,
+                self.first_update,
+                terminal_size,
+                &event_path,
+            ),
             &mut updater,
         );
         self.hooks.post_component_update(&mut updater);
