@@ -72,7 +72,7 @@ pub fn Button<'a>(mut hooks: Hooks, props: &mut ButtonProps<'a>) -> impl Into<An
         }
     });
 
-    match props.children.iter_mut().next() {
+    match props.children.first_mut() {
         Some(child) => child.into(),
         None => element!(View).into_any(),
     }

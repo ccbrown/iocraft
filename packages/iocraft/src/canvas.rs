@@ -675,6 +675,22 @@ mod tests {
     }
 
     #[test]
+    fn test_leading_combining_mark_does_not_join_sibling_text() {
+        let canvas = element! {
+            View {
+                Text(color: Color::Red, content: "e")
+                Text(color: Color::Blue, content: "\u{301}x")
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.cell(0, 0).unwrap().text(), Some("e"));
+        assert_eq!(
+            canvas.cell(0, 0).unwrap().text_style().unwrap().color,
+            Some(Color::Red),
+        );
+    }
+
+    #[test]
     fn test_canvas_clips_an_entire_regional_indicator_pair() {
         let mut canvas = Canvas::new(1, 1);
         canvas

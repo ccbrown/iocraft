@@ -358,7 +358,7 @@ mod tests {
             }
         }
 
-        #[derive(Props)]
+        #[derive(Default, Props)]
         struct FlushProps {
             trace: Arc<Mutex<Trace>>,
         }
