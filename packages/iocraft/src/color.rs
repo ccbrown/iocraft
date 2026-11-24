@@ -239,7 +239,7 @@ pub(crate) mod sgr {
 /// (see <https://no-color.org/>). The variable is read once and memoized, so
 /// this stays cheap on the per-cell render path. Matches crossterm, which
 /// applies the same suppression inside `Colored`'s `Display`.
-fn color_output_disabled() -> bool {
+pub(crate) fn color_output_disabled() -> bool {
     static DISABLED: OnceLock<bool> = OnceLock::new();
     *DISABLED.get_or_init(|| {
         std::env::var("NO_COLOR")

@@ -1,4 +1,4 @@
-use crate::color::{csi, sgr, SgrColor};
+use crate::color::{color_output_disabled, csi, sgr, SgrColor};
 use crate::style::{Color, Weight};
 use std::{
     env,
@@ -338,7 +338,13 @@ impl Canvas {
     /// leading reset of its own. It always leaves SGR state reset on return,
     /// so consecutive calls (or any subsequent writer use) start from a clean
     /// state.
-    fn write_row_impl<W: Write>(&self, y: usize, mut w: W, ansi: bool) -> io::Result<()> {
+    fn write_row_impl<W: Write>(
+        &self,
+        y: usize,
+        mut w: W,
+        ansi: bool,
+        color: bool,
+    ) -> io::Result<()> {
         let row = self.row(y).unwrap_or(&[]);
 
         let mut background_color = None;
@@ -375,7 +381,7 @@ impl Canvas {
                 }
 
                 if let Some(c) = &cell.character {
-                    if c.style.color != text_style.color {
+                    if color && c.style.color != text_style.color {
                         write!(
                             w,
                             csi!("{}m"),
@@ -423,7 +429,7 @@ impl Canvas {
                 did_clear_line = true;
             }
 
-            if ansi && cell.background_color != background_color {
+            if color && cell.background_color != background_color {
                 write!(
                     w,
                     csi!("{}m"),
@@ -480,7 +486,7 @@ impl Canvas {
         y: usize,
         w: W,
     ) -> io::Result<()> {
-        self.write_row_impl(y, w, true)
+        self.write_row_impl(y, w, true, !color_output_disabled())
     }
 
     fn write_impl<W: Write>(
@@ -494,8 +500,9 @@ impl Canvas {
             // the trailing reset of the previous row.
             write!(w, csi!("0m"))?;
         }
+        let color = ansi && !color_output_disabled();
         for y in 0..self.cells.len() {
-            self.write_row_impl(y, &mut w, ansi)?;
+            self.write_row_impl(y, &mut w, ansi, color)?;
             let is_final_line = y == self.cells.len() - 1;
             if !omit_final_newline || !is_final_line {
                 if ansi {
@@ -885,6 +892,31 @@ mod tests {
                 (b'B', true, false)
             ]
         );
+    }
+
+    #[test]
+    fn test_canvas_keeps_bold_across_suppressed_color_changes() {
+        let mut canvas = Canvas::new(4, 1);
+        let mut view = canvas.subview_mut(0, 0, 0, 0, 4, 1);
+        let mut style = CanvasTextStyle {
+            weight: Weight::Bold,
+            color: Some(Color::Red),
+            ..Default::default()
+        };
+        view.set_text(0, 0, "A", style);
+        style.color = Some(Color::Green);
+        view.set_text(1, 0, "B", style);
+
+        let mut output = Vec::new();
+        canvas.write_row_impl(0, &mut output, true, false).unwrap();
+        let mut vt = avt::Vt::new(4, 1);
+        vt.feed_str(std::str::from_utf8(&output).unwrap());
+        let line = vt.line(0);
+        assert_eq!(line.text(), "AB  ");
+        for cell in &line.cells()[..2] {
+            assert!(cell.pen().is_bold());
+            assert_eq!(cell.pen().foreground(), None);
+        }
     }
 
     #[test]
