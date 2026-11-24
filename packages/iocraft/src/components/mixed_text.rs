@@ -4,6 +4,7 @@ use crate::{
     strip_ansi::strip_ansi,
     CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater, Hooks, Props, Weight,
 };
+use std::borrow::Cow;
 
 /// A section of text in a [`MixedText`] component.
 #[non_exhaustive]
@@ -135,7 +136,9 @@ impl Component for MixedText {
         updater: &mut ComponentUpdater,
     ) {
         for content in props.contents.iter_mut() {
-            content.text = strip_ansi(&content.text).into_owned();
+            if let Cow::Owned(text) = strip_ansi(&content.text) {
+                content.text = text;
+            }
         }
         let plaintext = props
             .contents
