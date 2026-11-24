@@ -799,6 +799,13 @@ pub fn TextInput(mut hooks: Hooks, props: &mut TextInputProps) -> impl Into<AnyE
             let mut hint = NewCursorOffsetHint::None;
 
             let code = match event {
+                TerminalEvent::Key(KeyEvent { modifiers, .. })
+                    if modifiers.intersects(
+                        KeyModifiers::SUPER | KeyModifiers::HYPER | KeyModifiers::META,
+                    ) =>
+                {
+                    None
+                }
                 TerminalEvent::Key(KeyEvent {
                     code,
                     kind,
