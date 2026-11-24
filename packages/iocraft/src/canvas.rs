@@ -139,6 +139,7 @@ impl Canvas {
     /// Each row within the region produces one line in the result, separated
     /// by newlines. Trailing whitespace on each line is trimmed. Out-of-bounds
     /// coordinates are clamped silently.
+    /// A character that crosses a horizontal edge is not included.
     pub fn get_text(&self, x: usize, y: usize, w: usize, h: usize) -> String {
         let mut lines = Vec::with_capacity(h);
         for offset in 0..h {
@@ -162,8 +163,12 @@ impl Canvas {
             while col < trim_end {
                 match slice[col].character.as_ref() {
                     Some(ch) => {
+                        let width = ch.value.width().max(1);
+                        if width > slice.len() - col {
+                            break;
+                        }
                         s.push_str(&ch.value);
-                        col += ch.value.width().max(1);
+                        col += width;
                     }
                     None => {
                         s.push(' ');
@@ -1212,6 +1217,8 @@ mod tests {
 
         assert_eq!(canvas.get_text(0, 0, 10, 1), "界a🙂b");
         assert_eq!(canvas.get_text(1, 0, 5, 1), " a🙂b");
+        assert_eq!(canvas.get_text(2, 0, 2, 1), "a");
+        assert_eq!(canvas.get_text(2, 0, 3, 1), "a🙂");
         assert_eq!(canvas.get_text(0, 1, 10, 1), "a\u{301} 界b");
 
         let sv = canvas.subview_mut(2, 0, 0, 0, 10, 2);
