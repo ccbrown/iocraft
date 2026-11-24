@@ -159,10 +159,16 @@ impl Component for MixedText {
             .iter()
             .map(|content| content.text.as_str())
             .collect();
-        let lines = segmented_string.wrap(match self.wrap {
+        let mut lines = segmented_string.wrap(match self.wrap {
             TextWrap::Wrap => width as usize,
             TextWrap::NoWrap => usize::MAX,
         });
+        let mut grapheme_buffer = String::new();
+        if self.wrap == TextWrap::Wrap {
+            for line in &mut lines {
+                line.trim_end(&mut grapheme_buffer);
+            }
+        }
 
         let paddings = lines
             .iter()
@@ -171,12 +177,7 @@ impl Component for MixedText {
         let x_offset = paddings.iter().copied().min().unwrap_or(0);
 
         let mut drawer = TextDrawer::new(drawer, x_offset, self.align != TextAlign::Left);
-        let mut grapheme_buffer = String::new();
-        for (mut line, padding) in lines.into_iter().zip(paddings) {
-            if self.wrap == TextWrap::Wrap {
-                line.trim_end(&mut grapheme_buffer);
-            }
-
+        for (line, padding) in lines.into_iter().zip(paddings) {
             let additional_padding = padding - x_offset;
             if additional_padding > 0 {
                 drawer.append_lines(
@@ -234,6 +235,20 @@ mod tests {
             .render(None);
             assert_eq!(canvas.to_string(), "a\n\nb\n", "{content:?}");
         }
+    }
+
+    #[test]
+    fn aligns_wrapped_text_after_trimming_trailing_spaces() {
+        let actual = element! {
+            View(width: 6, flex_direction: FlexDirection::Column) {
+                MixedText(align: TextAlign::Right, contents: vec![
+                    MixedTextContent::new("a"),
+                    MixedTextContent::new("  \nb").weight(Weight::Bold),
+                ])
+            }
+        }
+        .to_string();
+        assert_eq!(actual, "     a\n     b\n");
     }
 
     #[test]
