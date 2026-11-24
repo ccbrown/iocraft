@@ -718,6 +718,7 @@ mod tests {
     struct RecordingBackend {
         calls: Arc<Mutex<Vec<&'static str>>>,
         canvases: Arc<Mutex<Vec<String>>>,
+        next_size: Option<(u16, u16)>,
     }
 
     impl RecordingBackend {
@@ -733,7 +734,11 @@ mod tests {
 
         fn size(&self) -> Option<(u16, u16)> {
             self.record("size");
-            Some((42, 7))
+            Some(
+                self.next_size
+                    .filter(|_| !self.canvases.lock().unwrap().is_empty())
+                    .unwrap_or((42, 7)),
+            )
         }
 
         fn set_fullscreen(&mut self, enabled: bool) -> io::Result<()> {
@@ -846,6 +851,7 @@ mod tests {
         let backend = RecordingBackend {
             calls: calls.clone(),
             canvases: canvases.clone(),
+            next_size: None,
         };
         let mut element = element!(CustomBackendComponent);
 
@@ -873,11 +879,42 @@ mod tests {
     }
 
     #[test]
+    fn test_terminal_size_reports_new_backend_sample_without_resize_event() {
+        #[component]
+        fn SizeDisplay(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let (width, height) = hooks.use_terminal_size();
+            let mut next_frame = hooks.use_state(|| false);
+            let mut system = hooks.use_context_mut::<SystemContext>();
+            if next_frame.get() {
+                system.exit();
+            }
+            hooks.use_effect(move || next_frame.set(true), ());
+            element!(Text(content: format!("{width}x{height}")))
+        }
+
+        let canvases = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            canvases: canvases.clone(),
+            next_size: Some((60, 9)),
+        };
+        smol::block_on(
+            element!(SizeDisplay)
+                .render_loop()
+                .fullscreen()
+                .backend(backend),
+        )
+        .unwrap();
+        assert_eq!(canvases.lock().unwrap().as_slice(), ["42x7\n", "60x9\n"]);
+    }
+
+    #[test]
     fn test_render_loop_disables_mouse_capture_on_custom_backend() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let backend = RecordingBackend {
             calls: calls.clone(),
             canvases: Arc::new(Mutex::new(Vec::new())),
+            next_size: None,
         };
         let mut element = element!(CustomBackendComponent);
 
@@ -899,6 +936,7 @@ mod tests {
         let backend = RecordingBackend {
             calls: calls.clone(),
             canvases: Arc::new(Mutex::new(Vec::new())),
+            next_size: None,
         };
         let mut element = element!(CustomBackendComponent);
 
@@ -913,6 +951,7 @@ mod tests {
         let backend = RecordingBackend {
             calls: calls.clone(),
             canvases: Arc::new(Mutex::new(Vec::new())),
+            next_size: None,
         };
         let mut element = element!(CustomBackendComponent);
 
