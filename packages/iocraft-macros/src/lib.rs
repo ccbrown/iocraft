@@ -1355,15 +1355,15 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
         },
         quote! {
             /// Overrides the parent's `align_items` for this flex or grid item.
-            pub align_self: Option<::iocraft::taffy::style::AlignSelf>
+            pub align_self: Option<#iocraft::taffy::style::AlignSelf>
         },
         quote! {
             /// Controls the alignment of grid items along the inline axis.
-            pub justify_items: Option<::iocraft::taffy::style::JustifyItems>
+            pub justify_items: Option<#iocraft::taffy::style::JustifyItems>
         },
         quote! {
             /// Overrides the parent's `justify_items` for this grid item.
-            pub justify_self: Option<::iocraft::taffy::style::JustifySelf>
+            pub justify_self: Option<#iocraft::taffy::style::JustifySelf>
         },
         quote! {
             /// Distributes space along a flex container's cross axis or a grid's block axis.
@@ -1382,34 +1382,34 @@ pub fn with_layout_style_props(_attr: TokenStream, item: TokenStream) -> TokenSt
             ///
             /// Use the sizing helpers in `iocraft::taffy::prelude`, such as `fr`, `length`,
             /// `minmax`, and `repeat`.
-            pub grid_template_columns: Vec<::iocraft::taffy::style::TrackSizingFunction>
+            pub grid_template_columns: Vec<#iocraft::taffy::style::TrackSizingFunction>
         },
         quote! {
             /// Sets the explicit row tracks when `display` is `Display::Grid`.
-            pub grid_template_rows: Vec<::iocraft::taffy::style::TrackSizingFunction>
+            pub grid_template_rows: Vec<#iocraft::taffy::style::TrackSizingFunction>
         },
         quote! {
             /// Sets the sizes of implicitly created grid columns.
-            pub grid_auto_columns: Vec<::iocraft::taffy::style::NonRepeatedTrackSizingFunction>
+            pub grid_auto_columns: Vec<#iocraft::taffy::style::NonRepeatedTrackSizingFunction>
         },
         quote! {
             /// Sets the sizes of implicitly created grid rows.
-            pub grid_auto_rows: Vec<::iocraft::taffy::style::NonRepeatedTrackSizingFunction>
+            pub grid_auto_rows: Vec<#iocraft::taffy::style::NonRepeatedTrackSizingFunction>
         },
         quote! {
             /// Controls row-wise or column-wise grid auto-placement and dense packing.
-            pub grid_auto_flow: ::iocraft::taffy::style::GridAutoFlow
+            pub grid_auto_flow: #iocraft::taffy::style::GridAutoFlow
         },
         quote! {
             /// Sets this item's start/end column lines or span within its parent grid.
             ///
             /// Use Taffy's `line::<Line<_>>(index)` or `span::<Line<_>>(count)` helpers,
             /// or `Line<GridPlacement>` to set both ends explicitly.
-            pub grid_column: ::iocraft::taffy::geometry::Line<::iocraft::taffy::style::GridPlacement>
+            pub grid_column: #iocraft::taffy::geometry::Line<#iocraft::taffy::style::GridPlacement>
         },
         quote! {
             /// Sets this item's start/end row lines or span within its parent grid.
-            pub grid_row: ::iocraft::taffy::geometry::Line<::iocraft::taffy::style::GridPlacement>
+            pub grid_row: #iocraft::taffy::geometry::Line<#iocraft::taffy::style::GridPlacement>
         },
         quote! {
             /// Defines the behavior when content does not fit within the element's padding box.
