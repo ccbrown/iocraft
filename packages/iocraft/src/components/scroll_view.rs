@@ -406,7 +406,7 @@ pub fn ScrollView<'a>(
         }
     });
 
-    let children = std::mem::take(&mut props.children);
+    let children = props.children.iter_mut().map(AnyElement::from);
     let show_scrollbar =
         props.scrollbar.unwrap_or(true) && content_height.get() > viewport_height.get();
     let scrollbar_thumb_color = props.scrollbar_thumb_color;
@@ -608,6 +608,28 @@ mod tests {
         assert!(output.contains("Line 0"));
         assert!(output.contains("Line 4"));
         assert!(!output.contains("Line 5"));
+    }
+
+    #[apply(test!)]
+    async fn test_scroll_view_keeps_static_content_on_input() {
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut app = element! {
+            View(width: 8, height: 2) {
+                ScrollView(scrollbar: Some(false)) {
+                    Text(content: "first\nsecond\nthird\nfourth")
+                }
+            }
+        };
+        let frames = app.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        assert_eq!(frames.next().await.unwrap().to_string(), "first\nsecond\n");
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Down,
+            )))
+            .unwrap();
+        assert_eq!(frames.next().await.unwrap().to_string(), "second\nthird\n");
     }
 
     #[apply(test!)]
