@@ -194,6 +194,13 @@ impl Canvas {
         }
     }
 
+    fn clear_partial_glyphs(row: &mut [CanvasCell], start: usize, end: usize) {
+        Self::clear_overlapping_character(row, start);
+        if end < row.len() {
+            Self::clear_overlapping_character(&mut row[start..], end - start);
+        }
+    }
+
     fn clear_text(&mut self, x: usize, y: usize, w: usize, h: usize) {
         for y in y..y + h {
             if let Some(row) = self.cells.get_mut(y) {
@@ -201,10 +208,7 @@ impl Canvas {
                 if x >= end {
                     continue;
                 }
-                Self::clear_overlapping_character(row, x);
-                if end < row.len() {
-                    Self::clear_overlapping_character(&mut row[x..], end - x);
-                }
+                Self::clear_partial_glyphs(row, x, end);
                 for cell in &mut row[x..end] {
                     cell.character = None;
                     cell.hyperlink = None;
@@ -244,6 +248,7 @@ impl Canvas {
         text: &str,
         style: CanvasTextStyle,
         clip: std::ops::Range<isize>,
+        hyperlink: Option<&Arc<str>>,
     ) {
         if x >= clip.end {
             return;
@@ -257,9 +262,11 @@ impl Canvas {
             if x >= clip.start && x + width <= clip.end {
                 let start = x as usize;
                 let end = start + width as usize;
-                Self::clear_overlapping_character(row, start);
+                Self::clear_partial_glyphs(row, start, end);
+                row[start].hyperlink = hyperlink.cloned();
                 for cell in &mut row[start + 1..end] {
                     cell.character = None;
+                    cell.hyperlink = hyperlink.cloned();
                 }
                 row[start].character = Some(Character {
                     value: value.to_owned(),
@@ -618,7 +625,19 @@ impl CanvasSubviewMut<'_> {
     /// Writes text to the region.
     ///
     /// Characters that don't fully fit within the region are not written.
+    /// Links on overwritten text are removed.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
+        self.set_text_with_hyperlink(x, y, text, style, None);
+    }
+
+    pub(crate) fn set_text_with_hyperlink(
+        &mut self,
+        x: isize,
+        y: isize,
+        text: &str,
+        style: CanvasTextStyle,
+        hyperlink: Option<&Arc<str>>,
+    ) {
         let Ok(x) = isize::try_from(self.x as i128 + x as i128) else {
             return;
         };
@@ -639,7 +658,7 @@ impl CanvasSubviewMut<'_> {
             }
             if y >= min_y {
                 self.canvas
-                    .set_text_row(x, y as usize, line, style, min_x..max_x);
+                    .set_text_row(x, y as usize, line, style, min_x..max_x, hyperlink);
             }
         }
     }

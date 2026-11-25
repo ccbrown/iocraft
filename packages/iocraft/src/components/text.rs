@@ -212,6 +212,7 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
         // CanvasTextStyle is Copy, so passing hyperlinks separately
         hyperlink: Option<&str>,
     ) {
+        let hyperlink = hyperlink.map(Arc::from);
         let mut lines = lines.into_iter().peekable();
         while let Some(mut line) = lines.next() {
             if self.skip_leading_whitespace && !self.line_encountered_non_whitespace {
@@ -226,18 +227,14 @@ impl<'a, 'b> TextDrawer<'a, 'b> {
                     self.line_encountered_non_whitespace = true;
                 }
             }
-            let placed_x = self.x;
-            self.drawer.canvas().set_text(placed_x, self.y, line, style);
+            self.drawer.canvas().set_text_with_hyperlink(
+                self.x,
+                self.y,
+                line,
+                style,
+                hyperlink.as_ref(),
+            );
             let w = grapheme_width(line);
-            if w > 0 {
-                self.drawer.canvas().set_hyperlink(
-                    placed_x,
-                    self.y,
-                    w,
-                    1,
-                    hyperlink.map(Arc::from),
-                );
-            }
             if lines.peek().is_some() {
                 self.y += 1;
                 self.x = self.x_offset;
@@ -450,6 +447,26 @@ mod tests {
             Some("http://example.com")
         );
         assert_eq!(canvas.cell(5, 0).unwrap().hyperlink, None);
+    }
+
+    #[test]
+    fn clipped_text_does_not_link_through_to_visible_text() {
+        let canvas = element! {
+            View(width: 2, height: 1) {
+                Text(content: "ab")
+                View(position: Position::Absolute, width: 3, left: -1) {
+                    Text(content: "界x", wrap: TextWrap::NoWrap,
+                         hyperlink: Some("https://example.org".into()))
+                }
+            }
+        }
+        .render(None);
+        assert_eq!(canvas.to_string(), "ax\n");
+        assert_eq!(canvas.cell(0, 0).unwrap().hyperlink, None);
+        assert_eq!(
+            canvas.cell(1, 0).unwrap().hyperlink.as_deref(),
+            Some("https://example.org")
+        );
     }
 
     #[test]
