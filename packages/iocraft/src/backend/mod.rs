@@ -1,10 +1,16 @@
 //! The [`TerminalBackend`] trait: iocraft's seam between the renderer and a
 //! concrete terminal.
 //!
-//! All terminal interaction during a render loop flows through this trait. The
-//! built-in `CrosstermBackend` renders ANSI to stdout/stderr; alternative
-//! backends (a GUI grid, a test harness, a different terminal library) can
-//! implement the same surface without pulling in crossterm.
+//! To replace crossterm, implement [`TerminalBackend`] for your terminal library
+//! and pass an instance to
+//! [`element.render_loop().backend(backend)`](crate::RenderLoopFuture::backend).
+//! Set `default-features = false` on your `iocraft` dependency to omit crossterm
+//! entirely.
+//!
+//! For one-shot output, use [`ElementExt::render`](crate::ElementExt::render)
+//! to get a [`Canvas`] you can pass to your own renderer.
+//! [`ElementExt::print`](crate::ElementExt::print) doesn't use your custom
+//! backend; it prints plain text when crossterm is disabled.
 //!
 use crate::{canvas::Canvas, element::Output, terminal::TerminalEvent};
 use futures::stream::BoxStream;
