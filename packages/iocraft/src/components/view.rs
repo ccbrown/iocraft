@@ -359,6 +359,72 @@ mod tests {
     }
 
     #[test]
+    fn opaque_overlay_removes_links_from_erased_text() {
+        for (text, left, width) in [("ab", 0, 2), ("界", 0, 1), ("界", 1, 1)] {
+            let canvas = element! {
+                View(width: 2, height: 1) {
+                    Text(content: text, hyperlink: Some("https://example.org".into()))
+                    View(position: Position::Absolute, left, width, height: 1,
+                         background_color: Color::Blue)
+                }
+            }
+            .render(None);
+            let mut ansi = Vec::new();
+            canvas.write_ansi(&mut ansi).unwrap();
+            let ansi = String::from_utf8(ansi).unwrap();
+            assert!(!ansi.contains(text), "{text:?} at {left}: {ansi:?}");
+            assert!(
+                !ansi.contains("https://example.org"),
+                "{text:?} at {left}: {ansi:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn text_overlay_removes_links_from_overwritten_wide_text() {
+        for (link_left, overlay, overlay_left) in [(0, "x", 0), (1, "国", 0)] {
+            let canvas = element! {
+                View(width: 4, height: 1) {
+                    View(position: Position::Absolute, left: link_left) {
+                        Text(content: "界", hyperlink: Some("https://example.org".into()))
+                    }
+                    View(position: Position::Absolute, left: overlay_left) {
+                        Text(content: overlay)
+                    }
+                    // Keep both the old glyph's cells in the emitted row.
+                    View(position: Position::Absolute, left: 3) {
+                        Text(content: "z")
+                    }
+                }
+            }
+            .render(None);
+            let mut ansi = Vec::new();
+            canvas.write_ansi(&mut ansi).unwrap();
+            let ansi = String::from_utf8(ansi).unwrap();
+            assert!(
+                !ansi.contains("https://example.org"),
+                "{overlay:?} at {overlay_left} over link at {link_left}: {ansi:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn border_overlay_removes_links_from_overwritten_text() {
+        let canvas = element! {
+            View(width: 6, height: 3) {
+                Text(content: "abcdef", hyperlink: Some("https://example.org".into()))
+                View(position: Position::Absolute, width: 6, height: 3,
+                     border_style: BorderStyle::Single)
+            }
+        }
+        .render(None);
+        let mut ansi = Vec::new();
+        canvas.write_ansi(&mut ansi).unwrap();
+        let ansi = String::from_utf8(ansi).unwrap();
+        assert!(!ansi.contains("https://example.org"), "{ansi:?}");
+    }
+
+    #[test]
     fn test_view() {
         assert_eq!(element!(View).to_string(), "");
 
