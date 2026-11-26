@@ -87,6 +87,12 @@ pub enum TerminalEvent {
     /// A bracketed paste, fired when the terminal delivers pasted text in one chunk in raw mode.
     /// Needs to be enabled with `enable_bracketed_paste`.
     BracketedPaste(String),
+    /// Fired when the terminal gains focus.
+    /// Needs to be enabled with `enable_focus_change`.
+    FocusGained,
+    /// Fired when the terminal loses focus.
+    /// Needs to be enabled with `enable_focus_change`.
+    FocusLost,
 }
 
 struct TerminalEventsInner {
@@ -238,6 +244,14 @@ impl<'a> Terminal<'a> {
 
     pub fn disable_bracketed_paste(&mut self) -> io::Result<()> {
         self.inner.set_bracketed_paste(false)
+    }
+
+    pub fn enable_focus_change(&mut self) -> io::Result<()> {
+        self.inner.set_focus_change(true)
+    }
+
+    pub fn disable_focus_change(&mut self) -> io::Result<()> {
+        self.inner.set_focus_change(false)
     }
 
     pub fn set_fullscreen(&mut self, enabled: bool) -> io::Result<()> {

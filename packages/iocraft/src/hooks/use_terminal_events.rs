@@ -179,7 +179,9 @@ impl Hook for UseTerminalEventsImpl {
                     }
                     TerminalEvent::Key(_)
                     | TerminalEvent::Resize(..)
-                    | TerminalEvent::BracketedPaste(_) => {
+                    | TerminalEvent::BracketedPaste(_)
+                    | TerminalEvent::FocusGained
+                    | TerminalEvent::FocusLost => {
                         if let Some(f) = &mut self.f {
                             f(event);
                         }
@@ -294,6 +296,45 @@ mod tests {
             .map(|c| c.to_string().trim().to_string())
             .collect::<Vec<_>>();
         assert_eq!(actual, vec!["", "received click"]);
+    }
+
+    #[derive(Props)]
+    struct FocusRecorderProps {
+        #[iocraft(required)]
+        events: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    #[component]
+    fn FocusRecorder(
+        mut hooks: Hooks,
+        props: &FocusRecorderProps,
+    ) -> impl Into<AnyElement<'static>> {
+        let mut quit = hooks.use_state(|| false);
+        let events = props.events.clone();
+        hooks.use_local_terminal_events(move |event| match event {
+            TerminalEvent::FocusGained => events.lock().unwrap().push("gained"),
+            TerminalEvent::FocusLost => events.lock().unwrap().push("lost"),
+            TerminalEvent::Key(_) => quit.set(true),
+            _ => {}
+        });
+        if quit.get() {
+            hooks.use_context_mut::<SystemContext>().exit();
+        }
+        element!(View(width: 1, height: 1))
+    }
+
+    #[apply(test!)]
+    async fn test_local_terminal_events_receive_focus_changes() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        element!(FocusRecorder(events: events.clone()))
+            .mock_terminal_render_loop(MockTerminalConfig::with_events(stream::iter(vec![
+                TerminalEvent::FocusLost,
+                TerminalEvent::FocusGained,
+                TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('q'))),
+            ])))
+            .for_each(|_| async {})
+            .await;
+        assert_eq!(*events.lock().unwrap(), vec!["lost", "gained"]);
     }
 
     #[derive(Props)]
