@@ -625,7 +625,6 @@ impl CanvasSubviewMut<'_> {
     /// Writes text to the region.
     ///
     /// Characters that don't fully fit within the region are not written.
-    /// Links on overwritten text are removed.
     pub fn set_text(&mut self, x: isize, y: isize, text: &str, style: CanvasTextStyle) {
         self.set_text_with_hyperlink(x, y, text, style, None);
     }
