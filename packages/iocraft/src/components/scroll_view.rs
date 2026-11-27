@@ -54,7 +54,7 @@ impl ScrollViewHandle {
     pub fn scroll_to_top(&mut self) {
         if let Some(inner) = &mut self.inner {
             inner.scroll_offset.set(0);
-            Self::update_user_scrolled_up(inner);
+            inner.user_scrolled_up.set(true);
         }
     }
 
@@ -865,6 +865,47 @@ mod tests {
         // With auto_scroll and content exceeding viewport, should see the last lines.
         assert!(output.contains("Line 19"));
         assert!(!output.contains("Line 0"));
+    }
+
+    #[apply(test!)]
+    async fn test_scroll_to_top_pauses_auto_scroll_before_content_overflows() {
+        #[component]
+        fn Log(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let mut expanded = hooks.use_state(|| false);
+            let mut handle = hooks.use_ref_default::<ScrollViewHandle>();
+            hooks.use_terminal_events(move |event| {
+                if let TerminalEvent::Key(KeyEvent {
+                    code: KeyCode::Char('p'),
+                    kind: KeyEventKind::Press,
+                    ..
+                }) = event
+                {
+                    handle.write().scroll_to_top();
+                    expanded.set(true);
+                }
+            });
+            element! {
+                View(width: 10, height: 2) {
+                    ScrollView(handle, auto_scroll: true, scrollbar: Some(false)) {
+                        Text(content: if expanded.get() { "first\nsecond\nthird" } else { "first" })
+                    }
+                }
+            }
+        }
+
+        let (sender, events) = futures::channel::mpsc::unbounded();
+        let mut log = element!(Log);
+        let frames = log.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
+        futures::pin_mut!(frames);
+        assert!(frames.next().await.unwrap().to_string().contains("first"));
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Char('p'),
+            )))
+            .unwrap();
+        let frame = frames.next().await.unwrap().to_string();
+        assert!(frame.contains("first") && frame.contains("second") && !frame.contains("third"));
     }
 
     #[apply(test!)]
