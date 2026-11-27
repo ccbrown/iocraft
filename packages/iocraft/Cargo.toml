@@ -41,3 +41,7 @@ iocraft = { path = ".", features = ["serde"] }
 [[bench]]
 name = "scroll"
 harness = false
+
+[[bench]]
+name = "text"
+harness = false
