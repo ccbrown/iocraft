@@ -331,6 +331,7 @@ enum RenderLoopFutureState<'a, E: ElementExt> {
         fullscreen: bool,
         mouse_capture: Option<bool>,
         bracketed_paste: Option<bool>,
+        focus_change: Option<bool>,
         ignore_ctrl_c: bool,
         output: Output,
         stdout_writer: Option<Box<dyn Write + Send + 'a>>,
@@ -357,6 +358,7 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
                 fullscreen: false,
                 mouse_capture: None,
                 bracketed_paste: None,
+                focus_change: None,
                 ignore_ctrl_c: false,
                 output: Output::default(),
                 stdout_writer: None,
@@ -428,6 +430,28 @@ impl<'a, E: ElementExt + 'a> RenderLoopFuture<'a, E> {
                 *bracketed_paste = Some(false);
             }
             _ => panic!("disable_bracketed_paste() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Enables terminal focus change events in raw mode. Disabled by default.
+    pub fn enable_focus_change(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { focus_change, .. } => {
+                *focus_change = Some(true);
+            }
+            _ => panic!("enable_focus_change() must be called before polling the future"),
+        }
+        self
+    }
+
+    /// Disables terminal focus change events.
+    pub fn disable_focus_change(mut self) -> Self {
+        match &mut self.state {
+            RenderLoopFutureState::Init { focus_change, .. } => {
+                *focus_change = Some(false);
+            }
+            _ => panic!("disable_focus_change() must be called before polling the future"),
         }
         self
     }
@@ -543,6 +567,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         fullscreen,
                         mouse_capture,
                         bracketed_paste,
+                        focus_change,
                         ignore_ctrl_c,
                         output,
                         stdout_writer,
@@ -554,6 +579,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                             fullscreen,
                             mouse_capture,
                             bracketed_paste,
+                            focus_change,
                             ignore_ctrl_c,
                             output,
                             stdout_writer,
@@ -564,6 +590,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                             fullscreen,
                             mouse_capture,
                             bracketed_paste,
+                            focus_change,
                             ignore_ctrl_c,
                             output,
                             stdout_writer,
@@ -575,6 +602,7 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                     };
                     let effective_mouse_capture = mouse_capture.unwrap_or(fullscreen);
                     let effective_bracketed_paste = bracketed_paste.unwrap_or(false);
+                    let effective_focus_change = focus_change.unwrap_or(false);
                     let mut terminal = match backend {
                         Some(backend) => Terminal::with_backend(backend),
                         None => {
@@ -605,6 +633,14 @@ impl<'a, E: ElementExt + Send + 'a> Future for RenderLoopFuture<'a, E> {
                         terminal.disable_bracketed_paste()
                     };
                     if let Err(e) = bracketed_paste_result {
+                        return std::task::Poll::Ready(Err(e));
+                    }
+                    let focus_change_result = if effective_focus_change {
+                        terminal.enable_focus_change()
+                    } else {
+                        terminal.disable_focus_change()
+                    };
+                    if let Err(e) = focus_change_result {
                         return std::task::Poll::Ready(Err(e));
                     }
                     if ignore_ctrl_c {
@@ -756,6 +792,15 @@ mod tests {
                 "enable_bracketed_paste"
             } else {
                 "disable_bracketed_paste"
+            });
+            Ok(())
+        }
+
+        fn set_focus_change(&mut self, enabled: bool) -> io::Result<()> {
+            self.record(if enabled {
+                "enable_focus_change"
+            } else {
+                "disable_focus_change"
             });
             Ok(())
         }
@@ -926,6 +971,41 @@ mod tests {
         .unwrap();
 
         assert!(calls.lock().unwrap().contains(&"enable_bracketed_paste"));
+    }
+
+    #[test]
+    fn test_render_loop_disables_focus_change_by_default() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: calls.clone(),
+            canvases: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut element = element!(CustomBackendComponent);
+
+        smol::block_on(element.render_loop().fullscreen().backend(backend)).unwrap();
+
+        assert!(calls.lock().unwrap().contains(&"disable_focus_change"));
+    }
+
+    #[test]
+    fn test_render_loop_enables_focus_change_on_custom_backend() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let backend = RecordingBackend {
+            calls: calls.clone(),
+            canvases: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut element = element!(CustomBackendComponent);
+
+        smol::block_on(
+            element
+                .render_loop()
+                .fullscreen()
+                .enable_focus_change()
+                .backend(backend),
+        )
+        .unwrap();
+
+        assert!(calls.lock().unwrap().contains(&"enable_focus_change"));
     }
 
     #[test]

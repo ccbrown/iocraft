@@ -340,6 +340,7 @@ pub(crate) struct CrosstermBackend<'a> {
     fullscreen: bool,
     mouse_capture: bool,
     bracketed_paste: bool,
+    focus_change: bool,
     raw_mode_enabled: bool,
     supports_keyboard_enhancement: bool,
     enabled_keyboard_enhancement: bool,
@@ -520,6 +521,20 @@ impl TerminalBackend for CrosstermBackend<'_> {
                     self.dest.execute(event::EnableBracketedPaste)?;
                 } else {
                     self.dest.execute(event::DisableBracketedPaste)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn set_focus_change(&mut self, enabled: bool) -> io::Result<()> {
+        if self.focus_change != enabled {
+            self.focus_change = enabled;
+            if self.raw_mode_enabled {
+                if enabled {
+                    self.dest.execute(event::EnableFocusChange)?;
+                } else {
+                    self.dest.execute(event::DisableFocusChange)?;
                 }
             }
         }
@@ -724,31 +739,28 @@ impl TerminalBackend for CrosstermBackend<'_> {
         self.set_raw_mode_enabled(true)?;
 
         Ok(EventStream::new()
-            .filter_map(|event| async move {
-                match event {
-                    Ok(Event::Key(event)) => Some(Ok(TerminalEvent::Key(KeyEvent {
-                        code: event.code.into(),
-                        modifiers: event.modifiers.into(),
-                        kind: event.kind.into(),
-                    }))),
-                    Ok(Event::Mouse(event)) => {
-                        Some(Ok(TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
-                            modifiers: event.modifiers.into(),
-                            column: event.column,
-                            row: event.row,
-                            kind: event.kind.into(),
-                        })))
-                    }
-                    Ok(Event::Resize(width, height)) => {
-                        Some(Ok(TerminalEvent::Resize(width, height)))
-                    }
-                    Ok(Event::Paste(data)) => Some(Ok(TerminalEvent::BracketedPaste(data))),
-                    // Ignore crossterm events that iocraft does not expose.
-                    Ok(_) => None,
-                    Err(error) => Some(Err(error)),
-                }
-            })
+            .map(|event| event.map(terminal_event))
             .boxed())
+    }
+}
+
+fn terminal_event(event: Event) -> TerminalEvent {
+    match event {
+        Event::Key(event) => TerminalEvent::Key(KeyEvent {
+            code: event.code.into(),
+            modifiers: event.modifiers.into(),
+            kind: event.kind.into(),
+        }),
+        Event::Mouse(event) => TerminalEvent::FullscreenMouse(FullscreenMouseEvent {
+            modifiers: event.modifiers.into(),
+            column: event.column,
+            row: event.row,
+            kind: event.kind.into(),
+        }),
+        Event::Resize(width, height) => TerminalEvent::Resize(width, height),
+        Event::Paste(data) => TerminalEvent::BracketedPaste(data),
+        Event::FocusGained => TerminalEvent::FocusGained,
+        Event::FocusLost => TerminalEvent::FocusLost,
     }
 }
 
@@ -780,6 +792,7 @@ impl<'a> CrosstermBackend<'a> {
             fullscreen: false,
             mouse_capture: false,
             bracketed_paste: false,
+            focus_change: false,
             raw_mode_enabled: false,
             supports_keyboard_enhancement,
             enabled_keyboard_enhancement: false,
@@ -808,9 +821,15 @@ impl<'a> CrosstermBackend<'a> {
                 if self.mouse_capture {
                     self.dest.execute(event::EnableMouseCapture)?;
                 }
+                if self.focus_change {
+                    self.dest.execute(event::EnableFocusChange)?;
+                }
                 terminal::enable_raw_mode()?;
             } else {
                 terminal::disable_raw_mode()?;
+                if self.focus_change {
+                    self.dest.execute(event::DisableFocusChange)?;
+                }
                 if self.bracketed_paste {
                     self.dest.execute(event::DisableBracketedPaste)?;
                 }
@@ -1197,6 +1216,18 @@ mod tests {
     }
 
     #[test]
+    fn test_focus_events_are_converted() {
+        assert!(matches!(
+            terminal_event(Event::FocusGained),
+            TerminalEvent::FocusGained
+        ));
+        assert!(matches!(
+            terminal_event(Event::FocusLost),
+            TerminalEvent::FocusLost
+        ));
+    }
+
+    #[test]
     fn test_set_bracketed_paste_emits_sequence_in_raw_mode() {
         let (dest, dest_buf) = new_test_writer();
         let mut term = new_inline_term(dest, 0);
@@ -1230,6 +1261,44 @@ mod tests {
         let mut term = new_inline_term(dest, 0);
 
         term.set_bracketed_paste(true).unwrap();
+        let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
+        assert!(written.is_empty(), "must not emit without raw mode");
+    }
+
+    #[test]
+    fn test_set_focus_change_emits_sequence_in_raw_mode() {
+        let (dest, dest_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, 0);
+        term.raw_mode_enabled = true;
+
+        term.set_focus_change(true).unwrap();
+        let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
+        assert_eq!(
+            written, "\x1b[?1004h",
+            "expected EnableFocusChange escape sequence"
+        );
+
+        term.set_focus_change(true).unwrap();
+        let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
+        assert_eq!(
+            written, "\x1b[?1004h",
+            "set_focus_change must be idempotent"
+        );
+
+        term.set_focus_change(false).unwrap();
+        let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
+        assert_eq!(
+            written, "\x1b[?1004h\x1b[?1004l",
+            "expected DisableFocusChange escape sequence"
+        );
+    }
+
+    #[test]
+    fn test_set_focus_change_does_not_emit_without_raw_mode() {
+        let (dest, dest_buf) = new_test_writer();
+        let mut term = new_inline_term(dest, 0);
+
+        term.set_focus_change(true).unwrap();
         let written = String::from_utf8(dest_buf.lock().unwrap().clone()).unwrap();
         assert!(written.is_empty(), "must not emit without raw mode");
     }
@@ -1428,6 +1497,7 @@ mod tests {
             fullscreen: true,
             mouse_capture: false,
             bracketed_paste: false,
+            focus_change: false,
             raw_mode_enabled: false,
             supports_keyboard_enhancement: false,
             enabled_keyboard_enhancement: false,
@@ -1456,6 +1526,7 @@ mod tests {
             fullscreen: false,
             mouse_capture: false,
             bracketed_paste: false,
+            focus_change: false,
             raw_mode_enabled: false,
             supports_keyboard_enhancement: false,
             enabled_keyboard_enhancement: false,
