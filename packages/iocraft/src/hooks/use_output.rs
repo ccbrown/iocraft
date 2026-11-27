@@ -83,6 +83,9 @@ impl UseOutputState {
 
 fn queue_output<S: ToString>(state: &Mutex<UseOutputState>, stream: Output, msg: S, newline: bool) {
     let content = msg.to_string();
+    if content.is_empty() && !newline {
+        return;
+    }
     let waker = {
         let mut state = state.lock().unwrap();
         state.push(stream, content, newline)
@@ -107,6 +110,7 @@ impl StdoutHandle {
 
     /// Queues a message to be written asynchronously to stdout without a newline, above the
     /// rendered component output.
+    /// An empty message has no effect.
     pub fn print<S: ToString>(&self, msg: S) {
         queue_output(&self.state, Output::Stdout, msg, false);
     }
@@ -127,6 +131,7 @@ impl StderrHandle {
 
     /// Queues a message to be written asynchronously to stderr without a newline, above the
     /// rendered component output.
+    /// An empty message has no effect.
     pub fn print<S: ToString>(&self, msg: S) {
         queue_output(&self.state, Output::Stderr, msg, false);
     }
@@ -373,7 +378,10 @@ mod tests {
                 let mut output = UseOutputImpl::default();
                 let stdout = output.use_stdout();
                 trace.lock().unwrap().stdout = Some(stdout.clone());
+                stdout.print("");
+                output.use_stderr().print("");
                 stdout.println("outer");
+                stdout.println("");
                 FlushProbe {
                     output,
                     trace,
@@ -404,7 +412,7 @@ mod tests {
         let (batches, ready) = receiver
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("backend output must not deadlock");
-        assert_eq!(batches, [vec!["outer"], vec!["nested"]]);
+        assert_eq!(batches, [vec!["outer", ""], vec!["nested"]]);
         assert_eq!(ready, [true, false]);
         worker.join().unwrap();
     }
