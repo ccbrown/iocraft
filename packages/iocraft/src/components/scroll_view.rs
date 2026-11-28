@@ -4,8 +4,8 @@ use crate::{
     element,
     hooks::{Ref, State, UseRef, UseState, UseTerminalEvents},
     AnyElement, CanvasTextStyle, Color, Component, ComponentDrawer, ComponentUpdater,
-    FlexDirection, Hook, Hooks, JustifyContent, KeyCode, KeyEvent, KeyEventKind, MouseEventKind,
-    Overflow, Position, Props, TerminalEvent,
+    FlexDirection, Hook, Hooks, Inset, KeyCode, KeyEvent, KeyEventKind, MouseEventKind, Overflow,
+    Position, Props, TerminalEvent,
 };
 
 /// A handle which can be used for imperative control of a [`ScrollView`] component.
@@ -438,62 +438,15 @@ pub fn ScrollView<'a>(
         }
     });
 
-    if pinned_to_bottom {
-        if show_scrollbar {
-            element! {
-                View(width: 100pct, height: 100pct, flex_direction: FlexDirection::Row) {
-                    View(
-                        overflow: Overflow::Hidden,
-                        flex_grow: 1.0_f32,
-                        height: 100pct,
-                        flex_direction: FlexDirection::Column,
-                        justify_content: JustifyContent::FlexEnd,
-                    ) {
-                        ScrollViewContentMeasurer(
-                            content_height_ref: Some(content_height_ref),
-                        ) {
-                            #(children)
-                        }
-                    }
-                    #(scrollbar)
-                }
-            }
-        } else {
-            element! {
-                View(
-                    overflow: Overflow::Hidden,
-                    width: 100pct,
-                    height: 100pct,
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::FlexEnd,
-                ) {
-                    ScrollViewContentMeasurer(
-                        content_height_ref: Some(content_height_ref),
-                    ) {
-                        #(children)
-                    }
-                }
-            }
-        }
-    } else if show_scrollbar {
-        element! {
-            View(width: 100pct, height: 100pct, flex_direction: FlexDirection::Row) {
-                View(overflow: Overflow::Hidden, flex_grow: 1.0_f32, height: 100pct) {
-                    View(position: Position::Absolute, top: -scroll_offset.get(), width: 100pct) {
-                        ScrollViewContentMeasurer(
-                            content_height_ref: Some(content_height_ref),
-                        ) {
-                            #(children)
-                        }
-                    }
-                }
-                #(scrollbar)
-            }
-        }
+    let (top, bottom) = if pinned_to_bottom {
+        (Inset::Auto, Inset::Length(0))
     } else {
-        element! {
-            View(overflow: Overflow::Hidden, width: 100pct, height: 100pct) {
-                View(position: Position::Absolute, top: -scroll_offset.get(), width: 100pct) {
+        (Inset::Length(-effective_offset), Inset::Auto)
+    };
+    element! {
+        View(width: 100pct, height: 100pct, flex_direction: FlexDirection::Row) {
+            View(overflow: Overflow::Hidden, flex_grow: 1.0_f32, height: 100pct) {
+                View(position: Position::Absolute, top, bottom, width: 100pct) {
                     ScrollViewContentMeasurer(
                         content_height_ref: Some(content_height_ref),
                     ) {
@@ -501,6 +454,7 @@ pub fn ScrollView<'a>(
                     }
                 }
             }
+            #(scrollbar)
         }
     }
 }
@@ -804,6 +758,7 @@ mod tests {
             .collect::<Vec<_>>()
             .await;
 
+        assert_eq!(baseline.last().unwrap(), "\n\n\nLine1\nLine2\nLine3\n");
         assert_eq!(after_scroll.last(), baseline.last());
     }
 
@@ -880,7 +835,17 @@ mod tests {
     }
 
     #[apply(test!)]
-    async fn test_scroll_handle_moves_relative_to_the_visible_tail() {
+    async fn test_scroll_handle_moves_relative_to_the_visible_tail_and_preserves_state() {
+        use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
+        #[component]
+        fn StatefulLines(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let id = hooks.use_state(|| NEXT_ID.fetch_add(1, Relaxed)).get();
+            element!(Text(content: format!("A\nB\nC\nD\nE{id}\nF")))
+        }
+
         #[component]
         fn Log(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
             let mut handle = hooks.use_ref_default::<ScrollViewHandle>();
@@ -901,7 +866,7 @@ mod tests {
                 View(width: 13, flex_direction: FlexDirection::Column) {
                     View(height: 2) {
                         ScrollView(auto_scroll: true, handle, scrollbar: Some(false)) {
-                            Text(content: "A\nB\nC\nD\nE\nF")
+                            StatefulLines
                         }
                     }
                     #(before.get().map(|offset| element!(Text(content: format!("Before: {offset}")))))
@@ -913,7 +878,7 @@ mod tests {
         let mut log = element!(Log);
         let frames = log.mock_terminal_render_loop(MockTerminalConfig::with_events(events));
         futures::pin_mut!(frames);
-        assert_eq!(frames.next().await.unwrap().to_string(), "E\nF\n");
+        assert_eq!(frames.next().await.unwrap().to_string(), "E0\nF\n");
         sender
             .unbounded_send(TerminalEvent::Key(KeyEvent::new(
                 KeyEventKind::Press,
@@ -922,7 +887,17 @@ mod tests {
             .unwrap();
         assert_eq!(
             frames.next().await.unwrap().to_string(),
-            "D\nE\nBefore: 4\n"
+            "D\nE0\nBefore: 4\n"
+        );
+        sender
+            .unbounded_send(TerminalEvent::Key(KeyEvent::new(
+                KeyEventKind::Press,
+                KeyCode::Down,
+            )))
+            .unwrap();
+        assert_eq!(
+            frames.next().await.unwrap().to_string(),
+            "E0\nF\nBefore: 4\n"
         );
     }
 
