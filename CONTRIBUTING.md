@@ -16,6 +16,12 @@ Again, please search the issues first to see if there's any relevant discussion.
 
 If the feature is minor or quick to implement, you can feel free to open a pull request right away. If the feature is more invasive or requires significant investment, start a discussion about it via an issue so we can make sure we're aligned on the right direction to take.
 
+## Benchmarks
+
+Run the benchmark suite with `cargo bench -p iocraft`. Add new benchmarks under
+`packages/iocraft/benches/` and register Criterion targets with `harness = false`
+in `packages/iocraft/Cargo.toml`.
+
 ## Changelogs
 
 Don't edit `CHANGELOG.md` files. They're generated automatically from commit messages when a release is made, so manual additions are redundant and cause merge conflicts with other pull requests. Instead, use a [Conventional Commits](https://www.conventionalcommits.org/) style title for your pull request (e.g. `fix(text-input): ...` or `feat: ...`), as it will become the changelog entry.
