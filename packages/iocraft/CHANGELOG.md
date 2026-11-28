@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.6...iocraft-v0.9.7) - 2026-11-28
+
+### Fixed
+
+- *(text-input)* render large buffers through a bounded viewport ([#255](https://github.com/ccbrown/iocraft/pull/255))
+- *(canvas)* clear links when an overlay erases text ([#337](https://github.com/ccbrown/iocraft/pull/337))
+- *(scroll-view)* route wheel events to the view under the pointer ([#324](https://github.com/ccbrown/iocraft/pull/324))
+- *(hooks)* wake async handlers outside the task queue lock ([#335](https://github.com/ccbrown/iocraft/pull/335))
+- *(mixed-text)* align wrapped lines after trimming spaces ([#334](https://github.com/ccbrown/iocraft/pull/334))
+- *(canvas)* omit wide characters cut by a text crop ([#331](https://github.com/ccbrown/iocraft/pull/331))
+- *(terminal)* wake event subscribers outside the queue lock ([#333](https://github.com/ccbrown/iocraft/pull/333))
+- *(scroll-view)* scroll relative to the visible tail ([#323](https://github.com/ccbrown/iocraft/pull/323))
+- *(checkbox)* keep the label when reusing the element ([#330](https://github.com/ccbrown/iocraft/pull/330))
+- *(scroll-view)* keep static children across redraws ([#326](https://github.com/ccbrown/iocraft/pull/326))
+- *(button)* do not activate on keyboard shortcuts ([#322](https://github.com/ccbrown/iocraft/pull/322))
+- *(canvas)* keep text styles when NO_COLOR is set ([#320](https://github.com/ccbrown/iocraft/pull/320))
+
+### Other
+
+- add Criterion rendering benchmarks ([#340](https://github.com/ccbrown/iocraft/pull/340))
+- *(backend)* show how to replace crossterm ([#336](https://github.com/ccbrown/iocraft/pull/336))
+
 ## [0.9.6](https://github.com/ccbrown/iocraft/compare/iocraft-v0.9.5...iocraft-v0.9.6) - 2026-11-24
 
 ### Added
