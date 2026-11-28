@@ -110,6 +110,12 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
             .expect("we should be able to set the style");
     }
 
+    /// Sets the layout style when it differs from the current style.
+    /// An unchanged style leaves the cached layout intact.
+    pub fn set_layout_style_if_changed(&mut self, layout_style: taffy::style::Style) {
+        set_style_if_changed(self.context.layout_engine, self.node_id, layout_style);
+    }
+
     /// Sets the measure function of the current component, which is invoked to calculate the area
     /// that the component's content should occupy.
     pub fn set_measure_func(&mut self, measure_func: MeasureFunc) {
@@ -790,6 +796,52 @@ mod tests {
             tree.render(None, None).canvas.to_string(),
             "hi\nbye\ntail\n"
         );
+    }
+
+    #[derive(Default, Props)]
+    struct DynamicMeasureProps {
+        height: Arc<AtomicUsize>,
+    }
+
+    #[derive(Default)]
+    struct DynamicMeasure {
+        initialized: bool,
+    }
+
+    impl Component for DynamicMeasure {
+        type Props<'a> = DynamicMeasureProps;
+
+        fn new(_: &Self::Props<'_>) -> Self {
+            Self::default()
+        }
+
+        fn update(
+            &mut self,
+            props: &mut Self::Props<'_>,
+            _: Hooks,
+            updater: &mut ComponentUpdater,
+        ) {
+            updater.set_layout_style(Style::default());
+            if !self.initialized {
+                let height = Arc::clone(&props.height);
+                updater.set_measure_func(Box::new(move |_, _, _| taffy::Size {
+                    width: 1.0,
+                    height: height.load(Ordering::Relaxed) as f32,
+                }));
+                self.initialized = true;
+            }
+        }
+    }
+
+    #[test]
+    fn test_reapplying_layout_style_invalidates_measurement() {
+        let height = Arc::new(AtomicUsize::new(1));
+        let mut element = element!(DynamicMeasure(height: height.clone()));
+        let helper = element.helper();
+        let mut tree = Tree::new(element.props_mut(), helper);
+        assert_eq!(tree.render(None, None).canvas.height(), 1);
+        height.store(2, Ordering::Relaxed);
+        assert_eq!(tree.render(None, None).canvas.height(), 2);
     }
 
     #[derive(Default, Props)]

@@ -225,7 +225,7 @@ impl Component for View {
                 }),
             }
         };
-        updater.set_layout_style(style);
+        updater.set_layout_style_if_changed(style);
         updater.update_children(props.children.iter_mut(), None);
     }
 
