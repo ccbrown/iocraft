@@ -419,14 +419,24 @@ pub fn ScrollView<'a>(
     let children = props.children.iter_mut().map(AnyElement::from);
     let show_scrollbar =
         props.scrollbar.unwrap_or(true) && content_height.get() > viewport_height.get();
-    let scrollbar_thumb_color = props.scrollbar_thumb_color;
-    let scrollbar_track_color = props.scrollbar_track_color;
 
     let effective_offset = if pinned_to_bottom {
         max_offset(content_height.get(), viewport_height.get())
     } else {
         scroll_offset.get()
     };
+
+    let scrollbar = show_scrollbar.then(|| {
+        element! {
+            ScrollViewScrollbar(
+                viewport_height: viewport_height.get(),
+                content_height: content_height.get(),
+                scroll_offset: effective_offset,
+                thumb_color: props.scrollbar_thumb_color,
+                track_color: props.scrollbar_track_color,
+            )
+        }
+    });
 
     if pinned_to_bottom {
         if show_scrollbar {
@@ -445,13 +455,7 @@ pub fn ScrollView<'a>(
                             #(children)
                         }
                     }
-                    ScrollViewScrollbar(
-                        viewport_height: viewport_height.get(),
-                        content_height: content_height.get(),
-                        scroll_offset: effective_offset,
-                        thumb_color: scrollbar_thumb_color,
-                        track_color: scrollbar_track_color,
-                    )
+                    #(scrollbar)
                 }
             }
         } else {
@@ -483,13 +487,7 @@ pub fn ScrollView<'a>(
                         }
                     }
                 }
-                ScrollViewScrollbar(
-                    viewport_height: viewport_height.get(),
-                    content_height: content_height.get(),
-                    scroll_offset: effective_offset,
-                    thumb_color: scrollbar_thumb_color,
-                    track_color: scrollbar_track_color,
-                )
+                #(scrollbar)
             }
         }
     } else {
