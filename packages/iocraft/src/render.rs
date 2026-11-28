@@ -135,16 +135,14 @@ impl<'a, 'b, 'c, 'w> ComponentUpdater<'a, 'b, 'c, 'w> {
     /// layout purposes.
     pub fn set_transparent_layout(&mut self, transparent_layout: bool) {
         if transparent_layout && !self.transparent_layout {
-            self.context
-                .layout_engine
-                .set_style(
-                    self.node_id,
-                    Style {
-                        display: Display::None,
-                        ..Default::default()
-                    },
-                )
-                .expect("we should be able to set the style");
+            set_style_if_changed(
+                self.context.layout_engine,
+                self.node_id,
+                Style {
+                    display: Display::None,
+                    ..Default::default()
+                },
+            );
         }
         self.transparent_layout = transparent_layout;
     }
@@ -430,11 +428,7 @@ impl<'a> Tree<'a> {
         }
     }
 
-    fn render(
-        &mut self,
-        max_width: Option<usize>,
-        terminal: Option<&mut Terminal<'_>>,
-    ) -> RenderOutput {
+    fn update(&mut self, max_width: Option<usize>, terminal: Option<&mut Terminal<'_>>) -> bool {
         let mut wrapper_child_node_ids = vec![self.root_component.node_id()];
         let did_clear_terminal_output = {
             let mut context = UpdateContext {
@@ -472,6 +466,15 @@ impl<'a> Tree<'a> {
                 },
             );
         }
+        did_clear_terminal_output
+    }
+
+    fn render(
+        &mut self,
+        max_width: Option<usize>,
+        terminal: Option<&mut Terminal<'_>>,
+    ) -> RenderOutput {
+        let did_clear_terminal_output = self.update(max_width, terminal);
 
         self.layout_engine
             .compute_layout_with_measure(
@@ -882,6 +885,46 @@ mod tests {
             canvases,
             ["abc\n", "a\nb\nc\n", "c\nb\na\n", "c\na\n", "a\n"]
         );
+    }
+
+    #[component]
+    fn TextInFunctionComponent() -> impl Into<AnyElement<'static>> {
+        element!(Text(content: "hello world", wrap: TextWrap::Wrap))
+    }
+
+    fn assert_unchanged_update_does_not_invalidate_layout(mut element: impl ElementExt) {
+        let helper = element.helper();
+        let mut tree = Tree::new(element.props_mut(), helper);
+        tree.render(Some(20), None);
+        tree.update(Some(20), None);
+        assert!(!tree.layout_engine.dirty(tree.wrapper_node_id).unwrap());
+    }
+
+    #[test]
+    fn test_unchanged_update_of_views_does_not_invalidate_layout() {
+        assert_unchanged_update_does_not_invalidate_layout(element! {
+            View(width: 10, flex_direction: FlexDirection::Column) {
+                View(border_style: BorderStyle::Round) {
+                    Text(content: "hello world", wrap: TextWrap::Wrap)
+                    View(flex_grow: 1.0)
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn test_unchanged_update_of_transparent_layouts_does_not_invalidate_layout() {
+        assert_unchanged_update_does_not_invalidate_layout(element! {
+            View(width: 10, flex_direction: FlexDirection::Column) {
+                View {
+                    TextInFunctionComponent
+                    View(flex_grow: 1.0)
+                }
+                Fragment {
+                    Text(content: "in a fragment")
+                }
+            }
+        });
     }
 
     fn computed_layout_engine() -> (LayoutEngine, NodeId, NodeId) {
