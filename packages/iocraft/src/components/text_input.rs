@@ -308,7 +308,6 @@ struct TextBufferViewProps {
 struct TextBufferView {
     text_style: CanvasTextStyle,
     buffer: Arc<TextBuffer>,
-    prev_row_count: usize,
     auto_grow: bool,
     cursor_position: (usize, usize),
     cursor_color: Option<Color>,
@@ -340,36 +339,23 @@ impl Component for TextBufferView {
         self.auto_grow = props.auto_grow;
         self.cursor_position = props.cursor_position;
         self.cursor_color = props.cursor_color;
-        if props.auto_grow {
-            // Auto-grow: use explicit height (row count) and full
-            // parent width. Avoids set_measure_func entirely — no
-            // mark_dirty, no render-loop interactions.
-            let row_count = props.buffer.row_count().max(1);
-            if row_count != self.prev_row_count {
-                self.prev_row_count = row_count;
-                updater.set_layout_style(
-                    LayoutStyle {
-                        width: Size::Percent(100.0),
-                        height: Size::Length(row_count as u32),
-                        ..Default::default()
-                    }
-                    .into(),
-                );
+        let layout_style = if props.auto_grow {
+            LayoutStyle {
+                width: Size::Percent(100.0),
+                height: Size::Length(props.buffer.row_count().max(1) as u32),
+                ..Default::default()
             }
         } else {
-            self.prev_row_count = 0;
-            updater.set_layout_style(
-                LayoutStyle {
-                    position: Position::Absolute,
-                    top: 0.into(),
-                    left: 0.into(),
-                    width: Size::Percent(100.0),
-                    height: Size::Percent(100.0),
-                    ..Default::default()
-                }
-                .into(),
-            );
-        }
+            LayoutStyle {
+                position: Position::Absolute,
+                top: 0.into(),
+                left: 0.into(),
+                width: Size::Percent(100.0),
+                height: Size::Percent(100.0),
+                ..Default::default()
+            }
+        };
+        updater.set_layout_style_if_changed(layout_style.into());
     }
 
     fn draw(&mut self, drawer: &mut ComponentDrawer<'_>) {

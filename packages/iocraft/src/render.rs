@@ -913,6 +913,24 @@ mod tests {
     }
 
     #[test]
+    fn test_unchanged_update_of_text_inputs_does_not_invalidate_layout() {
+        for auto_grow in [false, true] {
+            let mut element = element! {
+                View(width: 10, height: 2) {
+                    TextInput(value: "hello", multiline: true, auto_grow: auto_grow)
+                }
+            };
+            let helper = element.helper();
+            let mut tree = Tree::new(element.props_mut(), helper);
+            // The first draw supplies the width used to wrap the input.
+            tree.render(Some(20), None);
+            tree.render(Some(20), None);
+            tree.update(Some(20), None);
+            assert!(!tree.layout_engine.dirty(tree.wrapper_node_id).unwrap());
+        }
+    }
+
+    #[test]
     fn test_unchanged_update_of_transparent_layouts_does_not_invalidate_layout() {
         assert_unchanged_update_does_not_invalidate_layout(element! {
             View(width: 10, flex_direction: FlexDirection::Column) {
